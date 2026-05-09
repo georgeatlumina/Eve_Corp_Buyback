@@ -1,14 +1,14 @@
 {
   "name": "eve-corp-buyback",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "EVE Online corporation buyback contract validator",
   "author": "Lumina Corp",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
     "build:python": "pyinstaller python/sidecar.spec --distpath build/python-sidecar --workpath build/pyinstaller-work --clean --noconfirm",
-    "build:mac": "npm run build:python && electron-builder --mac",
-    "build:win": "npm run build:python && electron-builder --win",
+    "build:mac": "npm run build:python && electron-builder --mac --publish never",
+    "build:win": "npm run build:python && electron-builder --win --publish never",
     "build": "npm run build:mac"
   },
   "devDependencies": {
