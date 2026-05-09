@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>EVE Corp Buyback</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>EVE Corp Buyback</h1>
+    <nav>
+      <button class="tab-btn active" data-tab="config">Config</button>
+      <button class="tab-btn" data-tab="auth">Auth</button>
+      <button class="tab-btn" data-tab="buyback">Buyback</button>
+      <button class="tab-btn" data-tab="moon">Moon</button>
+    </nav>
+  </header>
+  <main>
+    <section id="tab-config" class="tab active">
+      <h2>Configuration</h2>
+      <form id="config-form">
+        <label>Corporation ID <input name="corp_id" type="number" /></label>
+
+        <fieldset>
+          <legend>Janice market</legend>
+          <p class="muted">Buyback price is checked against 90% of this market's buy value.</p>
+          <select id="janice-market" name="janice_market"></select>
+        </fieldset>
+
+        <fieldset>
+          <legend>Structures &amp; routing rules</legend>
+          <p class="muted">Each structure can accept ore-bearing buybacks, non-ore buybacks, and/or moon contracts. Buyback contracts route by item category; moon contracts only need docking access (any structure with the "Moon" checkbox).</p>
+          <div id="structures-list"></div>
+          <button type="button" id="btn-add-structure" class="secondary">+ Add structure</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Moon contracts</legend>
+          <p class="muted">Moon contracts (item_exchange, price=0) are paid at <strong>80% of refined value</strong> at the trade hub below. Refining efficiency is applied before pricing.</p>
+          <label>Trade hub for refined minerals <select id="moon-market" name="moon_market"></select></label>
+          <label>Refining efficiency (0–1) <input name="refining_efficiency" type="number" step="0.01" min="0" max="1" /></label>
+        </fieldset>
+
+        <label>Janice API Key (optional) <input name="janice_api_key" type="text" autocomplete="off" placeholder="X-ApiKey from Janice" /></label>
+        <div class="actions">
+          <button type="submit">Save</button>
+          <span id="config-status" class="muted"></span>
+        </div>
+      </form>
+    </section>
+
+    <section id="tab-auth" class="tab">
+      <h2>Authentication</h2>
+      <p>Status: <span id="auth-status" class="muted">checking...</span></p>
+      <div class="actions">
+        <button id="btn-login">Login with EVE Online</button>
+        <button id="btn-refresh-status" class="secondary">Refresh status</button>
+      </div>
+      <p class="muted">A browser window will open. After authorizing, return to this app.</p>
+    </section>
+
+    <section id="tab-buyback" class="tab">
+      <h2>Buyback contracts</h2>
+      <div id="wallet-summary" class="wallet-summary"></div>
+      <div class="actions">
+        <button id="btn-fetch">Fetch &amp; validate</button>
+        <button id="btn-refresh-wallets" class="secondary">Refresh wallets</button>
+      </div>
+      <p id="run-status" class="muted"></p>
+      <div class="filter-bar" data-target="buyback">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="approve">Approve</button>
+        <button class="filter-btn" data-filter="reject">Reject</button>
+        <button class="filter-btn" data-filter="errors">Errors</button>
+      </div>
+      <div id="results"></div>
+    </section>
+
+    <section id="tab-moon" class="tab">
+      <h2>Moon contracts</h2>
+      <div id="moon-wallet-summary" class="wallet-summary"></div>
+      <div class="actions">
+        <button id="btn-fetch-moon">Fetch &amp; process</button>
+        <button id="btn-refresh-moon-wallets" class="secondary">Refresh wallets</button>
+      </div>
+      <p id="moon-status" class="muted"></p>
+      <div class="filter-bar" data-target="moon">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="approve">Approve</button>
+        <button class="filter-btn" data-filter="reject">Reject</button>
+        <button class="filter-btn" data-filter="errors">Errors</button>
+      </div>
+      <div id="moon-results"></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
