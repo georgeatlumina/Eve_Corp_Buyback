@@ -1,3 +1,4 @@
+import json
 import os
 import secrets
 import sys
@@ -8,7 +9,7 @@ from typing import Any, Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,8 +27,8 @@ from auth import (
 )
 from config import load_config, save_config
 from esi import fetch_contract_items, fetch_corp_contracts, fetch_corp_wallets, resolve_names
-from refining import compute_refined_payout
-from validate import validate_all
+from refining import compute_refined_payout, is_donation, is_mineable
+from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
 
 PORT = 8765
 REDIRECT_URI = f'http://localhost:{PORT}/callback'
@@ -67,6 +68,8 @@ class ConfigUpdate(BaseModel):
     janice_api_key: Optional[str] = None
     moon_market: Optional[str] = None
     refining_efficiency: Optional[float] = None
+    ice_refining_efficiency: Optional[float] = None
+    moon_payout_fraction: Optional[float] = None
 
 
 @app.post('/api/config')
@@ -183,63 +186,186 @@ class ValidateRequest(BaseModel):
     contracts: Optional[list[dict]] = None
 
 
+def _emit(event_type, **data):
+    """Encode one NDJSON line for the stream."""
+    payload = {'event': event_type, **data}
+    return (json.dumps(payload) + '\n').encode('utf-8')
+
+
 @app.post('/api/validate')
 def validate(req: ValidateRequest):
+    """Stream per-contract validation results as NDJSON.
+
+    Event types: start | progress | buyback_result | moon_result | done | error.
+    Each line is a complete JSON object terminated by \\n.
+    """
     cfg = load_config()
-    contracts = req.contracts
-    if contracts is None:
-        if not cfg.get('corp_id'):
-            raise HTTPException(400, 'Configure corp_id first')
-        client_id, secret_key = get_app_credentials()
-        try:
-            token = get_valid_access_token(client_id, secret_key, get_user_agent())
-        except Exception as e:
-            raise HTTPException(401, str(e))
-        contracts = fetch_corp_contracts(cfg['corp_id'], token, get_user_agent())
-    from config import MOON_PAYOUT_FRACTION
+    return StreamingResponse(_validate_stream(cfg, req), media_type='application/x-ndjson')
+
+
+def _validate_stream(cfg, req):
+    from janice import create_appraisal
+
+    if not cfg.get('corp_id'):
+        yield _emit('error', message='Configure corp_id first')
+        return
 
     client_id, secret_key = get_app_credentials()
     try:
-        moon_token = get_valid_access_token(client_id, secret_key, get_user_agent())
-    except Exception:
-        moon_token = None
+        token = get_valid_access_token(client_id, secret_key, get_user_agent())
+    except Exception as e:
+        yield _emit('error', message=f'Not authenticated: {e}')
+        return
 
-    def moon_payout_lookup(c):
-        if moon_token is None:
-            raise RuntimeError('Not authenticated; cannot fetch contract items')
-        items = fetch_contract_items(
-            cfg['corp_id'], c['contract_id'], moon_token, get_user_agent(),
-        )
-        return compute_refined_payout(
-            [{'type_id': i['type_id'], 'quantity': i['quantity']} for i in items],
-            cfg.get('moon_market') or 'Jita 4-4',
-            float(cfg.get('refining_efficiency') or 0.78),
-            MOON_PAYOUT_FRACTION,
-            get_user_agent(),
-        )
+    contracts = req.contracts
+    if contracts is None:
+        yield _emit('progress', step='Fetching corp contracts from ESI…')
+        try:
+            contracts = fetch_corp_contracts(cfg['corp_id'], token, get_user_agent())
+        except Exception as e:
+            yield _emit('error', message=f'ESI fetch failed: {e}')
+            return
 
-    report = validate_all(
-        contracts,
-        cfg['corp_id'],
-        cfg['structures'],
-        janice_market=cfg.get('janice_market') or '',
-        janice_api_key=cfg.get('janice_api_key') or None,
-        moon_payout_lookup=moon_payout_lookup,
-    )
+    yield _emit('progress', step='Categorizing contracts…')
+    buckets = categorize(contracts, cfg['corp_id'])
+    summary = {
+        'courier': len(buckets['courier']),
+        'moon': len(buckets['moon']),
+        'buyback': len(buckets['buyback']),
+    }
 
+    yield _emit('progress', step='Resolving issuer names…')
     issuer_ids = (
-        {r.get('issuer_id') for r in report['buyback_results']}
-        | {r.get('issuer_id') for r in report.get('moon_results', [])}
+        {c.get('issuer_id') for c in buckets['buyback']}
+        | {c.get('issuer_id') for c in buckets['moon']}
     )
     try:
         names = resolve_names(issuer_ids, get_user_agent())
     except Exception:
         names = {}
-    for r in report['buyback_results']:
-        r['issuer_name'] = names.get(r.get('issuer_id'), '')
-    for r in report.get('moon_results', []):
-        r['issuer_name'] = names.get(r.get('issuer_id'), '')
-    return report
+
+    yield _emit('start', summary=summary)
+
+    # ------ Buyback ------
+    janice_key = cfg.get('janice_api_key') or None
+    janice_market_cfg = cfg.get('janice_market') or ''
+    structures = cfg['structures']
+    total_buy = len(buckets['buyback'])
+
+    for idx, c in enumerate(buckets['buyback'], 1):
+        yield _emit(
+            'progress', kind='buyback', current=idx, total=total_buy,
+            step=f'Buyback {idx}/{total_buy}: contract {c.get("contract_id")} — '
+                 f'{names.get(c.get("issuer_id"), c.get("issuer_id"))}',
+        )
+        result = validate_buyback_contract(c, structures, janice_market_cfg, janice_key)
+        result['issuer_name'] = names.get(result.get('issuer_id'), '')
+        yield _emit('buyback_result', current=idx, total=total_buy, result=result)
+
+    # ------ Moon ------
+    moon_market = cfg.get('moon_market') or 'Jita 4-4'
+    refining_eff = float(cfg.get('refining_efficiency') or 0.78)
+    ice_refining_eff = float(cfg.get('ice_refining_efficiency') or refining_eff)
+    payout_frac = float(cfg.get('moon_payout_fraction') or 0.80)
+    total_moon = len(buckets['moon'])
+
+    for idx, c in enumerate(buckets['moon'], 1):
+        cid = c.get('contract_id')
+        issuer_label = names.get(c.get('issuer_id'), c.get('issuer_id'))
+
+        def moon_step(msg):
+            return _emit(
+                'progress', kind='moon', current=idx, total=total_moon,
+                step=f'Moon {idx}/{total_moon}: contract {cid} — {issuer_label} — {msg}',
+            )
+
+        yield moon_step('fetching items')
+
+        def payout_lookup(_c, _cid=cid):
+            items_raw = fetch_contract_items(cfg['corp_id'], _cid, token, get_user_agent())
+            type_ids = [i['type_id'] for i in items_raw]
+            try:
+                type_names = resolve_names(type_ids, get_user_agent())
+            except Exception:
+                type_names = {}
+            items_named = [
+                {
+                    'name': type_names.get(i['type_id'], ''),
+                    'type_id': i['type_id'],
+                    'quantity': i['quantity'],
+                }
+                for i in items_raw
+            ]
+
+            # Step 1: Janice appraisal (always — even rejected contracts get a value reference).
+            janice_block = None
+            try:
+                appraisal = create_appraisal(items_named, moon_market, api_key=janice_key)
+                janice_block = {
+                    'source': appraisal.get('source'),
+                    'market_name': appraisal.get('market_name'),
+                    'total_buy_price': appraisal.get('total_buy_price'),
+                    'api_fallback_reason': appraisal.get('api_fallback_reason'),
+                    'code': appraisal.get('raw', {}).get('code'),
+                }
+            except Exception as e:
+                janice_block = {'error': f'{type(e).__name__}: {e}'}
+
+            # Detect donation items (Magmatic Gas / Superionic Ice) — kept for the flag,
+            # even if the contract is rejected for other reasons.
+            has_donations = any(
+                is_donation(i['type_id'], get_user_agent()) for i in items_named
+            )
+
+            # Step 2: Mineable check (flag, don't bail — keeps Janice info visible).
+            bad = [i for i in items_named if not is_mineable(i['type_id'], get_user_agent())]
+
+            # Step 3: Refined payout only if all items are mineable.
+            refined_block = None
+            if not bad:
+                refined_block = compute_refined_payout(
+                    [{'type_id': i['type_id'], 'quantity': i['quantity']} for i in items_named],
+                    moon_market,
+                    refining_eff,
+                    ice_refining_eff,
+                    payout_frac,
+                    get_user_agent(),
+                )
+                refined_block['refining_efficiency'] = refining_eff
+                refined_block['ice_refining_efficiency'] = ice_refining_eff
+                refined_block['payout_fraction'] = payout_frac
+                refined_block['market_name'] = moon_market
+
+                mineral_ids = (
+                    [b['type_id'] for b in refined_block.get('breakdown', [])]
+                    + [b['type_id'] for b in refined_block.get('leftover_breakdown', [])]
+                    + [b['type_id'] for b in refined_block.get('donation_breakdown', [])]
+                )
+                if mineral_ids:
+                    try:
+                        mineral_names = resolve_names(mineral_ids, get_user_agent())
+                    except Exception:
+                        mineral_names = {}
+                    for b in refined_block.get('breakdown', []):
+                        b['name'] = mineral_names.get(b['type_id'], '')
+                    for b in refined_block.get('leftover_breakdown', []):
+                        b['name'] = mineral_names.get(b['type_id'], '')
+                    for b in refined_block.get('donation_breakdown', []):
+                        b['name'] = mineral_names.get(b['type_id'], '')
+
+            return {
+                'janice': janice_block,
+                'refined': refined_block,
+                'items': items_named,
+                'mineable_bad': bad,
+                'has_donations': has_donations,
+            }
+
+        result = process_moon_contract(c, structures, payout_lookup)
+        result['issuer_name'] = names.get(result.get('issuer_id'), '')
+        yield _emit('moon_result', current=idx, total=total_moon, result=result)
+
+    yield _emit('done')
 
 
 if __name__ == '__main__':

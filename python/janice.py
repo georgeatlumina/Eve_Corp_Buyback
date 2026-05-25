@@ -1,4 +1,5 @@
 import re
+import sys
 
 import requests
 
@@ -6,6 +7,15 @@ JANICE_API_BASE = 'https://janice.e-351.com/api/rest/v2'
 JANICE_RPC_URL = 'https://janice.e-351.com/api/rpc/v1'
 
 BUYBACK_PERCENTAGE = 0.90
+
+# Janice's internal market IDs (from Info.listPricerMarkets).
+JANICE_MARKET_IDS = {
+    'Jita 4-4': 2,
+    'Amarr': 115,
+    'Dodixie': 117,
+    'Rens': 116,
+    'Hek': 118,
+}
 
 
 def extract_code(url):
@@ -15,16 +25,25 @@ def extract_code(url):
 
 
 def fetch_appraisal(url, api_key=None):
-    """Fetch Janice appraisal data. Uses unauthenticated RPC unless api_key is provided."""
+    """Fetch Janice appraisal data. Prefers the authenticated REST API when a key
+    is provided; falls back to the unauthenticated RPC endpoint on any API error."""
     code = extract_code(url)
     if not code:
         raise ValueError(f'No Janice appraisal code found in URL: {url!r}')
+
+    api_error = None
     if api_key:
         try:
             return _fetch_via_api(code, api_key)
-        except Exception:
-            pass
-    return _fetch_via_rpc(code)
+        except Exception as e:
+            api_error = f'{type(e).__name__}: {e}'
+            print(f'[janice] REST API failed for {code} ({api_error}); falling back to RPC',
+                  file=sys.stderr, flush=True)
+
+    result = _fetch_via_rpc(code)
+    if api_error:
+        result['api_fallback_reason'] = api_error
+    return result
 
 
 def _fetch_via_rpc(code):
@@ -104,3 +123,89 @@ def _normalize(code, data, source):
         'source': source,
         'raw': data,
     }
+
+
+def create_appraisal(items, market_name, api_key=None):
+    """Create a Janice appraisal from a list of {name, quantity} items.
+
+    Prefers the authenticated REST API when api_key is set; falls back to the
+    unauthenticated RPC endpoint on any API error.
+    """
+    market_id = JANICE_MARKET_IDS.get(market_name)
+    if market_id is None:
+        raise ValueError(f'Unknown Janice market: {market_name!r}')
+
+    lines = [
+        f'{i["name"]}\t{int(i["quantity"])}'
+        for i in items
+        if i.get('name') and i.get('quantity')
+    ]
+    if not lines:
+        raise ValueError('No items with name+quantity to appraise')
+    input_text = '\n'.join(lines)
+
+    api_error = None
+    if api_key:
+        try:
+            return _create_via_api(input_text, market_id, api_key)
+        except Exception as e:
+            api_error = f'{type(e).__name__}: {e}'
+            print(f'[janice] REST API create failed ({api_error}); falling back to RPC',
+                  file=sys.stderr, flush=True)
+
+    result = _create_via_rpc(input_text, market_id)
+    if api_error:
+        result['api_fallback_reason'] = api_error
+    return result
+
+
+def _create_via_rpc(input_text, market_id):
+    resp = requests.post(
+        JANICE_RPC_URL,
+        json={
+            'jsonrpc': '2.0',
+            'method': 'Appraisal.create',
+            'params': {
+                'input': input_text,
+                'designation': 'appraisal',
+                'pricing': 'buy',
+                'pricingVariant': 'immediate',
+                'marketId': market_id,
+                'persist': False,
+                'compactize': True,
+                'pricePercentage': 1.0,
+            },
+            'id': 1,
+        },
+        headers={'Content-Type': 'application/json', 'User-Agent': 'EveCorpBuyback/1.0'},
+        timeout=30,
+    )
+    body = resp.json()
+    if 'error' in body:
+        err = body['error']
+        raise RuntimeError(f'Janice RPC create error: {err.get("message", err)}')
+    return _normalize('', body['result'], source='rpc')
+
+
+def _create_via_api(input_text, market_id, api_key):
+    resp = requests.post(
+        f'{JANICE_API_BASE}/appraisal',
+        params={
+            'market': market_id,
+            'designation': 'appraisal',
+            'pricing': 'buy',
+            'pricingVariant': 'immediate',
+            'persist': 'false',
+            'compactize': 'true',
+            'pricePercentage': '1.0',
+        },
+        data=input_text,
+        headers={
+            'X-ApiKey': api_key,
+            'Content-Type': 'text/plain',
+            'Accept': 'application/json',
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return _normalize('', resp.json(), source='api')

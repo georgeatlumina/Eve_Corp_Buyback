@@ -67,6 +67,8 @@ async function loadConfig() {
   $('[name=corp_id]').value = cfg.corp_id || '';
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
   $('[name=refining_efficiency]').value = cfg.refining_efficiency ?? 0.78;
+  $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
+  $('[name=moon_payout_fraction]').value = cfg.moon_payout_fraction ?? 0.80;
 
   fillMarket('#janice-market', markets, cfg.janice_market);
   fillMarket('#moon-market', markets, cfg.moon_market);
@@ -137,6 +139,8 @@ $('#config-form').addEventListener('submit', async (e) => {
     janice_api_key: fd.get('janice_api_key'),
     moon_market: $('#moon-market').value,
     refining_efficiency: parseFloat(fd.get('refining_efficiency')) || 0.78,
+    ice_refining_efficiency: parseFloat(fd.get('ice_refining_efficiency')) || 0.78,
+    moon_payout_fraction: parseFloat(fd.get('moon_payout_fraction')) || 0.80,
   };
   const res = await fetch(`${API}/api/config`, {
     method: 'POST',
@@ -155,45 +159,122 @@ function renderMoonTab() {
     root.innerHTML = `<p class="muted">No moon contracts ${filterState.moon === 'all' ? 'found' : `in "${filterState.moon}" filter`}.</p>`;
     return;
   }
-  for (const r of list) {
-    const checks = r.checks || {};
-    const flags = r.flags || [];
-    const hasFlag = flags.length > 0;
-    const allChecksPass = Object.values(checks).every((c) => c.pass);
-    const div = document.createElement('div');
-    div.className = `result ${allChecksPass && !hasFlag ? 'pass' : 'fail'}`;
+  for (const r of list) root.appendChild(buildMoonRow(r));
+}
 
-    const flagBanners = flags.includes('return_requested')
+function buildMoonRow(r) {
+  const checks = r.checks || {};
+  const flags = r.flags || [];
+  const hasFlag = flags.length > 0;
+  const allChecksPass = Object.values(checks).every((c) => c.pass);
+  const div = document.createElement('div');
+  div.className = `result ${allChecksPass && !hasFlag ? 'pass' : 'fail'}`;
+
+  const flagBanners =
+    (flags.includes('return_requested')
       ? `<div class="flag-banner">⚠ Return requested — title contains "return"</div>`
-      : '';
+      : '') +
+    (flags.includes('workforce_donation')
+      ? `<div class="flag-banner">⚠ Contains workforce reagents (Magmatic Gas / Superionic Ice) — accepted as donation, no payout</div>`
+      : '');
 
-    const skipped = r.payout?.skipped_items || [];
-    const skippedList = skipped.length
-      ? `<div class="muted">Skipped (no refining yields known): ${skipped.map((s) => escapeHtml(s.name || `type ${s.type_id}`)).join(', ')}</div>`
-      : '';
+  const janice = r.payout?.janice;
+  const refined = r.payout?.refined;
 
-    const payout = r.payout
-      ? `<div class="meta">Refined value: ${Math.round(r.payout.refined_value).toLocaleString()} ISK
-         &nbsp;→ <strong>Recommended payout: ${Math.round(r.payout.recommended_payout).toLocaleString()} ISK</strong>
-         ${skippedList}
-         </div>`
-      : '';
-
-    div.innerHTML = `
-      <h4>Contract ${r.contract_id} — ${escapeHtml(r.issuer_name || 'unknown issuer')}</h4>
-      ${flagBanners}
-      <div class="meta">Issuer: ${escapeHtml(r.issuer_name || '')} (${r.issuer_id ?? '?'})</div>
-      <div class="meta">Title: ${escapeHtml(r.title || '(empty)')}</div>
-      <div class="meta">Location: ${r.start_location_id ?? '?'}</div>
-      ${payout}
-      ${Object.entries(checks).map(([k, v]) =>
-        `<div class="check ${v.pass ? 'pass' : 'fail'}">
-           <strong>${k}:</strong>${v.pass ? 'PASS' : 'FAIL'}${v.reason ? ` — ${escapeHtml(v.reason)}` : ''}
-         </div>`
-      ).join('')}
-    `;
-    root.appendChild(div);
+  let janiceBlock = '';
+  if (janice) {
+    if (janice.error) {
+      janiceBlock = `<div class="meta">Janice appraisal: <span class="muted">error — ${escapeHtml(janice.error)}</span></div>`;
+    } else {
+      const fallback = janice.api_fallback_reason
+        ? `<div class="flag-banner">⚠ Janice API failed — using RPC fallback: ${escapeHtml(janice.api_fallback_reason)}</div>`
+        : '';
+      const codeLink = janice.code
+        ? ` (<a href="https://janice.e-351.com/a/${escapeHtml(janice.code)}" target="_blank" rel="noopener">view</a>)`
+        : '';
+      const buybackEquiv = (janice.total_buy_price || 0) * 0.9;
+      const marketName = janice.market_name || '';
+      janiceBlock = `<div class="meta">Janice [${janice.source}] @ ${escapeHtml(marketName)}${codeLink}: <strong>${Math.round(janice.total_buy_price).toLocaleString()} ISK</strong> compressed buy</div>
+        <div class="meta">Buyback equivalent (90% ${escapeHtml(marketName)} buy): <strong>${Math.round(buybackEquiv).toLocaleString()} ISK</strong></div>${fallback}`;
+    }
   }
+
+  let refinedBlock = '';
+  if (refined) {
+    const orePct = ((refined.refining_efficiency ?? 0) * 100).toFixed(0);
+    const icePct = ((refined.ice_refining_efficiency ?? refined.refining_efficiency ?? 0) * 100).toFixed(0);
+    const payPct = ((refined.payout_fraction ?? 0) * 100).toFixed(0);
+    const market = escapeHtml(refined.market_name || '');
+    const effLabel = refined.has_ore && refined.has_ice
+      ? `${orePct}% ore / ${icePct}% ice`
+      : refined.has_ice
+      ? `${icePct}% ice`
+      : `${orePct}% ore`;
+    const leftoverValue = refined.leftover_value || 0;
+    const leftoverLine = leftoverValue > 0
+      ? `<div class="meta">Priced at hub buy (non-refinable or remainder): ${Math.round(leftoverValue).toLocaleString()} ISK at ${market}</div>`
+      : '';
+    refinedBlock = `<div class="meta">Refined @ ${effLabel} efficiency @ ${market}: ${Math.round(refined.refined_value).toLocaleString()} ISK</div>
+       ${leftoverLine}
+       <div class="payout-final">→ Payout (${payPct}%): ${Math.round(refined.recommended_payout).toLocaleString()} ISK</div>`;
+  }
+
+  const items = r.payout?.items || [];
+  const breakdown = r.payout?.refined?.breakdown || [];
+  const leftoverBreakdown = r.payout?.refined?.leftover_breakdown || [];
+  const donationBreakdown = r.payout?.refined?.donation_breakdown || [];
+
+  const tableRow = (b) => ({
+    name: b.name || `type ${b.type_id}`,
+    quantity: b.quantity,
+    'unit price': Number(b.unit_price?.toFixed?.(2) ?? b.unit_price ?? 0),
+    value: Math.round(b.value || 0),
+  });
+
+  const leftoverBlock = leftoverBreakdown.length
+    ? `<details>
+         <summary>Unrefined remainder (${leftoverBreakdown.length} types)</summary>
+         ${renderItemsTable(leftoverBreakdown.map(tableRow), ['name', 'quantity', 'unit price', 'value'])}
+       </details>`
+    : '';
+
+  const donationBlock = donationBreakdown.length
+    ? `<details open>
+         <summary>Donations — accepted, no payout (${donationBreakdown.length} types)</summary>
+         ${renderItemsTable(
+           donationBreakdown.map((b) => ({ name: b.name || `type ${b.type_id}`, quantity: b.quantity })),
+           ['name', 'quantity'],
+         )}
+       </details>`
+    : '';
+
+  const contentsBlock = `
+    <details>
+      <summary>Contract contents (${items.length} items)</summary>
+      ${renderItemsTable(items.map((i) => ({ name: i.name || `type ${i.type_id}`, quantity: i.quantity })), ['name', 'quantity'])}
+    </details>
+    <details>
+      <summary>Refined minerals (${breakdown.length} types)</summary>
+      ${renderItemsTable(breakdown.map(tableRow), ['name', 'quantity', 'unit price', 'value'])}
+    </details>
+    ${leftoverBlock}
+    ${donationBlock}`;
+
+  div.innerHTML = `
+    <h4>Contract ${r.contract_id} — ${escapeHtml(r.issuer_name || 'unknown issuer')}</h4>
+    ${flagBanners}
+    <div class="meta">Issuer: ${escapeHtml(r.issuer_name || '')} (${r.issuer_id ?? '?'})</div>
+    <div class="meta">Title: ${escapeHtml(r.title || '(empty)')}</div>
+    <div class="meta">Location: ${r.start_location_id ?? '?'}</div>
+    ${janiceBlock}${refinedBlock}
+    ${Object.entries(checks).map(([k, v]) =>
+      `<div class="check ${v.pass ? 'pass' : 'fail'}">
+         <strong>${k}:</strong>${v.pass ? 'PASS' : 'FAIL'}${v.reason ? ` — ${escapeHtml(v.reason)}` : ''}
+       </div>`
+    ).join('')}
+    ${contentsBlock}
+  `;
+  return div;
 }
 
 function escapeAttr(s) {
@@ -236,8 +317,17 @@ $('#btn-login').addEventListener('click', async () => {
 
 $('#btn-refresh-status').addEventListener('click', refreshAuthStatus);
 
-async function runValidate(statusSel) {
-  $(statusSel).textContent = 'Fetching contracts and running validation...';
+async function runValidateStream() {
+  // Reset state on both tabs
+  lastResults.buyback = [];
+  lastResults.moon = [];
+  $('#results').innerHTML = '';
+  $('#moon-results').innerHTML = '';
+  $('#run-status').textContent = 'starting…';
+  $('#moon-status').textContent = 'starting…';
+  showProgress('buyback', 0, 0);
+  showProgress('moon', 0, 0);
+
   try {
     const res = await fetch(`${API}/api/validate`, {
       method: 'POST',
@@ -245,37 +335,124 @@ async function runValidate(statusSel) {
       body: JSON.stringify({}),
     });
     if (!res.ok) {
-      $(statusSel).textContent = `Error: ${await res.text()}`;
-      return null;
+      const msg = `Error: ${await res.text()}`;
+      $('#run-status').textContent = msg;
+      $('#moon-status').textContent = msg;
+      hideProgress('buyback');
+      hideProgress('moon');
+      return;
     }
-    return await res.json();
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (line) handleStreamEvent(JSON.parse(line));
+      }
+    }
+    if (buf.trim()) handleStreamEvent(JSON.parse(buf));
   } catch (e) {
-    $(statusSel).textContent = `Error: ${e}`;
-    return null;
+    const msg = `Stream error: ${e}`;
+    $('#run-status').textContent = msg;
+    $('#moon-status').textContent = msg;
+    hideProgress('buyback');
+    hideProgress('moon');
   }
 }
 
-$('#btn-fetch').addEventListener('click', async () => {
-  $('#results').innerHTML = '';
-  const data = await runValidate('#run-status');
-  if (data) onValidateResult(data);
-});
+function handleStreamEvent(ev) {
+  switch (ev.event) {
+    case 'progress': {
+      const kind = ev.kind;
+      if (kind === 'buyback' || kind === 'moon') {
+        showProgress(kind, ev.current, ev.total);
+        setStep(kind, ev.step);
+      } else {
+        // Pre-loop steps go to both tabs' status line so user sees them
+        setStep('buyback', ev.step);
+        setStep('moon', ev.step);
+      }
+      break;
+    }
+    case 'start': {
+      const s = ev.summary;
+      $('#run-status').textContent =
+        `Courier: ${s.courier} | Moon: ${s.moon} | Buyback: ${s.buyback}`;
+      $('#moon-status').textContent = `Moon contracts found: ${s.moon}`;
+      break;
+    }
+    case 'buyback_result':
+      lastResults.buyback.push(ev.result);
+      showProgress('buyback', ev.current, ev.total);
+      appendResultIfMatch('buyback', ev.result);
+      break;
+    case 'moon_result':
+      lastResults.moon.push(ev.result);
+      showProgress('moon', ev.current, ev.total);
+      appendResultIfMatch('moon', ev.result);
+      break;
+    case 'done':
+      setStep('buyback', 'done');
+      setStep('moon', 'done');
+      hideProgress('buyback');
+      hideProgress('moon');
+      break;
+    case 'error':
+      $('#run-status').textContent = `Error: ${ev.message}`;
+      $('#moon-status').textContent = `Error: ${ev.message}`;
+      hideProgress('buyback');
+      hideProgress('moon');
+      break;
+  }
+}
 
-$('#btn-fetch-moon').addEventListener('click', async () => {
-  $('#moon-results').innerHTML = '';
-  const data = await runValidate('#moon-status');
-  if (data) onValidateResult(data);
-});
+function showProgress(kind, current, total) {
+  const area = $(`#${kind}-progress`);
+  area.hidden = false;
+  const pct = total > 0 ? Math.min(100, (current / total) * 100) : 0;
+  area.querySelector('.progress-fill').style.width = `${pct}%`;
+}
 
-function onValidateResult(data) {
-  lastResults.buyback = data.buyback_results || [];
-  lastResults.moon = data.moon_results || [];
-  const s = data.summary;
-  $('#run-status').textContent =
-    `Courier: ${s.courier} | Moon: ${s.moon} | Buyback: ${s.buyback}`;
-  $('#moon-status').textContent = `Moon contracts found: ${s.moon}`;
-  renderBuyback();
-  renderMoonTab();
+function hideProgress(kind) {
+  $(`#${kind}-progress`).hidden = true;
+}
+
+function setStep(kind, step) {
+  const el = $(`#${kind}-progress .progress-step`);
+  if (el) el.textContent = step || '';
+}
+
+function appendResultIfMatch(kind, result) {
+  if (filterState[kind] !== 'all' && classifyResult(result) !== filterState[kind]) return;
+  const root = kind === 'buyback' ? $('#results') : $('#moon-results');
+  const empty = root.querySelector('p.muted');
+  if (empty) empty.remove();
+  const node = kind === 'buyback' ? buildBuybackRow(result) : buildMoonRow(result);
+  root.appendChild(node);
+}
+
+$('#btn-fetch').addEventListener('click', runValidateStream);
+$('#btn-fetch-moon').addEventListener('click', runValidateStream);
+
+function renderItemsTable(items, columns = ['name', 'amount']) {
+  if (!items || !items.length) return '<p class="muted">no items</p>';
+  const head = columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('');
+  const body = items.map((it) => {
+    const cells = columns.map((c) => {
+      const v = it[c] ?? '';
+      const cls = typeof v === 'number' ? 'num' : '';
+      const display = typeof v === 'number' ? v.toLocaleString() : escapeHtml(String(v));
+      return `<td class="${cls}">${display}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+  return `<table class="items-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 $('#btn-refresh-wallets').addEventListener('click', refreshWallets);
@@ -332,35 +509,48 @@ function renderBuyback() {
     root.innerHTML = `<p class="muted">No buyback contracts ${filterState.buyback === 'all' ? '' : `in "${filterState.buyback}" filter`}.</p>`;
     return;
   }
-  for (const r of list) {
-    const checks = r.checks || {};
-    const allPass = Object.values(checks).every((c) => c.pass);
-    const div = document.createElement('div');
-    div.className = `result ${allPass ? 'pass' : 'fail'}`;
-    const titleEsc = escapeHtml(r.title || '');
-    const titleLink = (r.title || '').includes('janice')
-      ? `<a href="${titleEsc}" target="_blank" rel="noopener">${titleEsc}</a>`
-      : titleEsc;
-    const issuer = r.issuer_name
-      ? `${escapeHtml(r.issuer_name)} (${r.issuer_id})`
-      : `${r.issuer_id ?? '?'}`;
-    const appraisal = r.appraisal
-      ? `<div class="meta">Janice [${r.appraisal.source}]: ${r.appraisal.percentage.toFixed(1)}% ${escapeHtml(r.appraisal.market_name || '')} — effective offer ${Math.round(r.appraisal.effective_offer).toLocaleString()} ISK</div>`
-      : '';
-    div.innerHTML = `
-      <h4>Contract ${r.contract_id} — ${escapeHtml(r.issuer_name || 'unknown issuer')}</h4>
-      <div class="meta">Issuer: ${issuer}</div>
-      <div class="meta">Title: ${titleLink || '<em>(empty)</em>'}</div>
-      <div class="meta">Price: ${(r.price ?? 0).toLocaleString()} ISK — location ${r.start_location_id ?? '?'}</div>
-      ${appraisal}
-      ${Object.entries(checks).map(([k, v]) =>
-        `<div class="check ${v.pass ? 'pass' : 'fail'}">
-           <strong>${k}:</strong>${v.pass ? 'PASS' : 'FAIL'}${v.reason ? ` — ${escapeHtml(v.reason)}` : ''}
-         </div>`
-      ).join('')}
-    `;
-    root.appendChild(div);
-  }
+  for (const r of list) root.appendChild(buildBuybackRow(r));
+}
+
+function buildBuybackRow(r) {
+  const checks = r.checks || {};
+  const allPass = Object.values(checks).every((c) => c.pass);
+  const div = document.createElement('div');
+  div.className = `result ${allPass ? 'pass' : 'fail'}`;
+  const titleEsc = escapeHtml(r.title || '');
+  const titleLink = (r.title || '').includes('janice')
+    ? `<a href="${titleEsc}" target="_blank" rel="noopener">${titleEsc}</a>`
+    : titleEsc;
+  const issuer = r.issuer_name
+    ? `${escapeHtml(r.issuer_name)} (${r.issuer_id})`
+    : `${r.issuer_id ?? '?'}`;
+  const fallbackNote = r.appraisal?.api_fallback_reason
+    ? `<div class="flag-banner">⚠ Janice API failed — using RPC fallback: ${escapeHtml(r.appraisal.api_fallback_reason)}</div>`
+    : '';
+  const appraisal = r.appraisal
+    ? `<div class="meta">Janice [${r.appraisal.source}]: ${r.appraisal.percentage.toFixed(1)}% ${escapeHtml(r.appraisal.market_name || '')} — effective offer ${Math.round(r.appraisal.effective_offer).toLocaleString()} ISK</div>${fallbackNote}`
+    : '';
+  const items = r.appraisal?.items || [];
+  const contentsBlock = items.length
+    ? `<details>
+         <summary>Contract contents (${items.length} items from Janice)</summary>
+         ${renderItemsTable(items.map((i) => ({ name: i.name, quantity: i.amount })), ['name', 'quantity'])}
+       </details>`
+    : '';
+  div.innerHTML = `
+    <h4>Contract ${r.contract_id} — ${escapeHtml(r.issuer_name || 'unknown issuer')}</h4>
+    <div class="meta">Issuer: ${issuer}</div>
+    <div class="meta">Title: ${titleLink || '<em>(empty)</em>'}</div>
+    <div class="meta">Price: ${(r.price ?? 0).toLocaleString()} ISK — location ${r.start_location_id ?? '?'}</div>
+    ${appraisal}
+    ${Object.entries(checks).map(([k, v]) =>
+      `<div class="check ${v.pass ? 'pass' : 'fail'}">
+         <strong>${k}:</strong>${v.pass ? 'PASS' : 'FAIL'}${v.reason ? ` — ${escapeHtml(v.reason)}` : ''}
+       </div>`
+    ).join('')}
+    ${contentsBlock}
+  `;
+  return div;
 }
 
 function escapeHtml(s) {

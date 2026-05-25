@@ -50,10 +50,11 @@ def fetch_contract_items(corp_id, contract_id, access_token, user_agent):
 
 
 _TYPE_INFO_CACHE = {}
+_GROUP_INFO_CACHE = {}
 
 
 def fetch_type_info(type_id, user_agent):
-    """Fetch ESI universe type info (cached). Returns dict with name, portion_size, etc."""
+    """Fetch ESI universe type info (cached). Returns dict with name, portion_size, group_id, etc."""
     cached = _TYPE_INFO_CACHE.get(type_id)
     if cached is not None:
         return cached
@@ -65,6 +66,22 @@ def fetch_type_info(type_id, user_agent):
     resp.raise_for_status()
     data = resp.json()
     _TYPE_INFO_CACHE[type_id] = data
+    return data
+
+
+def fetch_group_info(group_id, user_agent):
+    """Fetch ESI universe group info (cached). Returns dict with name, category_id, etc."""
+    cached = _GROUP_INFO_CACHE.get(group_id)
+    if cached is not None:
+        return cached
+    resp = requests.get(
+        f'{ESI_BASE}/universe/groups/{group_id}/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    _GROUP_INFO_CACHE[group_id] = data
     return data
 
 

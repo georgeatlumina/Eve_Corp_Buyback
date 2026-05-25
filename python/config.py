@@ -14,7 +14,6 @@ DEFAULT_STRUCTURES = [
 ]
 
 JANICE_MARKETS = ['Jita 4-4', 'Amarr', 'Dodixie', 'Rens']
-MOON_PAYOUT_FRACTION = 0.80
 
 DEFAULTS = {
     'corp_id': 0,
@@ -29,6 +28,8 @@ DEFAULTS = {
     'janice_api_key': '',
     'moon_market': 'Jita 4-4',
     'refining_efficiency': 0.78,
+    'ice_refining_efficiency': 0.78,
+    'moon_payout_fraction': 0.80,
 }
 
 _USER_KEYS = set(DEFAULTS)

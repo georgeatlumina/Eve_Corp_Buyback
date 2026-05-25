@@ -59,6 +59,8 @@ def validate_buyback_contract(contract, structures, janice_market='', janice_api
         'total_buy_price': appraisal['total_buy_price'],
         'market_name': appraisal['market_name'],
         'source': appraisal.get('source', 'api'),
+        'api_fallback_reason': appraisal.get('api_fallback_reason'),
+        'items': appraisal.get('items', []),
     }
 
     if janice_market:
@@ -119,7 +121,20 @@ def process_moon_contract(contract, structures, payout_lookup):
         result['flags'].append('return_requested')
 
     try:
-        result['payout'] = payout_lookup(contract)
+        payout = payout_lookup(contract)
+        result['payout'] = payout
+        if payout.get('has_donations'):
+            result['flags'].append('workforce_donation')
+        bad = payout.get('mineable_bad') or []
+        if bad:
+            names = sorted({i.get('name') or f'type {i["type_id"]}' for i in bad})
+            preview = ', '.join(names[:8])
+            if len(names) > 8:
+                preview += f', …(+{len(names) - 8} more)'
+            result['checks']['mineable_only'] = {
+                'pass': False,
+                'reason': f'Contains non-ore/moon/ice/reagent items: {preview}',
+            }
     except Exception as e:
         result['checks']['payout'] = {'pass': False, 'reason': f'Could not compute payout: {e}'}
 

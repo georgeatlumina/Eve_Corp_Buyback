@@ -36,9 +36,11 @@
 
         <fieldset>
           <legend>Moon contracts</legend>
-          <p class="muted">Moon contracts (item_exchange, price=0) are paid at <strong>80% of refined value</strong> at the trade hub below. Refining efficiency is applied before pricing.</p>
-          <label>Trade hub for refined minerals <select id="moon-market" name="moon_market"></select></label>
-          <label>Refining efficiency (0–1) <input name="refining_efficiency" type="number" step="0.01" min="0" max="1" /></label>
+          <p class="muted">Moon contracts (item_exchange, price=0) get two figures: a Janice appraisal of the compressed contents at the chosen hub (informational), and the refined-mineral payout used to pay the contractor. Refined payout = refined value × payout fraction.</p>
+          <label>Trade hub <select id="moon-market" name="moon_market"></select></label>
+          <label>Ore refining efficiency (0–1) <input name="refining_efficiency" type="number" step="0.01" min="0" max="1" /></label>
+          <label>Ice refining efficiency (0–1) <input name="ice_refining_efficiency" type="number" step="0.01" min="0" max="1" /></label>
+          <label>Payout fraction (0–1) <input name="moon_payout_fraction" type="number" step="0.01" min="0" max="1" /></label>
         </fieldset>
 
         <label>Janice API Key (optional) <input name="janice_api_key" type="text" autocomplete="off" placeholder="X-ApiKey from Janice" /></label>
@@ -67,6 +69,10 @@
         <button id="btn-refresh-wallets" class="secondary">Refresh wallets</button>
       </div>
       <p id="run-status" class="muted"></p>
+      <div class="progress-area" id="buyback-progress" hidden>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-step muted">starting…</div>
+      </div>
       <div class="filter-bar" data-target="buyback">
         <button class="filter-btn active" data-filter="all">All</button>
         <button class="filter-btn" data-filter="approve">Approve</button>
@@ -84,6 +90,10 @@
         <button id="btn-refresh-moon-wallets" class="secondary">Refresh wallets</button>
       </div>
       <p id="moon-status" class="muted"></p>
+      <div class="progress-area" id="moon-progress" hidden>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-step muted">starting…</div>
+      </div>
       <div class="filter-bar" data-target="moon">
         <button class="filter-btn active" data-filter="all">All</button>
         <button class="filter-btn" data-filter="approve">Approve</button>
