@@ -63,12 +63,38 @@ $$('.tab-btn').forEach((btn) => {
 });
 
 async function loadConfig() {
-  const [cfgRes, marketsRes] = await Promise.all([
-    fetch(`${API}/api/config`),
-    fetch(`${API}/api/markets`),
-  ]);
-  const cfg = await cfgRes.json();
-  const { markets } = await marketsRes.json();
+  // Fetch config and markets independently — one shouldn't take down the other.
+  let cfg = null;
+  try {
+    const res = await fetch(`${API}/api/config`);
+    if (res.ok) cfg = await res.json();
+    else console.error('[loadConfig] /api/config failed:', res.status, await res.text());
+  } catch (e) {
+    console.error('[loadConfig] /api/config error:', e);
+  }
+
+  let markets = [];
+  try {
+    const res = await fetch(`${API}/api/markets`);
+    if (res.ok) {
+      const data = await res.json();
+      markets = Array.isArray(data?.markets) ? data.markets : [];
+    } else {
+      console.error('[loadConfig] /api/markets failed:', res.status, await res.text());
+    }
+  } catch (e) {
+    console.error('[loadConfig] /api/markets error:', e);
+  }
+
+  // Populate the dropdowns even if /api/config failed — so the user can still see
+  // and choose a hub. Saving Config will recreate the config file from defaults.
+  fillMarket('#janice-market', markets, cfg?.janice_market);
+  fillMarket('#moon-market', markets, cfg?.moon_market);
+
+  if (!cfg) {
+    console.warn('[loadConfig] no config — populating dropdowns only');
+    return;
+  }
 
   $('[name=corp_id]').value = cfg.corp_id || '';
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
@@ -78,9 +104,6 @@ async function loadConfig() {
     cfg.non_moon_ore_refining_efficiency ?? cfg.refining_efficiency ?? 0.78;
   $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
   $('[name=non_moon_payout_fraction]').value = cfg.non_moon_payout_fraction ?? 0.90;
-
-  fillMarket('#janice-market', markets, cfg.janice_market);
-  fillMarket('#moon-market', markets, cfg.moon_market);
 
   renderStructures(Array.isArray(cfg.structures) ? cfg.structures : []);
 
