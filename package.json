@@ -1,6 +1,6 @@
 {
   "name": "eve-corp-buyback",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "EVE Online corporation buyback contract validator",
   "author": "Lumina Corp",
   "main": "electron/main.js",
