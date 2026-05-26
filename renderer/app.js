@@ -72,7 +72,10 @@ async function loadConfig() {
 
   $('[name=corp_id]').value = cfg.corp_id || '';
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
-  $('[name=refining_efficiency]').value = cfg.refining_efficiency ?? 0.78;
+  $('[name=moon_ore_refining_efficiency]').value =
+    cfg.moon_ore_refining_efficiency ?? cfg.refining_efficiency ?? 0.78;
+  $('[name=non_moon_ore_refining_efficiency]').value =
+    cfg.non_moon_ore_refining_efficiency ?? cfg.refining_efficiency ?? 0.78;
   $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
   $('[name=non_moon_payout_fraction]').value = cfg.non_moon_payout_fraction ?? 0.90;
 
@@ -153,7 +156,8 @@ $('#config-form').addEventListener('submit', async (e) => {
     janice_market: $('#janice-market').value,
     janice_api_key: fd.get('janice_api_key'),
     moon_market: $('#moon-market').value,
-    refining_efficiency: parseFloat(fd.get('refining_efficiency')) || 0.78,
+    moon_ore_refining_efficiency: parseFloat(fd.get('moon_ore_refining_efficiency')) || 0.78,
+    non_moon_ore_refining_efficiency: parseFloat(fd.get('non_moon_ore_refining_efficiency')) || 0.78,
     ice_refining_efficiency: parseFloat(fd.get('ice_refining_efficiency')) || 0.78,
     non_moon_payout_fraction: parseFloat(fd.get('non_moon_payout_fraction')) || 0.90,
   };
@@ -217,15 +221,21 @@ function buildMoonRow(r) {
 
   let refinedBlock = '';
   if (refined) {
-    const orePct = ((refined.refining_efficiency ?? 0) * 100).toFixed(0);
-    const icePct = ((refined.ice_refining_efficiency ?? refined.refining_efficiency ?? 0) * 100).toFixed(0);
+    const moonOrePct = ((refined.moon_ore_refining_efficiency
+      ?? refined.refining_efficiency ?? 0) * 100).toFixed(0);
+    const nonMoonOrePct = ((refined.non_moon_ore_refining_efficiency
+      ?? refined.refining_efficiency ?? 0) * 100).toFixed(0);
+    const icePct = ((refined.ice_refining_efficiency
+      ?? refined.non_moon_ore_refining_efficiency
+      ?? refined.refining_efficiency ?? 0) * 100).toFixed(0);
     const moonPct = ((refined.moon_payout_fraction ?? 0.80) * 100).toFixed(0);
     const nonMoonPct = ((refined.non_moon_payout_fraction ?? 0.90) * 100).toFixed(0);
     const market = escapeHtml(refined.market_name || '');
     const effParts = [];
-    if (refined.has_moon_ore || refined.has_non_moon_ore) effParts.push(`${orePct}% ore`);
+    if (refined.has_moon_ore) effParts.push(`${moonOrePct}% moon ore`);
+    if (refined.has_non_moon_ore) effParts.push(`${nonMoonOrePct}% non-moon ore`);
     if (refined.has_ice) effParts.push(`${icePct}% ice`);
-    const effLabel = effParts.join(' / ') || `${orePct}% ore`;
+    const effLabel = effParts.join(' / ') || `${nonMoonOrePct}% ore`;
 
     const buckets = [];
     if ((refined.moon_value || 0) > 0) {
@@ -793,3 +803,33 @@ document.addEventListener('click', async (e) => {
 
 loadConfig();
 refreshAuthStatus();
+initMoonCalculator();
+
+function initMoonCalculator() {
+  const mount = $('#calc-mount');
+  const sidebar = $('#moon-calc-sidebar');
+  const toggleBtn = $('#btn-toggle-calc');
+  const popoutBtn = $('#btn-calc-popout');
+  if (!mount || !sidebar || !toggleBtn) return;
+
+  window.mountCalculator(mount);
+
+  toggleBtn.addEventListener('click', () => {
+    const hidden = sidebar.hasAttribute('hidden');
+    if (hidden) {
+      sidebar.removeAttribute('hidden');
+      toggleBtn.textContent = 'Hide calculator';
+    } else {
+      sidebar.setAttribute('hidden', '');
+      toggleBtn.textContent = 'Show calculator';
+    }
+  });
+
+  if (popoutBtn) {
+    popoutBtn.addEventListener('click', () => {
+      if (window.api && typeof window.api.openCalculator === 'function') {
+        window.api.openCalculator();
+      }
+    });
+  }
+}

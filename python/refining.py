@@ -146,13 +146,14 @@ def fetch_buy_prices(station_id, type_ids, user_agent):
 
 def compute_refined_payout(
     items, hub_name,
-    ore_efficiency, ice_efficiency,
+    moon_ore_efficiency, non_moon_ore_efficiency, ice_efficiency,
     non_moon_payout_fraction,
     user_agent,
     moon_payout_fraction=MOON_ORE_PAYOUT_FRACTION,
 ):
     """Returns refined value + per-bucket payout (moon ore at moon_payout_fraction,
-    everything else at non_moon_payout_fraction).
+    everything else at non_moon_payout_fraction). Moon ore and non-moon ore are
+    refined at independent yields; ice has its own yield as well.
     """
     hub = HUBS.get(hub_name)
     if not hub:
@@ -241,8 +242,8 @@ def compute_refined_payout(
     non_moon_value = 0.0
     all_mineral_ids = set(moon_ore_totals) | set(non_moon_ore_totals) | set(ice_totals)
     for mid in all_mineral_ids:
-        moon_qty = moon_ore_totals.get(mid, 0) * ore_efficiency
-        non_moon_qty = non_moon_ore_totals.get(mid, 0) * ore_efficiency
+        moon_qty = moon_ore_totals.get(mid, 0) * moon_ore_efficiency
+        non_moon_qty = non_moon_ore_totals.get(mid, 0) * non_moon_ore_efficiency
         ice_qty = ice_totals.get(mid, 0) * ice_efficiency
         actual_yield = moon_qty + non_moon_qty + ice_qty
         price = prices.get(mid, 0)

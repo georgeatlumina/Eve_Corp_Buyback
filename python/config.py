@@ -43,7 +43,8 @@ DEFAULTS = {
     'janice_market': 'Jita 4-4',
     'janice_api_key': '',
     'moon_market': 'Jita 4-4',
-    'refining_efficiency': 0.78,
+    'moon_ore_refining_efficiency': 0.78,
+    'non_moon_ore_refining_efficiency': 0.78,
     'ice_refining_efficiency': 0.78,
     'non_moon_payout_fraction': 0.90,
     'mail_presets': DEFAULT_MAIL_PRESETS,
@@ -81,6 +82,19 @@ def _migrate(cfg):
         if s not in saved_scopes:
             saved_scopes.append(s)
     cfg['scopes'] = saved_scopes
+
+    # Split legacy single refining_efficiency into moon-ore and non-moon-ore
+    # buckets. Both inherit the old value so existing users see no change in
+    # payout numbers until they explicitly edit one.
+    if 'refining_efficiency' in cfg:
+        legacy = cfg.pop('refining_efficiency')
+        try:
+            legacy_val = float(legacy)
+        except (TypeError, ValueError):
+            legacy_val = 0.78
+        cfg.setdefault('moon_ore_refining_efficiency', legacy_val)
+        cfg.setdefault('non_moon_ore_refining_efficiency', legacy_val)
+
     return cfg
 
 

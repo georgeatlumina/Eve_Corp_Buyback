@@ -73,7 +73,8 @@ class ConfigUpdate(BaseModel):
     janice_market: Optional[str] = None
     janice_api_key: Optional[str] = None
     moon_market: Optional[str] = None
-    refining_efficiency: Optional[float] = None
+    moon_ore_refining_efficiency: Optional[float] = None
+    non_moon_ore_refining_efficiency: Optional[float] = None
     ice_refining_efficiency: Optional[float] = None
     non_moon_payout_fraction: Optional[float] = None
     mail_presets: Optional[list[dict]] = None
@@ -320,8 +321,9 @@ def _validate_stream(cfg, req):
 
     # ------ Moon ------
     moon_market = cfg.get('moon_market') or 'Jita 4-4'
-    refining_eff = float(cfg.get('refining_efficiency') or 0.78)
-    ice_refining_eff = float(cfg.get('ice_refining_efficiency') or refining_eff)
+    moon_ore_refining_eff = float(cfg.get('moon_ore_refining_efficiency') or 0.78)
+    non_moon_ore_refining_eff = float(cfg.get('non_moon_ore_refining_efficiency') or 0.78)
+    ice_refining_eff = float(cfg.get('ice_refining_efficiency') or non_moon_ore_refining_eff)
     non_moon_payout_frac = float(cfg.get('non_moon_payout_fraction') or 0.90)
     total_moon = len(buckets['moon'])
 
@@ -382,12 +384,14 @@ def _validate_stream(cfg, req):
                 refined_block = compute_refined_payout(
                     [{'type_id': i['type_id'], 'quantity': i['quantity']} for i in items_named],
                     moon_market,
-                    refining_eff,
+                    moon_ore_refining_eff,
+                    non_moon_ore_refining_eff,
                     ice_refining_eff,
                     non_moon_payout_frac,
                     get_user_agent(),
                 )
-                refined_block['refining_efficiency'] = refining_eff
+                refined_block['moon_ore_refining_efficiency'] = moon_ore_refining_eff
+                refined_block['non_moon_ore_refining_efficiency'] = non_moon_ore_refining_eff
                 refined_block['ice_refining_efficiency'] = ice_refining_eff
                 refined_block['market_name'] = moon_market
 

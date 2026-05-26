@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
@@ -8,6 +8,7 @@ const PYTHON_PORT = 8765;
 const UPDATE_REPO = 'georgeatlumina/Eve_Corp_Buyback';
 let pythonProcess = null;
 let mainWindow = null;
+let calculatorWindow = null;
 let sidecarLogPath = null;
 
 function ensureLogPath() {
@@ -106,6 +107,36 @@ function createWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
+
+function openCalculatorWindow() {
+  if (calculatorWindow && !calculatorWindow.isDestroyed()) {
+    calculatorWindow.focus();
+    return;
+  }
+  calculatorWindow = new BrowserWindow({
+    width: 280,
+    height: 470,
+    title: 'Calculator',
+    resizable: true,
+    minimizable: true,
+    maximizable: false,
+    alwaysOnTop: true,
+    parent: mainWindow || undefined,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  calculatorWindow.setMenuBarVisibility(false);
+  calculatorWindow.loadFile(path.join(__dirname, '..', 'renderer', 'calculator.html'));
+  calculatorWindow.on('closed', () => { calculatorWindow = null; });
+}
+
+ipcMain.handle('open-calculator', () => {
+  openCalculatorWindow();
+});
 
 app.whenReady().then(async () => {
   startPythonSidecar();
