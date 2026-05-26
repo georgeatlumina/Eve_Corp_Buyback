@@ -16,6 +16,12 @@ const MOON_DIVISION = 6;
 
 const lastResults = { buyback: [], moon: [] };
 const filterState = { buyback: 'all', moon: 'all' };
+let mailPresets = [
+  { label: '', subject: '', body: '' },
+  { label: '', subject: '', body: '' },
+  { label: '', subject: '', body: '' },
+  { label: '', subject: '', body: '' },
+];
 
 function classifyResult(r) {
   const checks = r.checks || {};
@@ -74,6 +80,15 @@ async function loadConfig() {
   fillMarket('#moon-market', markets, cfg.moon_market);
 
   renderStructures(Array.isArray(cfg.structures) ? cfg.structures : []);
+
+  if (Array.isArray(cfg.mail_presets)) {
+    mailPresets = cfg.mail_presets.slice(0, 4);
+    while (mailPresets.length < 4) mailPresets.push({ label: '', subject: '', body: '' });
+  }
+  renderMailPresetEditors();
+  // Re-render any visible results so button labels reflect the latest presets
+  renderBuyback();
+  renderMoonTab();
 }
 
 function fillMarket(selector, markets, current) {
@@ -169,6 +184,7 @@ function buildMoonRow(r) {
   const allChecksPass = Object.values(checks).every((c) => c.pass);
   const div = document.createElement('div');
   div.className = `result ${allChecksPass && !hasFlag ? 'pass' : 'fail'}`;
+  div.dataset.contractId = r.contract_id;
 
   const flagBanners =
     (flags.includes('return_requested')
@@ -225,7 +241,7 @@ function buildMoonRow(r) {
 
     refinedBlock = `<div class="meta">Refined @ ${effLabel} efficiency @ ${market}: ${Math.round(refined.refined_value + (refined.leftover_value || 0)).toLocaleString()} ISK</div>
        ${buckets.join('\n')}
-       <div class="payout-final">→ Payout: ${Math.round(refined.recommended_payout).toLocaleString()} ISK</div>`;
+       <div class="payout-final">→ Payout: <span class="payout-copy" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(refined.recommended_payout)}">${Math.round(refined.recommended_payout).toLocaleString()}</span> ISK</div>`;
   }
 
   const items = r.payout?.items || [];
@@ -282,6 +298,7 @@ function buildMoonRow(r) {
        </div>`
     ).join('')}
     ${contentsBlock}
+    ${buildMailButtonsRow(r, 'moon')}
   `;
   return div;
 }
@@ -534,6 +551,7 @@ function buildBuybackRow(r) {
   const allPass = Object.values(checks).every((c) => c.pass);
   const div = document.createElement('div');
   div.className = `result ${allPass ? 'pass' : 'fail'}`;
+  div.dataset.contractId = r.contract_id;
   const titleEsc = escapeHtml(r.title || '');
   const titleLink = (r.title || '').includes('janice')
     ? `<a href="${titleEsc}" target="_blank" rel="noopener">${titleEsc}</a>`
@@ -566,6 +584,7 @@ function buildBuybackRow(r) {
        </div>`
     ).join('')}
     ${contentsBlock}
+    ${buildMailButtonsRow(r, 'buyback')}
   `;
   return div;
 }
@@ -575,6 +594,202 @@ function escapeHtml(s) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
 }
+
+// ---------- Mail preset editor (Mail tab) ----------
+
+function renderMailPresetEditors() {
+  const root = $('#mail-presets-list');
+  if (!root) return;
+  root.innerHTML = '';
+  mailPresets.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'mail-preset';
+    card.innerHTML = `
+      <h4>Preset ${i + 1}</h4>
+      <label>Button label <input type="text" data-mp="label" data-idx="${i}" value="${escapeAttr(p.label || '')}" placeholder="e.g. Accepted" /></label>
+      <label>Subject <input type="text" data-mp="subject" data-idx="${i}" value="${escapeAttr(p.subject || '')}" placeholder="Mail subject" /></label>
+      <label>Body <textarea data-mp="body" data-idx="${i}" rows="6" placeholder="Mail body; use {variable} placeholders">${escapeHtml(p.body || '')}</textarea></label>
+    `;
+    root.appendChild(card);
+  });
+}
+
+const presetsForm = $('#mail-presets-form');
+if (presetsForm) {
+  presetsForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const collected = [0, 1, 2, 3].map((i) => ({
+      label: $(`[data-mp="label"][data-idx="${i}"]`).value.trim(),
+      subject: $(`[data-mp="subject"][data-idx="${i}"]`).value,
+      body: $(`[data-mp="body"][data-idx="${i}"]`).value,
+    }));
+    const res = await fetch(`${API}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mail_presets: collected }),
+    });
+    if (res.ok) {
+      mailPresets = collected;
+      $('#mail-presets-status').textContent = 'Saved.';
+      // Re-render the contract rows to update button labels
+      renderBuyback();
+      renderMoonTab();
+    } else {
+      $('#mail-presets-status').textContent = `Error: ${await res.text()}`;
+    }
+    setTimeout(() => ($('#mail-presets-status').textContent = ''), 2500);
+  });
+}
+
+// ---------- Per-row buttons + template rendering ----------
+
+function buildMailButtonsRow(contract, kind) {
+  const buttons = mailPresets
+    .map((p, i) => {
+      const label = (p.label || '').trim();
+      const disabled = !label || !contract.issuer_id;
+      const text = label || `(preset ${i + 1})`;
+      return `<button type="button" class="mail-btn" data-preset-idx="${i}"${disabled ? ' disabled' : ''} title="${disabled && !label ? 'No preset configured — set a label in the Mail tab' : ''}">${escapeHtml(text)}</button>`;
+    })
+    .join('');
+  // Stash kind on the wrapper so the click handler can render the right variables.
+  return `<div class="contract-actions" data-kind="${kind}">${buttons}</div>`;
+}
+
+function renderMailTemplate(template, contract, kind) {
+  const today = new Date().toISOString().slice(0, 10);
+  const checks = contract.checks || {};
+  const failedReasons = Object.entries(checks)
+    .filter(([_, v]) => !v.pass)
+    .map(([k, v]) => `${k}: ${v.reason || 'FAIL'}`)
+    .join('; ');
+
+  const vars = {
+    contract_id: contract.contract_id ?? '',
+    title: contract.title || '',
+    price: ((contract.price ?? 0) | 0).toLocaleString() + ' ISK',
+    date: today,
+    issuer_name: contract.issuer_name || '',
+    location_id: contract.start_location_id ?? '',
+    errors: failedReasons || 'none',
+  };
+
+  if (kind === 'buyback' && contract.appraisal) {
+    vars.appraisal_percentage =
+      contract.appraisal.percentage != null
+        ? contract.appraisal.percentage.toFixed(1) + '%'
+        : 'N/A';
+    vars.effective_offer = contract.appraisal.effective_offer
+      ? Math.round(contract.appraisal.effective_offer).toLocaleString() + ' ISK'
+      : 'N/A';
+  } else {
+    vars.appraisal_percentage = 'N/A';
+    vars.effective_offer = 'N/A';
+  }
+
+  if (kind === 'moon' && contract.payout?.refined) {
+    vars.payout = Math.round(contract.payout.refined.recommended_payout || 0).toLocaleString() + ' ISK';
+    vars.refined_value = Math.round(contract.payout.refined.refined_value || 0).toLocaleString() + ' ISK';
+  } else {
+    vars.payout = 'N/A';
+    vars.refined_value = 'N/A';
+  }
+
+  return String(template || '').replace(/\{(\w+)\}/g, (_, name) =>
+    Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : `{${name}}`,
+  );
+}
+
+// ---------- Preview / send dialog ----------
+
+let mailModalContext = null; // { recipient_id, recipient_name }
+
+function openMailModal(contract, kind, presetIdx) {
+  const preset = mailPresets[presetIdx];
+  if (!preset || !contract.issuer_id) return;
+  const subject = renderMailTemplate(preset.subject, contract, kind);
+  const body = renderMailTemplate(preset.body, contract, kind);
+  mailModalContext = {
+    recipient_id: contract.issuer_id,
+    recipient_name: contract.issuer_name || `id ${contract.issuer_id}`,
+  };
+  $('#mail-modal-recipient').textContent = `${mailModalContext.recipient_name} (${contract.issuer_id})`;
+  $('#mail-modal-subject').value = subject;
+  $('#mail-modal-body').value = body;
+  $('#mail-modal-status').textContent = '';
+  $('#mail-modal').hidden = false;
+}
+
+function closeMailModal() {
+  $('#mail-modal').hidden = true;
+  mailModalContext = null;
+}
+
+$('#mail-modal-cancel').addEventListener('click', closeMailModal);
+$('#mail-modal .modal-backdrop').addEventListener('click', closeMailModal);
+
+$('#mail-modal-send').addEventListener('click', async () => {
+  if (!mailModalContext) return;
+  const subject = $('#mail-modal-subject').value;
+  const body = $('#mail-modal-body').value;
+  $('#mail-modal-status').textContent = 'sending…';
+  $('#mail-modal-send').disabled = true;
+  try {
+    const res = await fetch(`${API}/api/mail/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient_id: mailModalContext.recipient_id,
+        subject,
+        body,
+      }),
+    });
+    if (res.ok) {
+      $('#mail-modal-status').textContent = 'Sent.';
+      setTimeout(closeMailModal, 800);
+    } else {
+      const text = await res.text();
+      $('#mail-modal-status').textContent = `Failed: ${text}`;
+    }
+  } catch (e) {
+    $('#mail-modal-status').textContent = `Failed: ${e}`;
+  } finally {
+    $('#mail-modal-send').disabled = false;
+  }
+});
+
+// Click delegation for the per-row mail buttons (handles incremental + filtered renders)
+document.addEventListener('click', async (e) => {
+  const copyEl = e.target.closest('.payout-copy');
+  if (copyEl) {
+    const value = copyEl.dataset.copy || '';
+    try {
+      await navigator.clipboard.writeText(value);
+      const prev = copyEl.dataset.prevText ?? copyEl.textContent;
+      copyEl.dataset.prevText = prev;
+      copyEl.textContent = 'copied!';
+      copyEl.classList.add('payout-copied');
+      setTimeout(() => {
+        copyEl.textContent = prev;
+        copyEl.classList.remove('payout-copied');
+      }, 900);
+    } catch {}
+    return;
+  }
+  const btn = e.target.closest('.mail-btn');
+  if (!btn) return;
+  const row = btn.closest('.result');
+  const actions = btn.closest('.contract-actions');
+  if (!row || !actions) return;
+  const contractId = parseInt(row.dataset.contractId || '', 10);
+  if (!contractId) return;
+  const kind = actions.dataset.kind;
+  const list = kind === 'moon' ? lastResults.moon : lastResults.buyback;
+  const contract = list.find((c) => c.contract_id === contractId);
+  if (!contract) return;
+  const idx = parseInt(btn.dataset.presetIdx, 10);
+  openMailModal(contract, kind, idx);
+});
 
 loadConfig();
 refreshAuthStatus();

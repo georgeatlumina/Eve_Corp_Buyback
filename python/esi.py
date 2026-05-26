@@ -26,6 +26,38 @@ def resolve_names(ids, user_agent):
     return out
 
 
+def send_evemail(character_id, recipient_id, subject, body, access_token, user_agent):
+    """Send an EVE mail from the authenticated character to a single recipient.
+
+    Requires the `esi-mail.send_mail.v1` scope. ESI returns the new mail id on success.
+    """
+    url = f'{ESI_BASE}/characters/{character_id}/mail/'
+    payload = {
+        'approved_cost': 0,
+        'body': body,
+        'recipients': [{'recipient_id': int(recipient_id), 'recipient_type': 'character'}],
+        'subject': subject,
+    }
+    resp = requests.post(
+        url,
+        headers={
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': user_agent,
+        },
+        params={'datasource': 'tranquility', 'token': access_token},
+        json=payload,
+    )
+    if resp.status_code >= 400:
+        # Surface ESI's error body so the user sees the real reason
+        try:
+            err = resp.json()
+        except Exception:
+            err = {'error': resp.text}
+        raise RuntimeError(f'ESI mail send failed ({resp.status_code}): {err}')
+    return resp.json()
+
+
 def fetch_corp_wallets(corp_id, access_token, user_agent):
     """Returns list of all 7 corp wallet division balances."""
     resp = requests.get(

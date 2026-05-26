@@ -57,3 +57,27 @@ form select { display: block; margin-top: 0.25em; padding: 0.5em; background: #2
 .items-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .items-table th { color: #aaa; font-weight: 500; }
 .result .payout-final { font-size: 1.35em; font-weight: 700; color: #4a8; background: #1a3a2a; border-left: 4px solid #4a8; padding: 0.55em 0.8em; margin: 0.6em 0 0.3em; border-radius: 4px; }
+.payout-copy { cursor: pointer; padding: 0 0.15em; border-radius: 3px; transition: background 0.12s ease; }
+.payout-copy:hover { background: #2a5a44; }
+.payout-copy.payout-copied { background: #4a8; color: #0d1f17; }
+.result .contract-actions { display: flex; flex-wrap: wrap; gap: 0.4em; margin-top: 0.6em; padding-top: 0.5em; border-top: 1px solid #333; }
+.result .contract-actions button { padding: 0.4em 0.8em; font-size: 0.85em; font-weight: 500; background: #335; color: #cde; border: 1px solid #557; }
+.result .contract-actions button:hover:not(:disabled) { background: #446; color: #fff; }
+.result .contract-actions button:disabled { background: #2a2a2a; color: #666; cursor: not-allowed; border-color: #333; }
+.modal[hidden] { display: none; }
+.modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
+.modal-content { position: relative; background: #1e1e1e; border: 1px solid #444; border-radius: 6px; padding: 1.2em 1.5em; min-width: 520px; max-width: 80vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+.modal-content h3 { margin: 0 0 0.6em; }
+.modal-content label { display: block; margin: 0.7em 0; }
+.modal-content input, .modal-content textarea { display: block; margin-top: 0.25em; width: 100%; padding: 0.5em; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 0.95em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.modal-content textarea { resize: vertical; min-height: 200px; }
+.vars-help { margin: 0.5em 0 1em; padding: 0.5em; background: #222; border-radius: 4px; }
+.vars-help summary { cursor: pointer; color: #aaa; user-select: none; }
+.vars-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3em 1em; margin-top: 0.6em; font-size: 0.85em; color: #ccc; }
+.vars-grid code { background: #2a2a2a; padding: 0.05em 0.4em; border-radius: 3px; color: #cda; }
+.mail-preset { background: #2a2a2a; padding: 0.8em 1em; margin-bottom: 0.8em; border-radius: 4px; border: 1px solid #3a3a3a; }
+.mail-preset h4 { margin: 0 0 0.4em; font-size: 0.95em; color: #aaa; }
+.mail-preset label { display: block; margin: 0.5em 0; }
+.mail-preset input, .mail-preset textarea { width: 100%; max-width: 100%; padding: 0.4em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 0.9em; font-family: inherit; }
+.mail-preset textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; min-height: 100px; }

@@ -13,6 +13,7 @@
       <button class="tab-btn" data-tab="auth">Auth</button>
       <button class="tab-btn" data-tab="buyback">Buyback</button>
       <button class="tab-btn" data-tab="moon">Moon</button>
+      <button class="tab-btn" data-tab="mail">Mail</button>
     </nav>
   </header>
   <main>
@@ -83,27 +84,87 @@
       <div id="results"></div>
     </section>
 
+    <section id="tab-mail" class="tab">
+      <h2>EVE mail templates</h2>
+      <p class="muted">Four user-defined mail presets. Each preset becomes a button on every buyback and moon contract row. Click a button to preview and send the rendered mail to that contract's issuer.</p>
+      <details class="vars-help">
+        <summary>Available variables (click for list)</summary>
+        <div class="vars-grid">
+          <div><code>{contract_id}</code> — the EVE contract id</div>
+          <div><code>{issuer_name}</code> — character who issued the contract</div>
+          <div><code>{date}</code> — today's date (YYYY-MM-DD)</div>
+          <div><code>{title}</code> — contract title text</div>
+          <div><code>{price}</code> — contract listed price in ISK</div>
+          <div><code>{location_id}</code> — start location id</div>
+          <div><code>{errors}</code> — semicolon-joined failed check reasons (or "none")</div>
+          <div><code>{appraisal_percentage}</code> — buyback Janice %</div>
+          <div><code>{effective_offer}</code> — buyback Janice effective offer</div>
+          <div><code>{payout}</code> — moon recommended payout</div>
+          <div><code>{refined_value}</code> — moon refined value before payout fraction</div>
+        </div>
+      </details>
+      <form id="mail-presets-form">
+        <div id="mail-presets-list"></div>
+        <div class="actions">
+          <button type="submit">Save presets</button>
+          <span id="mail-presets-status" class="muted"></span>
+        </div>
+      </form>
+    </section>
+
     <section id="tab-moon" class="tab">
-      <h2>Moon contracts</h2>
-      <div id="moon-wallet-summary" class="wallet-summary"></div>
-      <div class="actions">
-        <button id="btn-fetch-moon">Fetch &amp; process</button>
-        <button id="btn-refresh-moon-wallets" class="secondary">Refresh wallets</button>
+      <div class="moon-layout">
+        <div class="moon-main">
+          <h2>Moon contracts</h2>
+          <div id="moon-wallet-summary" class="wallet-summary"></div>
+          <div class="actions">
+            <button id="btn-fetch-moon">Fetch &amp; process</button>
+            <button id="btn-refresh-moon-wallets" class="secondary">Refresh wallets</button>
+            <button id="btn-toggle-calc" class="secondary" type="button">Hide calculator</button>
+          </div>
+          <p id="moon-status" class="muted"></p>
+          <div class="progress-area" id="moon-progress" hidden>
+            <div class="progress-bar"><div class="progress-fill"></div></div>
+            <div class="progress-step muted">starting…</div>
+          </div>
+          <div class="filter-bar" data-target="moon">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="approve">Approve</button>
+            <button class="filter-btn" data-filter="reject">Reject</button>
+            <button class="filter-btn" data-filter="errors">Errors</button>
+          </div>
+          <div id="moon-results"></div>
+        </div>
+        <aside class="moon-sidebar" id="moon-calc-sidebar">
+          <div class="calc-header">
+            <strong>Calculator</strong>
+            <div class="calc-header-actions">
+              <button id="btn-calc-popout" class="calc-icon-btn" type="button" title="Open in window">⇱</button>
+            </div>
+          </div>
+          <div id="calc-mount"></div>
+          <p class="muted calc-help">Click the display, then use numpad to type. 70/80/90% copies to clipboard.</p>
+        </aside>
       </div>
-      <p id="moon-status" class="muted"></p>
-      <div class="progress-area" id="moon-progress" hidden>
-        <div class="progress-bar"><div class="progress-fill"></div></div>
-        <div class="progress-step muted">starting…</div>
-      </div>
-      <div class="filter-bar" data-target="moon">
-        <button class="filter-btn active" data-filter="all">All</button>
-        <button class="filter-btn" data-filter="approve">Approve</button>
-        <button class="filter-btn" data-filter="reject">Reject</button>
-        <button class="filter-btn" data-filter="errors">Errors</button>
-      </div>
-      <div id="moon-results"></div>
     </section>
   </main>
+
+  <div id="mail-modal" class="modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <h3>Send EVE mail</h3>
+      <div class="meta">To: <span id="mail-modal-recipient" class="muted"></span></div>
+      <label>Subject <input id="mail-modal-subject" type="text" /></label>
+      <label>Body <textarea id="mail-modal-body" rows="14"></textarea></label>
+      <p id="mail-modal-status" class="muted"></p>
+      <div class="actions">
+        <button id="mail-modal-send">Send</button>
+        <button id="mail-modal-cancel" class="secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="calculator.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

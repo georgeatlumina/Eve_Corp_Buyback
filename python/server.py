@@ -26,7 +26,13 @@ from auth import (
     save_cached_tokens,
 )
 from config import load_config, save_config
-from esi import fetch_contract_items, fetch_corp_contracts, fetch_corp_wallets, resolve_names
+from esi import (
+    fetch_contract_items,
+    fetch_corp_contracts,
+    fetch_corp_wallets,
+    resolve_names,
+    send_evemail,
+)
 from refining import compute_refined_payout, is_donation, is_mineable
 from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
 
@@ -70,6 +76,7 @@ class ConfigUpdate(BaseModel):
     refining_efficiency: Optional[float] = None
     ice_refining_efficiency: Optional[float] = None
     non_moon_payout_fraction: Optional[float] = None
+    mail_presets: Optional[list[dict]] = None
 
 
 @app.post('/api/config')
@@ -151,6 +158,55 @@ def sso_callback(
             _auth_state['error'] = str(e)
             return _callback_page(f'Token exchange failed: {e}')
     return _callback_page('Logged in! Return to the app.')
+
+
+class SendMailRequest(BaseModel):
+    recipient_id: int
+    subject: str
+    body: str
+
+
+@app.post('/api/mail/send')
+def send_mail(req: SendMailRequest):
+    """Send an EVE mail from the authenticated character to recipient_id."""
+    if not req.recipient_id:
+        raise HTTPException(400, 'recipient_id is required')
+    if not req.subject.strip() or not req.body.strip():
+        raise HTTPException(400, 'subject and body cannot be empty')
+
+    cached = load_cached_tokens()
+    if not cached:
+        raise HTTPException(401, 'Not authenticated; log in first')
+
+    client_id, secret_key = get_app_credentials()
+    try:
+        access_token = get_valid_access_token(client_id, secret_key, get_user_agent())
+    except Exception as e:
+        raise HTTPException(401, str(e))
+
+    payload = decode_jwt_payload(access_token)
+    sub = payload.get('sub', '')
+    try:
+        character_id = int(sub.rsplit(':', 1)[-1])
+    except (ValueError, AttributeError):
+        raise HTTPException(401, f'Could not extract character_id from JWT sub={sub!r}')
+
+    scopes = payload.get('scp')
+    scope_list = scopes if isinstance(scopes, list) else [scopes] if scopes else []
+    if 'esi-mail.send_mail.v1' not in scope_list:
+        raise HTTPException(
+            403,
+            'Token is missing the esi-mail.send_mail.v1 scope. Re-authenticate on the Auth tab.',
+        )
+
+    try:
+        result = send_evemail(
+            character_id, req.recipient_id, req.subject, req.body,
+            access_token, get_user_agent(),
+        )
+    except Exception as e:
+        raise HTTPException(502, str(e))
+    return {'ok': True, 'mail_id': result}
 
 
 @app.get('/api/wallets')

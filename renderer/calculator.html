@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calculator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="calc-popout-body">
+  <div id="calc-mount" class="calc-popout"></div>
+  <script src="calculator.js"></script>
+  <script>
+    mountCalculator(document.getElementById('calc-mount'), { captureGlobalKeys: true });
+  </script>
+</body>
+</html>
