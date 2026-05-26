@@ -76,6 +76,7 @@ class ConfigUpdate(BaseModel):
     moon_ore_refining_efficiency: Optional[float] = None
     non_moon_ore_refining_efficiency: Optional[float] = None
     ice_refining_efficiency: Optional[float] = None
+    moon_payout_fraction: Optional[float] = None
     non_moon_payout_fraction: Optional[float] = None
     mail_presets: Optional[list[dict]] = None
 
@@ -325,6 +326,7 @@ def _validate_stream(cfg, req):
     non_moon_ore_refining_eff = float(cfg.get('non_moon_ore_refining_efficiency') or 0.78)
     ice_refining_eff = float(cfg.get('ice_refining_efficiency') or non_moon_ore_refining_eff)
     non_moon_payout_frac = float(cfg.get('non_moon_payout_fraction') or 0.90)
+    moon_payout_frac = float(cfg.get('moon_payout_fraction') or 0.80)
     total_moon = len(buckets['moon'])
 
     for idx, c in enumerate(buckets['moon'], 1):
@@ -389,6 +391,7 @@ def _validate_stream(cfg, req):
                     ice_refining_eff,
                     non_moon_payout_frac,
                     get_user_agent(),
+                    moon_payout_fraction=moon_payout_frac,
                 )
                 refined_block['moon_ore_refining_efficiency'] = moon_ore_refining_eff
                 refined_block['non_moon_ore_refining_efficiency'] = non_moon_ore_refining_eff

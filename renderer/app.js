@@ -103,6 +103,7 @@ async function loadConfig() {
   $('[name=non_moon_ore_refining_efficiency]').value =
     cfg.non_moon_ore_refining_efficiency ?? cfg.refining_efficiency ?? 0.78;
   $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
+  $('[name=moon_payout_fraction]').value = cfg.moon_payout_fraction ?? 0.80;
   $('[name=non_moon_payout_fraction]').value = cfg.non_moon_payout_fraction ?? 0.90;
 
   renderStructures(Array.isArray(cfg.structures) ? cfg.structures : []);
@@ -182,6 +183,7 @@ $('#config-form').addEventListener('submit', async (e) => {
     moon_ore_refining_efficiency: parseFloat(fd.get('moon_ore_refining_efficiency')) || 0.78,
     non_moon_ore_refining_efficiency: parseFloat(fd.get('non_moon_ore_refining_efficiency')) || 0.78,
     ice_refining_efficiency: parseFloat(fd.get('ice_refining_efficiency')) || 0.78,
+    moon_payout_fraction: parseFloat(fd.get('moon_payout_fraction')) || 0.80,
     non_moon_payout_fraction: parseFloat(fd.get('non_moon_payout_fraction')) || 0.90,
   };
   const res = await fetch(`${API}/api/config`, {
