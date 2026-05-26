@@ -300,7 +300,9 @@ async function refreshAuthStatus() {
     if (String(e).includes('Failed to fetch') || String(e).includes('NetworkError')) {
       $('#auth-status').textContent =
         'Python sidecar is not reachable on localhost:8765. ' +
-        'Check that sidecar.exe is running (Task Manager) and that nothing else is bound to port 8765.';
+        'See sidecar.log in the app data folder for diagnostics ' +
+        '(Windows: %APPDATA%\\EVE Corp Buyback\\sidecar.log, ' +
+        'macOS: ~/Library/Application Support/EVE Corp Buyback/sidecar.log).';
     } else {
       $('#auth-status').textContent = `error: ${e}`;
     }
