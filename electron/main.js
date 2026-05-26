@@ -99,6 +99,7 @@ function createWindow() {
     width: 1100,
     height: 800,
     title: 'EVE Corp Buyback',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -117,6 +118,7 @@ function openCalculatorWindow() {
     width: 280,
     height: 470,
     title: 'Calculator',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     resizable: true,
     minimizable: true,
     maximizable: false,

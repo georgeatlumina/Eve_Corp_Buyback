@@ -19,12 +19,14 @@
     "appId": "com.lumina.evecorpbuyback",
     "productName": "EVE Corp Buyback",
     "afterSign": "electron/afterSign.js",
+    "icon": "assets/icon.png",
     "directories": {
       "output": "dist"
     },
     "files": [
       "electron/**/*",
       "renderer/**/*",
+      "assets/**/*",
       "package.json"
     ],
     "extraResources": [
