@@ -297,7 +297,13 @@ async function refreshAuthStatus() {
         : 'not authenticated';
     }
   } catch (e) {
-    $('#auth-status').textContent = `error: ${e}`;
+    if (String(e).includes('Failed to fetch') || String(e).includes('NetworkError')) {
+      $('#auth-status').textContent =
+        'Python sidecar is not reachable on localhost:8765. ' +
+        'Check that sidecar.exe is running (Task Manager) and that nothing else is bound to port 8765.';
+    } else {
+      $('#auth-status').textContent = `error: ${e}`;
+    }
   }
 }
 

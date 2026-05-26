@@ -3,8 +3,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 
 block_cipher = None
+is_windows = sys.platform == 'win32'
 
 # uvicorn relies on dynamically-imported submodules that PyInstaller's static
 # analysis doesn't always pick up. List them explicitly.
@@ -24,12 +26,17 @@ hidden_imports = [
     'uvicorn.loops',
     'uvicorn.loops.auto',
     'uvicorn.loops.asyncio',
-    'uvicorn.loops.uvloop',
     'uvicorn.logging',
     'h11',
     'httptools',
     'websockets',
 ]
+
+# uvloop is a Unix-only event loop; pulling it in on Windows causes import
+# failures at runtime. uvicorn's `auto` loop selector falls back to asyncio
+# when uvloop is unavailable, which is what we want here.
+if not is_windows:
+    hidden_imports.append('uvicorn.loops.uvloop')
 
 a = Analysis(
     ['server.py'],

@@ -14,21 +14,25 @@ function startPythonSidecar() {
     EVE_BUYBACK_DATA_DIR: userDataDir,
   };
 
+  const spawnOpts = {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env,
+    windowsHide: true,
+  };
+
   if (app.isPackaged) {
     const sidecarName = process.platform === 'win32' ? 'sidecar.exe' : 'sidecar';
     const sidecarPath = path.join(process.resourcesPath, 'python-sidecar', sidecarName);
-    pythonProcess = spawn(sidecarPath, [], {
-      stdio: ['ignore', 'inherit', 'inherit'],
-      env,
-    });
+    pythonProcess = spawn(sidecarPath, [], spawnOpts);
   } else {
     const scriptPath = path.join(__dirname, '..', 'python', 'server.py');
     const pythonBin = process.env.PYTHON_BIN || 'python3';
-    pythonProcess = spawn(pythonBin, [scriptPath], {
-      stdio: ['ignore', 'inherit', 'inherit'],
-      env,
-    });
+    pythonProcess = spawn(pythonBin, [scriptPath], spawnOpts);
   }
+
+  pythonProcess.on('error', (err) => {
+    console.error(`[sidecar] spawn error:`, err);
+  });
 
   pythonProcess.on('exit', (code) => {
     console.log(`Python sidecar exited with code ${code}`);
