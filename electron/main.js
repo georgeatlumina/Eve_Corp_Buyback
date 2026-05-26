@@ -1,9 +1,11 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog, shell } = require('electron');
 const fs = require('fs');
+const https = require('https');
 const path = require('path');
 const { spawn } = require('child_process');
 
 const PYTHON_PORT = 8765;
+const UPDATE_REPO = 'georgeatlumina/Eve_Corp_Buyback';
 let pythonProcess = null;
 let mainWindow = null;
 let sidecarLogPath = null;
@@ -116,7 +118,145 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+  // Update check runs in the background after the window is visible so we
+  // don't block startup. Errors are swallowed (logged to sidecar.log only).
+  setTimeout(() => checkForUpdate().catch((e) => logSidecar(`update check threw: ${e}`)), 2000);
 });
+
+
+// ---------- Auto-update (download-and-open flow) ----------
+
+async function checkForUpdate() {
+  if (!app.isPackaged) {
+    logSidecar('update check skipped (not packaged)');
+    return;
+  }
+  let latest;
+  try {
+    latest = await httpsGetJson(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`);
+  } catch (e) {
+    logSidecar(`update check failed: ${e.message || e}`);
+    return;
+  }
+  const current = app.getVersion();
+  const latestTag = String(latest.tag_name || '').replace(/^v/, '');
+  if (!latestTag) return;
+  if (compareSemver(latestTag, current) <= 0) {
+    logSidecar(`up to date (current=${current}, latest=${latestTag})`);
+    return;
+  }
+  logSidecar(`update available: ${latestTag} (current ${current})`);
+
+  const asset = pickPlatformAsset(latest.assets || []);
+  if (!asset) {
+    logSidecar('no matching asset for this platform');
+    return;
+  }
+
+  const confirm = await dialog.showMessageBox(mainWindow || null, {
+    type: 'info',
+    title: 'Update available',
+    message: `EVE Corp Buyback ${latestTag} is available`,
+    detail: `You are running ${current}. Download the new ${asset.name} (~${Math.round((asset.size || 0) / 1024 / 1024)} MB)?`,
+    buttons: ['Download', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (confirm.response !== 0) return;
+
+  const destPath = path.join(app.getPath('downloads'), asset.name);
+  try {
+    await downloadToFile(asset.browser_download_url, destPath);
+  } catch (e) {
+    dialog.showErrorBox('Download failed', String(e.message || e));
+    return;
+  }
+
+  const after = await dialog.showMessageBox(mainWindow || null, {
+    type: 'info',
+    title: 'Update downloaded',
+    message: `${asset.name} saved to your Downloads folder.`,
+    detail:
+      process.platform === 'darwin'
+        ? 'Open the .dmg and drag the new app into Applications, then re-launch.'
+        : 'Run the installer to complete the update. The app will close so the installer can replace it.',
+    buttons: ['Open & quit', 'Show in folder', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+  });
+  if (after.response === 0) {
+    await shell.openPath(destPath);
+    setTimeout(() => app.quit(), 500);
+  } else if (after.response === 1) {
+    shell.showItemInFolder(destPath);
+  }
+}
+
+function pickPlatformAsset(assets) {
+  if (process.platform === 'darwin') {
+    return assets.find((a) => /\.dmg$/i.test(a.name) && !/\.blockmap$/i.test(a.name));
+  }
+  if (process.platform === 'win32') {
+    return assets.find((a) => /\.exe$/i.test(a.name) && !/\.blockmap$/i.test(a.name));
+  }
+  return null;
+}
+
+function httpsGetJson(url, redirects = 3) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, { headers: { 'User-Agent': 'EveCorpBuyback', Accept: 'application/vnd.github+json' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
+          httpsGetJson(res.headers.location, redirects - 1).then(resolve, reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        let data = '';
+        res.on('data', (d) => { data += d; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        });
+      })
+      .on('error', reject);
+  });
+}
+
+function downloadToFile(url, destPath, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, { headers: { 'User-Agent': 'EveCorpBuyback', Accept: 'application/octet-stream' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
+          downloadToFile(res.headers.location, destPath, redirects - 1).then(resolve, reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const out = fs.createWriteStream(destPath);
+        res.pipe(out);
+        out.on('finish', () => out.close(() => resolve(destPath)));
+        out.on('error', (err) => {
+          fs.unlink(destPath, () => reject(err));
+        });
+      })
+      .on('error', reject);
+  });
+}
+
+function compareSemver(a, b) {
+  const pa = String(a).split('.').map((p) => parseInt(p, 10) || 0);
+  const pb = String(b).split('.').map((p) => parseInt(p, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
 
 app.on('window-all-closed', () => {
   if (pythonProcess) pythonProcess.kill();

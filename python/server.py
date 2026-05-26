@@ -69,7 +69,7 @@ class ConfigUpdate(BaseModel):
     moon_market: Optional[str] = None
     refining_efficiency: Optional[float] = None
     ice_refining_efficiency: Optional[float] = None
-    moon_payout_fraction: Optional[float] = None
+    non_moon_payout_fraction: Optional[float] = None
 
 
 @app.post('/api/config')
@@ -266,7 +266,7 @@ def _validate_stream(cfg, req):
     moon_market = cfg.get('moon_market') or 'Jita 4-4'
     refining_eff = float(cfg.get('refining_efficiency') or 0.78)
     ice_refining_eff = float(cfg.get('ice_refining_efficiency') or refining_eff)
-    payout_frac = float(cfg.get('moon_payout_fraction') or 0.80)
+    non_moon_payout_frac = float(cfg.get('non_moon_payout_fraction') or 0.90)
     total_moon = len(buckets['moon'])
 
     for idx, c in enumerate(buckets['moon'], 1):
@@ -328,12 +328,11 @@ def _validate_stream(cfg, req):
                     moon_market,
                     refining_eff,
                     ice_refining_eff,
-                    payout_frac,
+                    non_moon_payout_frac,
                     get_user_agent(),
                 )
                 refined_block['refining_efficiency'] = refining_eff
                 refined_block['ice_refining_efficiency'] = ice_refining_eff
-                refined_block['payout_fraction'] = payout_frac
                 refined_block['market_name'] = moon_market
 
                 mineral_ids = (

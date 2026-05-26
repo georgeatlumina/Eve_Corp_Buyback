@@ -68,7 +68,7 @@ async function loadConfig() {
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
   $('[name=refining_efficiency]').value = cfg.refining_efficiency ?? 0.78;
   $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
-  $('[name=moon_payout_fraction]').value = cfg.moon_payout_fraction ?? 0.80;
+  $('[name=non_moon_payout_fraction]').value = cfg.non_moon_payout_fraction ?? 0.90;
 
   fillMarket('#janice-market', markets, cfg.janice_market);
   fillMarket('#moon-market', markets, cfg.moon_market);
@@ -140,7 +140,7 @@ $('#config-form').addEventListener('submit', async (e) => {
     moon_market: $('#moon-market').value,
     refining_efficiency: parseFloat(fd.get('refining_efficiency')) || 0.78,
     ice_refining_efficiency: parseFloat(fd.get('ice_refining_efficiency')) || 0.78,
-    moon_payout_fraction: parseFloat(fd.get('moon_payout_fraction')) || 0.80,
+    non_moon_payout_fraction: parseFloat(fd.get('non_moon_payout_fraction')) || 0.90,
   };
   const res = await fetch(`${API}/api/config`, {
     method: 'POST',
@@ -203,20 +203,29 @@ function buildMoonRow(r) {
   if (refined) {
     const orePct = ((refined.refining_efficiency ?? 0) * 100).toFixed(0);
     const icePct = ((refined.ice_refining_efficiency ?? refined.refining_efficiency ?? 0) * 100).toFixed(0);
-    const payPct = ((refined.payout_fraction ?? 0) * 100).toFixed(0);
+    const moonPct = ((refined.moon_payout_fraction ?? 0.80) * 100).toFixed(0);
+    const nonMoonPct = ((refined.non_moon_payout_fraction ?? 0.90) * 100).toFixed(0);
     const market = escapeHtml(refined.market_name || '');
-    const effLabel = refined.has_ore && refined.has_ice
-      ? `${orePct}% ore / ${icePct}% ice`
-      : refined.has_ice
-      ? `${icePct}% ice`
-      : `${orePct}% ore`;
-    const leftoverValue = refined.leftover_value || 0;
-    const leftoverLine = leftoverValue > 0
-      ? `<div class="meta">Priced at hub buy (non-refinable or remainder): ${Math.round(leftoverValue).toLocaleString()} ISK at ${market}</div>`
-      : '';
-    refinedBlock = `<div class="meta">Refined @ ${effLabel} efficiency @ ${market}: ${Math.round(refined.refined_value).toLocaleString()} ISK</div>
-       ${leftoverLine}
-       <div class="payout-final">→ Payout (${payPct}%): ${Math.round(refined.recommended_payout).toLocaleString()} ISK</div>`;
+    const effParts = [];
+    if (refined.has_moon_ore || refined.has_non_moon_ore) effParts.push(`${orePct}% ore`);
+    if (refined.has_ice) effParts.push(`${icePct}% ice`);
+    const effLabel = effParts.join(' / ') || `${orePct}% ore`;
+
+    const buckets = [];
+    if ((refined.moon_value || 0) > 0) {
+      buckets.push(
+        `<div class="meta">&nbsp;&nbsp;Moon ore: ${Math.round(refined.moon_value).toLocaleString()} ISK × ${moonPct}% = ${Math.round(refined.moon_payout).toLocaleString()} ISK</div>`
+      );
+    }
+    if ((refined.non_moon_value || 0) > 0) {
+      buckets.push(
+        `<div class="meta">&nbsp;&nbsp;Non-moon ore + ice: ${Math.round(refined.non_moon_value).toLocaleString()} ISK × ${nonMoonPct}% = ${Math.round(refined.non_moon_payout).toLocaleString()} ISK</div>`
+      );
+    }
+
+    refinedBlock = `<div class="meta">Refined @ ${effLabel} efficiency @ ${market}: ${Math.round(refined.refined_value + (refined.leftover_value || 0)).toLocaleString()} ISK</div>
+       ${buckets.join('\n')}
+       <div class="payout-final">→ Payout: ${Math.round(refined.recommended_payout).toLocaleString()} ISK</div>`;
   }
 
   const items = r.payout?.items || [];

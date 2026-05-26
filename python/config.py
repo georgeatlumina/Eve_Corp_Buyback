@@ -29,7 +29,7 @@ DEFAULTS = {
     'moon_market': 'Jita 4-4',
     'refining_efficiency': 0.78,
     'ice_refining_efficiency': 0.78,
-    'moon_payout_fraction': 0.80,
+    'non_moon_payout_fraction': 0.90,
 }
 
 _USER_KEYS = set(DEFAULTS)

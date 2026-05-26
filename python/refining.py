@@ -16,6 +16,8 @@ from esi import fetch_group_info, fetch_type_info
 ALLOWED_CATEGORY_IDS = frozenset({25, 2143})
 ICE_GROUP_ID = 465  # EVE's "Ice" group (raw + compressed ice live here)
 DONATION_CATEGORY_ID = 2143  # Colony Reagents: Magmatic Gas, Superionic Ice — accepted as donation, no payout
+MOON_ORE_GROUP_IDS = frozenset({1884, 1920, 1921, 1922, 1923})  # R4 / R8 / R16 / R32 / R64 moon asteroid groups (raw + compressed)
+MOON_ORE_PAYOUT_FRACTION = 0.80  # All moon ore is paid at 80% by policy
 
 
 def is_mineable(type_id, user_agent):
@@ -32,6 +34,14 @@ def is_ice(type_id, user_agent):
     """True iff the type is in EVE's Ice group (raw or compressed)."""
     try:
         return fetch_type_info(type_id, user_agent).get('group_id') == ICE_GROUP_ID
+    except Exception:
+        return False
+
+
+def is_moon_ore(type_id, user_agent):
+    """True iff the type is in one of EVE's moon-asteroid tier groups (R4–R64)."""
+    try:
+        return fetch_type_info(type_id, user_agent).get('group_id') in MOON_ORE_GROUP_IDS
     except Exception:
         return False
 
@@ -135,105 +145,150 @@ def fetch_buy_prices(station_id, type_ids, user_agent):
 
 
 def compute_refined_payout(
-    items, hub_name, ore_efficiency, ice_efficiency, payout_fraction, user_agent,
+    items, hub_name,
+    ore_efficiency, ice_efficiency,
+    non_moon_payout_fraction,
+    user_agent,
+    moon_payout_fraction=MOON_ORE_PAYOUT_FRACTION,
 ):
-    """items: list of {type_id, quantity}. Ore and ice get their own efficiency multipliers.
-
-    Returns refined value + recommended payout breakdown.
+    """Returns refined value + per-bucket payout (moon ore at moon_payout_fraction,
+    everything else at non_moon_payout_fraction).
     """
     hub = HUBS.get(hub_name)
     if not hub:
         raise ValueError(f'Unknown trade hub: {hub_name!r}')
 
-    ore_totals = {}  # mineral_type_id -> raw yield from ore inputs (pre-efficiency)
-    ice_totals = {}  # mineral_type_id -> raw yield from ice inputs (pre-efficiency)
-    leftover = {}    # type_id -> quantity priced as-is (remainder or non-refinable)
-    donations = {}   # type_id -> quantity (Magmatic Gas / Superionic Ice — 0 ISK donation)
-    has_ore = False
+    moon_ore_totals = {}      # mineral_type_id -> raw yield from moon ore (pre-efficiency)
+    non_moon_ore_totals = {}  # mineral_type_id -> raw yield from non-moon ore
+    ice_totals = {}           # mineral_type_id -> raw yield from ice
+    moon_leftover = {}        # moon-ore type_id -> leftover qty
+    other_leftover = {}       # non-moon-ore / unknown type_id -> leftover qty
+    donations = {}
+    has_moon_ore = False
+    has_non_moon_ore = False
     has_ice = False
+
     for it in items:
         type_id = it.get('type_id')
         qty = it.get('quantity', 0)
         if not type_id or not qty:
             continue
         if is_donation(type_id, user_agent):
-            # Workforce reagents — accept as donation, do not include in payout.
             donations[type_id] = donations.get(type_id, 0) + qty
             continue
         if not is_refinable(type_id):
-            leftover[type_id] = leftover.get(type_id, 0) + qty
+            other_leftover[type_id] = other_leftover.get(type_id, 0) + qty
             continue
+
+        is_moon = is_moon_ore(type_id, user_agent)
+        is_ice_type = is_ice(type_id, user_agent)
         ys, remainder = yields_for(type_id, qty, user_agent)
-        target = ice_totals if is_ice(type_id, user_agent) else ore_totals
-        if target is ice_totals:
+
+        if is_ice_type:
+            target = ice_totals
             has_ice = True
+            leftover_bucket = other_leftover
+        elif is_moon:
+            target = moon_ore_totals
+            has_moon_ore = True
+            leftover_bucket = moon_leftover
         else:
-            has_ore = True
+            target = non_moon_ore_totals
+            has_non_moon_ore = True
+            leftover_bucket = other_leftover
+
         for mid, raw_yield in ys:
             target[mid] = target.get(mid, 0) + raw_yield
         if remainder > 0:
-            leftover[type_id] = leftover.get(type_id, 0) + remainder
+            leftover_bucket[type_id] = leftover_bucket.get(type_id, 0) + remainder
 
     donation_breakdown = [
         {'type_id': tid, 'quantity': qty}
         for tid, qty in sorted(donations.items(), key=lambda kv: -kv[1])
     ]
 
-    if not ore_totals and not ice_totals and not leftover:
+    nothing_refined = not (moon_ore_totals or non_moon_ore_totals or ice_totals)
+    nothing_priced = nothing_refined and not moon_leftover and not other_leftover
+    if nothing_priced:
         return {
             'refined_value': 0,
+            'moon_value': 0,
+            'non_moon_value': 0,
             'leftover_value': 0,
+            'moon_payout': 0,
+            'non_moon_payout': 0,
             'recommended_payout': 0,
             'breakdown': [],
             'leftover_breakdown': [],
             'donation_breakdown': donation_breakdown,
-            'has_ore': has_ore,
+            'has_moon_ore': has_moon_ore,
+            'has_non_moon_ore': has_non_moon_ore,
             'has_ice': has_ice,
             'has_donations': bool(donations),
+            'moon_payout_fraction': moon_payout_fraction,
+            'non_moon_payout_fraction': non_moon_payout_fraction,
         }
 
-    price_ids = set(ore_totals.keys()) | set(ice_totals.keys()) | set(leftover.keys())
+    price_ids = (
+        set(moon_ore_totals) | set(non_moon_ore_totals) | set(ice_totals)
+        | set(moon_leftover) | set(other_leftover)
+    )
     prices = fetch_buy_prices(hub['station_id'], price_ids, user_agent)
 
+    # Per-bucket value, plus a merged breakdown for the items dropdown.
     breakdown = []
-    refined_value = 0.0
-    all_mineral_ids = set(ore_totals.keys()) | set(ice_totals.keys())
+    moon_value = 0.0
+    non_moon_value = 0.0
+    all_mineral_ids = set(moon_ore_totals) | set(non_moon_ore_totals) | set(ice_totals)
     for mid in all_mineral_ids:
-        ore_qty = ore_totals.get(mid, 0) * ore_efficiency
+        moon_qty = moon_ore_totals.get(mid, 0) * ore_efficiency
+        non_moon_qty = non_moon_ore_totals.get(mid, 0) * ore_efficiency
         ice_qty = ice_totals.get(mid, 0) * ice_efficiency
-        actual_yield = ore_qty + ice_qty
+        actual_yield = moon_qty + non_moon_qty + ice_qty
         price = prices.get(mid, 0)
-        value = actual_yield * price
+        moon_value += moon_qty * price
+        non_moon_value += (non_moon_qty + ice_qty) * price
         breakdown.append({
             'type_id': mid,
             'quantity': round(actual_yield),
             'unit_price': price,
-            'value': value,
+            'value': actual_yield * price,
         })
-        refined_value += value
 
     leftover_breakdown = []
-    leftover_value = 0.0
-    for ore_id, qty in leftover.items():
-        price = prices.get(ore_id, 0)
+    moon_leftover_value = 0.0
+    non_moon_leftover_value = 0.0
+    for tid, qty in moon_leftover.items():
+        price = prices.get(tid, 0)
         value = qty * price
-        leftover_breakdown.append({
-            'type_id': ore_id,
-            'quantity': qty,
-            'unit_price': price,
-            'value': value,
-        })
-        leftover_value += value
+        moon_leftover_value += value
+        leftover_breakdown.append({'type_id': tid, 'quantity': qty, 'unit_price': price, 'value': value})
+    for tid, qty in other_leftover.items():
+        price = prices.get(tid, 0)
+        value = qty * price
+        non_moon_leftover_value += value
+        leftover_breakdown.append({'type_id': tid, 'quantity': qty, 'unit_price': price, 'value': value})
 
-    total_value = refined_value + leftover_value
+    moon_total = moon_value + moon_leftover_value
+    non_moon_total = non_moon_value + non_moon_leftover_value
+    moon_payout = moon_total * moon_payout_fraction
+    non_moon_payout = non_moon_total * non_moon_payout_fraction
+
     return {
-        'refined_value': refined_value,
-        'leftover_value': leftover_value,
-        'recommended_payout': total_value * payout_fraction,
+        'refined_value': moon_value + non_moon_value,
+        'moon_value': moon_total,
+        'non_moon_value': non_moon_total,
+        'leftover_value': moon_leftover_value + non_moon_leftover_value,
+        'moon_payout': moon_payout,
+        'non_moon_payout': non_moon_payout,
+        'recommended_payout': moon_payout + non_moon_payout,
         'breakdown': sorted(breakdown, key=lambda b: -b['value']),
         'leftover_breakdown': sorted(leftover_breakdown, key=lambda b: -b['value']),
         'donation_breakdown': donation_breakdown,
-        'has_ore': has_ore,
+        'has_moon_ore': has_moon_ore,
+        'has_non_moon_ore': has_non_moon_ore,
         'has_ice': has_ice,
         'has_donations': bool(donations),
+        'moon_payout_fraction': moon_payout_fraction,
+        'non_moon_payout_fraction': non_moon_payout_fraction,
     }
