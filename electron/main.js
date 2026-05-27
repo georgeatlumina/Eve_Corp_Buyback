@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
@@ -9,7 +9,11 @@ const UPDATE_REPO = 'georgeatlumina/Eve_Corp_Buyback';
 let pythonProcess = null;
 let mainWindow = null;
 let calculatorWindow = null;
+let aaWindow = null;
 let sidecarLogPath = null;
+
+const AA_BASE_URL = 'https://auth.navaldefence.org/';
+const AA_SESSION_PARTITION = 'persist:aa-auth';
 
 function ensureLogPath() {
   if (sidecarLogPath) return sidecarLogPath;
@@ -138,6 +142,54 @@ function openCalculatorWindow() {
 
 ipcMain.handle('open-calculator', () => {
   openCalculatorWindow();
+});
+
+function openAaWindow() {
+  if (aaWindow && !aaWindow.isDestroyed()) {
+    aaWindow.focus();
+    return;
+  }
+  const aaSession = session.fromPartition(AA_SESSION_PARTITION);
+  aaWindow = new BrowserWindow({
+    width: 1200,
+    height: 850,
+    title: 'Alliance Auth',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+    parent: mainWindow || undefined,
+    autoHideMenuBar: true,
+    webPreferences: {
+      session: aaSession,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  aaWindow.setMenuBarVisibility(false);
+  aaWindow.loadURL(AA_BASE_URL);
+  aaWindow.webContents.openDevTools({ mode: 'right' });
+  aaWindow.on('closed', () => { aaWindow = null; });
+}
+
+ipcMain.handle('aa:open', () => {
+  openAaWindow();
+});
+
+ipcMain.handle('aa:logout', async () => {
+  const aaSession = session.fromPartition(AA_SESSION_PARTITION);
+  await aaSession.clearStorageData();
+  if (aaWindow && !aaWindow.isDestroyed()) aaWindow.close();
+});
+
+ipcMain.handle('aa:fetch-html', async (_event, urlPath) => {
+  const aaSession = session.fromPartition(AA_SESSION_PARTITION);
+  const url = new URL(urlPath || '/', AA_BASE_URL).toString();
+  try {
+    const res = await aaSession.fetch(url, { redirect: 'follow' });
+    const html = await res.text();
+    return { ok: res.ok, status: res.status, finalUrl: res.url || url, html };
+  } catch (err) {
+    return { ok: false, status: 0, finalUrl: url, html: '', error: String(err && err.message || err) };
+  }
 });
 
 app.whenReady().then(async () => {

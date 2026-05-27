@@ -117,6 +117,43 @@ def fetch_group_info(group_id, user_agent):
     return data
 
 
+def fetch_structure_orders_paged(structure_id, access_token, user_agent):
+    """Generator that fetches structure market orders one page at a time.
+
+    Yields ``(page, max_pages, batch)`` tuples after each successful page fetch.
+    ``max_pages`` is taken from the ``x-pages`` response header (ESI tells us the
+    total page count on the first response). Requires the
+    `esi-markets.structure_markets.v1` scope and docking access at the structure.
+    """
+    url = f'{ESI_BASE}/markets/structures/{structure_id}/'
+    page = 1
+    while True:
+        resp = requests.get(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'token': access_token, 'page': page},
+        )
+        if resp.status_code >= 500:
+            break
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        max_page = int(resp.headers.get('x-pages', page))
+        yield page, max_page, batch
+        if page >= max_page:
+            break
+        page += 1
+
+
+def fetch_structure_orders(structure_id, access_token, user_agent):
+    """Convenience wrapper: collect all paged orders into a single list."""
+    out = []
+    for _page, _max, batch in fetch_structure_orders_paged(structure_id, access_token, user_agent):
+        out.extend(batch)
+    return out
+
+
 def fetch_corp_contracts(corp_id, access_token, user_agent):
     """Fetch all pages of corporation contracts from ESI."""
     url = f'{ESI_BASE}/corporations/{corp_id}/contracts/'

@@ -30,6 +30,8 @@ from esi import (
     fetch_contract_items,
     fetch_corp_contracts,
     fetch_corp_wallets,
+    fetch_structure_orders,
+    fetch_structure_orders_paged,
     resolve_names,
     send_evemail,
 )
@@ -436,6 +438,138 @@ def _validate_stream(cfg, req):
         yield _emit('moon_result', current=idx, total=total_moon, result=result)
 
     yield _emit('done')
+
+
+_market_cache: dict[int, dict[str, Any]] = {}
+_MARKET_TTL_SECONDS = 300
+
+
+def _summarize_orders(structure_id: int, orders: list, fetched_at: float) -> dict:
+    by_type: dict[int, dict] = {}
+    for o in orders:
+        if o.get('is_buy_order'):
+            continue
+        tid = o.get('type_id')
+        if not tid:
+            continue
+        entry = by_type.setdefault(int(tid), {'min_price': None, 'total_volume': 0, 'order_count': 0})
+        price = float(o.get('price') or 0)
+        if entry['min_price'] is None or price < entry['min_price']:
+            entry['min_price'] = price
+        entry['total_volume'] += int(o.get('volume_remain') or 0)
+        entry['order_count'] += 1
+    return {
+        'structure_id': structure_id,
+        'fetched_at': fetched_at,
+        'order_count': len(orders),
+        'by_type': by_type,
+    }
+
+
+@app.get('/api/aa/market')
+def get_aa_market(structure_id: Optional[int] = None, refresh: bool = False):
+    """Fetch sell orders at the given structure (default: first configured structure).
+
+    Returns aggregated availability per type_id: min sell price, total units on
+    market, number of distinct sell orders. Cached in-memory for 5 minutes.
+    """
+    cfg = load_config()
+    sid = structure_id
+    if not sid:
+        structures = cfg.get('structures') or []
+        if not structures:
+            raise HTTPException(400, 'No configured structures; add one in Config or pass structure_id')
+        first = structures[0]
+        sid = first.get('id')
+        if not sid:
+            raise HTTPException(400, 'First configured structure has no id')
+    sid = int(sid)
+
+    now = time.time()
+    cached = _market_cache.get(sid)
+    if not refresh and cached and (now - cached['fetched_at']) < _MARKET_TTL_SECONDS:
+        return _summarize_orders(sid, cached['orders'], cached['fetched_at'])
+
+    client_id, secret_key = get_app_credentials()
+    try:
+        token = get_valid_access_token(client_id, secret_key, get_user_agent())
+    except Exception as e:
+        raise HTTPException(401, str(e))
+
+    try:
+        orders = fetch_structure_orders(sid, token, get_user_agent())
+    except Exception as e:
+        raise HTTPException(502, f'ESI structure market fetch failed: {e}')
+
+    _market_cache[sid] = {'fetched_at': now, 'orders': orders}
+    return _summarize_orders(sid, orders, now)
+
+
+def _resolve_market_structure_id(cfg, structure_id: Optional[int]) -> int:
+    if structure_id:
+        return int(structure_id)
+    structures = cfg.get('structures') or []
+    if not structures:
+        raise HTTPException(400, 'No configured structures; add one in Config or pass structure_id')
+    first = structures[0]
+    sid = first.get('id')
+    if not sid:
+        raise HTTPException(400, 'First configured structure has no id')
+    return int(sid)
+
+
+def _market_stream(structure_id: Optional[int], refresh: bool):
+    """Yield NDJSON progress events while fetching the structure market."""
+    cfg = load_config()
+    try:
+        sid = _resolve_market_structure_id(cfg, structure_id)
+    except HTTPException as e:
+        yield _emit('error', message=e.detail)
+        return
+
+    now = time.time()
+    cached = _market_cache.get(sid)
+    if not refresh and cached and (now - cached['fetched_at']) < _MARKET_TTL_SECONDS:
+        summary = _summarize_orders(sid, cached['orders'], cached['fetched_at'])
+        yield _emit('done', payload=summary, from_cache=True)
+        return
+
+    client_id, secret_key = get_app_credentials()
+    try:
+        token = get_valid_access_token(client_id, secret_key, get_user_agent())
+    except Exception as e:
+        yield _emit('error', message=f'Not authenticated: {e}')
+        return
+
+    yield _emit('progress', page=0, max_pages=None, orders_so_far=0, message='Connecting to ESI…')
+
+    all_orders: list = []
+    try:
+        for page, max_pages, batch in fetch_structure_orders_paged(sid, token, get_user_agent()):
+            all_orders.extend(batch)
+            yield _emit(
+                'progress', page=page, max_pages=max_pages,
+                orders_so_far=len(all_orders),
+                message=f'Page {page} of {max_pages}',
+            )
+    except Exception as e:
+        yield _emit('error', message=f'ESI structure market fetch failed: {e}')
+        return
+
+    _market_cache[sid] = {'fetched_at': now, 'orders': all_orders}
+    summary = _summarize_orders(sid, all_orders, now)
+    yield _emit('done', payload=summary, from_cache=False)
+
+
+@app.get('/api/aa/market/stream')
+def stream_aa_market(structure_id: Optional[int] = None, refresh: bool = False):
+    """NDJSON stream of market fetch progress. Emits ``progress`` events per
+    page and a final ``done`` event with the aggregated payload (same shape as
+    GET /api/aa/market). Errors emit an ``error`` event instead of HTTP 5xx.
+    """
+    return StreamingResponse(
+        _market_stream(structure_id, refresh), media_type='application/x-ndjson',
+    )
 
 
 if __name__ == '__main__':
