@@ -19,13 +19,31 @@ DONATION_CATEGORY_ID = 2143  # Colony Reagents: Magmatic Gas, Superionic Ice —
 MOON_ORE_GROUP_IDS = frozenset({1884, 1920, 1921, 1922, 1923})  # R4 / R8 / R16 / R32 / R64 moon asteroid groups (raw + compressed)
 MOON_ORE_PAYOUT_FRACTION = 0.80  # All moon ore is paid at 80% by policy
 
+# Prismaticite (raw + compressed) sits in category 4 (Material) rather than the
+# Asteroid category, and doesn't fit the standard refining pipeline. Accept it
+# in moon contracts but flag it for manual payout — the auto refined-mineral
+# calc would be wrong.
+PRISMATICITE_GROUP_ID = 4915
+
 
 def is_mineable(type_id, user_agent):
-    """True iff the type is one of: ore / moon ore / ice / sovereignty colony reagent."""
+    """True iff the type is one of: ore / moon ore / ice / sovereignty colony reagent
+    / Prismaticite (accepted but flagged for manual payout)."""
     try:
         type_info = fetch_type_info(type_id, user_agent)
-        group_info = fetch_group_info(type_info['group_id'], user_agent)
+        gid = type_info.get('group_id')
+        if gid == PRISMATICITE_GROUP_ID:
+            return True
+        group_info = fetch_group_info(gid, user_agent)
         return group_info.get('category_id') in ALLOWED_CATEGORY_IDS
+    except Exception:
+        return False
+
+
+def is_prismaticite(type_id, user_agent):
+    """True iff the type is Prismaticite (raw or compressed). Requires manual payout."""
+    try:
+        return fetch_type_info(type_id, user_agent).get('group_id') == PRISMATICITE_GROUP_ID
     except Exception:
         return False
 
@@ -165,6 +183,7 @@ def compute_refined_payout(
     moon_leftover = {}        # moon-ore type_id -> leftover qty
     other_leftover = {}       # non-moon-ore / unknown type_id -> leftover qty
     donations = {}
+    prismaticite = {}         # type_id -> qty; payout calculated manually, not included in totals
     has_moon_ore = False
     has_non_moon_ore = False
     has_ice = False
@@ -173,6 +192,9 @@ def compute_refined_payout(
         type_id = it.get('type_id')
         qty = it.get('quantity', 0)
         if not type_id or not qty:
+            continue
+        if is_prismaticite(type_id, user_agent):
+            prismaticite[type_id] = prismaticite.get(type_id, 0) + qty
             continue
         if is_donation(type_id, user_agent):
             donations[type_id] = donations.get(type_id, 0) + qty
@@ -207,6 +229,10 @@ def compute_refined_payout(
         {'type_id': tid, 'quantity': qty}
         for tid, qty in sorted(donations.items(), key=lambda kv: -kv[1])
     ]
+    prismaticite_breakdown = [
+        {'type_id': tid, 'quantity': qty}
+        for tid, qty in sorted(prismaticite.items(), key=lambda kv: -kv[1])
+    ]
 
     nothing_refined = not (moon_ore_totals or non_moon_ore_totals or ice_totals)
     nothing_priced = nothing_refined and not moon_leftover and not other_leftover
@@ -222,10 +248,12 @@ def compute_refined_payout(
             'breakdown': [],
             'leftover_breakdown': [],
             'donation_breakdown': donation_breakdown,
+            'prismaticite_breakdown': prismaticite_breakdown,
             'has_moon_ore': has_moon_ore,
             'has_non_moon_ore': has_non_moon_ore,
             'has_ice': has_ice,
             'has_donations': bool(donations),
+            'has_prismaticite': bool(prismaticite),
             'moon_payout_fraction': moon_payout_fraction,
             'non_moon_payout_fraction': non_moon_payout_fraction,
         }
@@ -286,10 +314,12 @@ def compute_refined_payout(
         'breakdown': sorted(breakdown, key=lambda b: -b['value']),
         'leftover_breakdown': sorted(leftover_breakdown, key=lambda b: -b['value']),
         'donation_breakdown': donation_breakdown,
+        'prismaticite_breakdown': prismaticite_breakdown,
         'has_moon_ore': has_moon_ore,
         'has_non_moon_ore': has_non_moon_ore,
         'has_ice': has_ice,
         'has_donations': bool(donations),
+        'has_prismaticite': bool(prismaticite),
         'moon_payout_fraction': moon_payout_fraction,
         'non_moon_payout_fraction': non_moon_payout_fraction,
     }

@@ -33,7 +33,7 @@ from esi import (
     resolve_names,
     send_evemail,
 )
-from refining import compute_refined_payout, is_donation, is_mineable
+from refining import compute_refined_payout, is_donation, is_mineable, is_prismaticite
 from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
 
 PORT = 8765
@@ -376,6 +376,10 @@ def _validate_stream(cfg, req):
             has_donations = any(
                 is_donation(i['type_id'], get_user_agent()) for i in items_named
             )
+            # Detect Prismaticite — accepted but flagged for manual payout.
+            has_prismaticite = any(
+                is_prismaticite(i['type_id'], get_user_agent()) for i in items_named
+            )
 
             # Step 2: Mineable check (flag, don't bail — keeps Janice info visible).
             bad = [i for i in items_named if not is_mineable(i['type_id'], get_user_agent())]
@@ -402,6 +406,7 @@ def _validate_stream(cfg, req):
                     [b['type_id'] for b in refined_block.get('breakdown', [])]
                     + [b['type_id'] for b in refined_block.get('leftover_breakdown', [])]
                     + [b['type_id'] for b in refined_block.get('donation_breakdown', [])]
+                    + [b['type_id'] for b in refined_block.get('prismaticite_breakdown', [])]
                 )
                 if mineral_ids:
                     try:
@@ -414,6 +419,8 @@ def _validate_stream(cfg, req):
                         b['name'] = mineral_names.get(b['type_id'], '')
                     for b in refined_block.get('donation_breakdown', []):
                         b['name'] = mineral_names.get(b['type_id'], '')
+                    for b in refined_block.get('prismaticite_breakdown', []):
+                        b['name'] = mineral_names.get(b['type_id'], '')
 
             return {
                 'janice': janice_block,
@@ -421,6 +428,7 @@ def _validate_stream(cfg, req):
                 'items': items_named,
                 'mineable_bad': bad,
                 'has_donations': has_donations,
+                'has_prismaticite': has_prismaticite,
             }
 
         result = process_moon_contract(c, structures, payout_lookup)

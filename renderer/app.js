@@ -221,6 +221,9 @@ function buildMoonRow(r) {
       : '') +
     (flags.includes('workforce_donation')
       ? `<div class="flag-banner">⚠ Contains workforce reagents (Magmatic Gas / Superionic Ice) — accepted as donation, no payout</div>`
+      : '') +
+    (flags.includes('prismaticite_manual')
+      ? `<div class="flag-banner prismaticite">⚠ Contains Prismaticite — payout MUST be calculated manually (not included in the recommended payout above)</div>`
       : '');
 
   const janice = r.payout?.janice;
@@ -283,6 +286,7 @@ function buildMoonRow(r) {
   const breakdown = r.payout?.refined?.breakdown || [];
   const leftoverBreakdown = r.payout?.refined?.leftover_breakdown || [];
   const donationBreakdown = r.payout?.refined?.donation_breakdown || [];
+  const prismaticiteBreakdown = r.payout?.refined?.prismaticite_breakdown || [];
 
   const tableRow = (b) => ({
     name: b.name || `type ${b.type_id}`,
@@ -308,6 +312,16 @@ function buildMoonRow(r) {
        </details>`
     : '';
 
+  const prismaticiteBlock = prismaticiteBreakdown.length
+    ? `<details open>
+         <summary>Prismaticite — calculate payout manually (${prismaticiteBreakdown.length} types)</summary>
+         ${renderItemsTable(
+           prismaticiteBreakdown.map((b) => ({ name: b.name || `type ${b.type_id}`, quantity: b.quantity })),
+           ['name', 'quantity'],
+         )}
+       </details>`
+    : '';
+
   const contentsBlock = `
     <details>
       <summary>Contract contents (${items.length} items)</summary>
@@ -318,7 +332,8 @@ function buildMoonRow(r) {
       ${renderItemsTable(breakdown.map(tableRow), ['name', 'quantity', 'unit price', 'value'])}
     </details>
     ${leftoverBlock}
-    ${donationBlock}`;
+    ${donationBlock}
+    ${prismaticiteBlock}`;
 
   div.innerHTML = `
     <h4>Contract ${r.contract_id} — ${escapeHtml(r.issuer_name || 'unknown issuer')}</h4>

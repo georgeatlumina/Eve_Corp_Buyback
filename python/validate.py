@@ -125,6 +125,8 @@ def process_moon_contract(contract, structures, payout_lookup):
         result['payout'] = payout
         if payout.get('has_donations'):
             result['flags'].append('workforce_donation')
+        if payout.get('has_prismaticite'):
+            result['flags'].append('prismaticite_manual')
         bad = payout.get('mineable_bad') or []
         if bad:
             names = sorted({i.get('name') or f'type {i["type_id"]}' for i in bad})
