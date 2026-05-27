@@ -116,7 +116,7 @@ async function loadConfig() {
 
   $('[name=corp_id]').value = cfg.corp_id || '';
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
-  if ($('[name=home_station_id]')) $('[name=home_station_id]').value = cfg.home_station_id || '';
+  if ($('[name=home_structure_id]')) $('[name=home_structure_id]').value = cfg.home_structure_id || '';
   if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
   renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
   // Kick off the ship-types fetch in the background; the datalist becomes
@@ -209,7 +209,7 @@ $('#config-form').addEventListener('submit', async (e) => {
     ice_refining_efficiency: parseFloat(fd.get('ice_refining_efficiency')) || 0.78,
     moon_payout_fraction: parseFloat(fd.get('moon_payout_fraction')) || 0.80,
     non_moon_payout_fraction: parseFloat(fd.get('non_moon_payout_fraction')) || 0.90,
-    home_station_id: parseInt(fd.get('home_station_id')) || 0,
+    home_structure_id: parseInt(fd.get('home_structure_id')) || 0,
     home_region_id: parseInt(fd.get('home_region_id')) || 0,
     quotas: collectQuotas(),
   };
@@ -2543,10 +2543,10 @@ $('#quota-import-file')?.addEventListener('change', async (ev) => {
 
 // --- Region lookup helper ---
 $('#btn-lookup-region')?.addEventListener('click', async () => {
-  const stationId = parseInt($('[name=home_station_id]').value) || 0;
+  const stationId = parseInt($('[name=home_structure_id]').value) || 0;
   const status = $('#region-lookup-status');
   if (!stationId) {
-    status.textContent = 'Enter a station ID first.';
+    status.textContent = 'Enter a structure/station ID first.';
     return;
   }
   status.textContent = 'looking up…';

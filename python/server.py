@@ -112,7 +112,7 @@ class ConfigUpdate(BaseModel):
     moon_payout_fraction: Optional[float] = None
     non_moon_payout_fraction: Optional[float] = None
     mail_presets: Optional[list[dict]] = None
-    home_station_id: Optional[int] = None
+    home_structure_id: Optional[int] = None
     home_region_id: Optional[int] = None
     quotas: Optional[list[dict]] = None
 
@@ -710,19 +710,27 @@ def _matches_quota(quota: dict, items_named: list[dict], contract: dict) -> int:
 
 
 def _scan_contracts_stream():
-    """Stream outstanding item-exchange contracts visible to any logged-in
-    slot at the configured home station.
+    """Stream outstanding item-exchange contracts that ANY authed slot's corp
+    has posted at the configured home structure.
 
-    Walks /characters/{char_id}/contracts/ for each authenticated slot. Keeps
-    alliance- and public-availability contracts whose start_location matches
-    the home station. Slots in different alliances will each contribute only
-    what they can see; results are deduplicated by contract_id.
+    For each logged-in slot we look up the character's corporation and call
+    /corporations/{corp_id}/contracts/ — needs the
+    esi-contracts.read_corporation_contracts.v1 scope plus Contract Manager
+    or Director role in that corp. Slots whose toons don't have the role
+    return 403; we surface that as a per-slot warning and move on. Results
+    are deduplicated by contract_id across corps.
+
+    Filter per corp: type=item_exchange, status=outstanding,
+    start_location_id=home, for_corporation=True, issuer_corporation_id=corp.
+    The availability field is ignored — corp-posted alliance fits come back
+    as availability=personal with assignee_id=alliance_id, not availability=
+    alliance.
     """
     cfg = load_config()
-    station_id = int(cfg.get('home_station_id') or 0)
+    structure_id = int(cfg.get('home_structure_id') or 0)
     quotas = list(cfg.get('quotas') or [])
-    if not station_id:
-        yield _emit('error', message='Set home_station_id in Config first')
+    if not structure_id:
+        yield _emit('error', message='Set home_structure_id in Config first')
         return
 
     slots = list_authenticated_slots()
@@ -732,13 +740,15 @@ def _scan_contracts_stream():
 
     ua = get_user_agent()
     client_id, secret_key = get_app_credentials()
-    allowed_avail = {'alliance', 'public'}
 
-    # contract_id -> {'contract': record, 'slots': set, 'tokens': {slot: token}, ...}
+    # contract_id -> {'contract': record, 'corp_id': int, 'token': str, 'source_corps': set}
     found: dict[int, dict] = {}
+    # Tally per corp_id: how many outstanding-item_exchange-at-home we kept,
+    # so the UI can show a per-corp summary line.
+    per_corp_kept: dict[int, int] = {}
 
     for slot in slots:
-        yield _emit('progress', step=f'Fetching contracts visible to {slot}…')
+        yield _emit('progress', step=f'Resolving corp for {slot}…')
         try:
             token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
         except Exception as e:
@@ -749,20 +759,48 @@ def _scan_contracts_stream():
             yield _emit('progress', step=f'{slot}: could not extract character_id')
             continue
         try:
-            char_contracts = fetch_character_contracts(char_id, token, ua)
+            cinfo = fetch_character_info(char_id, ua)
         except Exception as e:
-            yield _emit('progress', step=f'{slot}: fetch failed — {e}')
+            yield _emit('progress', step=f'{slot}: character info failed — {e}')
+            continue
+        corp_id = int(cinfo.get('corporation_id') or 0)
+        if not corp_id:
+            yield _emit('progress', step=f'{slot}: character has no corporation')
+            continue
+
+        if corp_id in per_corp_kept:
+            yield _emit(
+                'progress',
+                step=f'{slot}: corp {corp_id} already fetched via earlier slot — skipping',
+            )
+            continue
+
+        yield _emit('progress', step=f'{slot}: fetching corp {corp_id} contracts…')
+        try:
+            corp_contracts = fetch_corp_contracts(corp_id, token, ua)
+        except Exception as e:
+            msg = str(e)
+            # Surface 403 plainly — most common cause is missing director role.
+            if '403' in msg or 'Forbidden' in msg:
+                yield _emit(
+                    'progress',
+                    step=f'{slot}: corp {corp_id} fetch forbidden (needs Contract Manager / Director role)',
+                )
+            else:
+                yield _emit('progress', step=f'{slot}: corp {corp_id} fetch failed — {msg}')
             continue
 
         kept = 0
-        for c in char_contracts:
+        for c in corp_contracts:
             if c.get('type') != 'item_exchange':
                 continue
             if (c.get('status') or '').lower() != 'outstanding':
                 continue
-            if (c.get('availability') or '').lower() not in allowed_avail:
+            if int(c.get('start_location_id') or 0) != structure_id:
                 continue
-            if int(c.get('start_location_id') or 0) != station_id:
+            if not c.get('for_corporation'):
+                continue
+            if int(c.get('issuer_corporation_id') or 0) != corp_id:
                 continue
             cid = int(c.get('contract_id') or 0)
             if not cid:
@@ -771,20 +809,24 @@ def _scan_contracts_stream():
             if entry is None:
                 found[cid] = {
                     'contract': c,
-                    'slots': {slot},
-                    'tokens': {slot: token},
-                    'char_ids': {slot: char_id},
+                    'corp_id': corp_id,
+                    'token': token,
+                    'source_corps': {corp_id},
                 }
+                kept += 1
             else:
-                entry['slots'].add(slot)
-                entry['tokens'][slot] = token
-                entry['char_ids'][slot] = char_id
-            kept += 1
-        yield _emit('progress', step=f'{slot}: {kept} matching at home station')
+                entry['source_corps'].add(corp_id)
+        per_corp_kept[corp_id] = kept
+        yield _emit(
+            'progress',
+            step=f'{slot}: corp {corp_id} posted {kept} matching '
+                 f'(of {len(corp_contracts)} corp contracts total)',
+        )
 
     if not found:
         yield _emit('done', payload={
-            'station_id': station_id,
+            'structure_id': structure_id,
+            'corps_scanned': sorted(per_corp_kept.keys()),
             'contracts': [],
             'quotas': [
                 {**q, 'available': 0, 'missing': int(q.get('required') or 0), 'contracts': []}
@@ -793,7 +835,7 @@ def _scan_contracts_stream():
         })
         return
 
-    # ---- Fetch items per contract via the character endpoint ----
+    # ---- Fetch items per contract via the same corp+token that surfaced it ----
     items_by_id: dict[int, list] = {}
     items_errors: dict[int, str] = {}
     total = len(found)
@@ -803,23 +845,13 @@ def _scan_contracts_stream():
             items_by_id[cid] = cached
             yield _emit('progress', step=f'Items {idx}/{total}: {cid} (cached)')
             continue
-        items = None
-        last_err = None
-        for slot in sorted(rec['slots']):
-            try:
-                items = fetch_character_contract_items(
-                    rec['char_ids'][slot], cid, rec['tokens'][slot], ua,
-                )
-                break
-            except Exception as e:
-                last_err = str(e)
-                continue
-        if items is None:
-            items_by_id[cid] = []
-            items_errors[cid] = last_err or 'no slot could fetch items'
-        else:
+        try:
+            items = fetch_contract_items(rec['corp_id'], cid, rec['token'], ua)
             items_by_id[cid] = items
             _contract_items_cache[cid] = items
+        except Exception as e:
+            items_by_id[cid] = []
+            items_errors[cid] = str(e)
         yield _emit('progress', step=f'Items {idx}/{total}: {cid}')
 
     # ---- Resolve type and issuer names ----
@@ -846,20 +878,26 @@ def _scan_contracts_stream():
             }
             for i in items_by_id.get(cid, [])
         ]
+        # Build a 'targeted at' label from availability + assignee for the UI.
+        avail = (c.get('availability') or '').lower()
+        if avail in ('alliance', 'public', 'corporation'):
+            label = avail
+        elif avail == 'personal':
+            label = f'assigned→{c.get("assignee_id")}'
+        else:
+            label = avail or '?'
         contracts_out.append({
             'contract_id': cid,
             'title': c.get('title') or '',
             'price': c.get('price'),
             'availability': c.get('availability'),
+            'assignee_id': c.get('assignee_id'),
             'issuer_id': c.get('issuer_id'),
             'issuer_name': issuer_names.get(int(c.get('issuer_id') or 0), ''),
+            'issuer_corporation_id': c.get('issuer_corporation_id'),
             'date_issued': c.get('date_issued'),
             'date_expired': c.get('date_expired'),
-            # UI badge: which logged-in slot(s) saw this contract, plus its
-            # availability tag — useful for debugging access mismatches.
-            'sources': sorted(rec['slots']) + (
-                [c.get('availability')] if c.get('availability') else []
-            ),
+            'sources': [f'corp:{rec["corp_id"]}', label],
             'items': items_named,
             'items_error': items_errors.get(cid),
         })
@@ -884,7 +922,8 @@ def _scan_contracts_stream():
         })
 
     yield _emit('done', payload={
-        'station_id': station_id,
+        'structure_id': structure_id,
+        'corps_scanned': sorted(per_corp_kept.keys()),
         'contracts': contracts_out,
         'quotas': quotas_out,
     })
@@ -892,9 +931,13 @@ def _scan_contracts_stream():
 
 @app.get('/api/contracts/scan')
 def scan_contracts():
-    """NDJSON stream of outstanding alliance/public item-exchange contracts
-    visible to any logged-in slot at the configured home station, plus
+    """NDJSON stream of outstanding item-exchange contracts posted by any
+    authed slot's corporation at the configured home structure, plus
     per-quota aggregation.
+
+    Limitation: ESI doesn't expose other corps' alliance-availability contracts
+    unless someone with director/Contract Manager role in those corps is logged
+    in. Add more slots to cover more corps.
 
     Emits ``progress`` events while fetching, then one ``done`` event with the
     full payload. The payload's quotas list mirrors the configured quotas with

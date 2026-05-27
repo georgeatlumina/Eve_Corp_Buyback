@@ -53,12 +53,12 @@
         </fieldset>
 
         <fieldset>
-          <legend>Contracts page — home station &amp; quotas</legend>
-          <p class="muted">Used by the Contracts tab to find outstanding item-exchange contracts that this corp has posted to alliance or public availability at one station, and tally them against a target stock list. Region ID is no longer required for the scan — kept here for the NPC-station lookup convenience.</p>
+          <legend>Contracts page — home structure &amp; quotas</legend>
+          <p class="muted">Used by the Contracts tab to find outstanding alliance- or public-availability item-exchange contracts at one structure (citadel, engineering complex, NPC station — anything with a <code>start_location_id</code>) and tally them against a target stock list. Region ID is optional — only used by the NPC-station lookup button.</p>
           <div class="hs-row">
-            <label>Home station ID <input name="home_station_id" type="number" placeholder="e.g. 60003760" /></label>
+            <label>Home structure ID <input name="home_structure_id" type="number" placeholder="e.g. 1052738603765" /></label>
             <label>Home region ID (optional) <input name="home_region_id" type="number" placeholder="e.g. 10000002" /></label>
-            <button type="button" id="btn-lookup-region" class="secondary">Lookup region</button>
+            <button type="button" id="btn-lookup-region" class="secondary">Lookup region (NPC stations only)</button>
             <span id="region-lookup-status" class="muted"></span>
           </div>
           <h4 class="quota-h4">Ship/doctrine quotas</h4>
@@ -186,7 +186,7 @@
 
     <section id="tab-contracts" class="tab">
       <h2>Contracts &amp; quotas</h2>
-      <p class="muted">Scans every outstanding alliance- or public-availability item-exchange contract <strong>visible to any logged-in slot</strong> at the configured home station, and tallies them against the configured quotas. To see alliance contracts the toon must be in the alliance they were posted to; results are merged across slots and deduped. Each contract row shows which slot(s) saw it.</p>
+      <p class="muted">Scans every outstanding item-exchange contract posted at the configured home structure by <strong>any corp that a logged-in slot is a Contract Manager / Director of</strong>. Add more slots on the Auth tab to cover more corps — each one widens the visible set. <strong>ESI limitation:</strong> corps you don't have a director token for stay invisible, even if their contracts show in the in-game alliance tab.</p>
       <div class="actions">
         <button id="btn-contracts-scan" type="button">Scan contracts</button>
         <button id="btn-contracts-export-csv" type="button" class="secondary">Export gap CSV</button>

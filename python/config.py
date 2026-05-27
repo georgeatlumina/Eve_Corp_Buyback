@@ -51,7 +51,7 @@ DEFAULTS = {
     'non_moon_payout_fraction': 0.90,
     'mail_presets': DEFAULT_MAIL_PRESETS,
     # Contracts page settings.
-    'home_station_id': 0,
+    'home_structure_id': 0,
     'home_region_id': 0,
     # List of {name, ship_type_id, ship_name, required, title_filter}.
     'quotas': [],
@@ -102,6 +102,14 @@ def _migrate(cfg):
         cfg.setdefault('moon_ore_refining_efficiency', legacy_val)
         cfg.setdefault('non_moon_ore_refining_efficiency', legacy_val)
 
+    # The Contracts page setting was originally called home_station_id back
+    # when the lookup helper only worked for NPC stations; the actual filter
+    # has always been on start_location_id, which equally accepts a structure
+    # id. Carry old values forward under the new name.
+    if 'home_station_id' in cfg and not cfg.get('home_structure_id'):
+        cfg['home_structure_id'] = cfg.pop('home_station_id')
+    cfg.pop('home_station_id', None)
+
     return cfg
 
 
@@ -110,8 +118,10 @@ def load_config():
         return _fresh_default()
     with open(CONFIG_PATH) as f:
         cfg = json.load(f)
-    cfg = {k: v for k, v in cfg.items() if k in _USER_KEYS}
+    # Migrate FIRST so legacy keys (e.g. home_station_id) can be renamed
+    # before the _USER_KEYS filter would otherwise drop them.
     cfg = _migrate(cfg)
+    cfg = {k: v for k, v in cfg.items() if k in _USER_KEYS}
     merged = _fresh_default()
     merged.update(cfg)
     return merged
