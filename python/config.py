@@ -37,6 +37,7 @@ DEFAULTS = {
         'esi-markets.structure_markets.v1',
         'esi-wallet.read_corporation_wallets.v1',
         'esi-contracts.read_corporation_contracts.v1',
+        'esi-contracts.read_character_contracts.v1',
         'esi-mail.send_mail.v1',
     ],
     'structures': DEFAULT_STRUCTURES,
@@ -49,6 +50,11 @@ DEFAULTS = {
     'moon_payout_fraction': 0.80,
     'non_moon_payout_fraction': 0.90,
     'mail_presets': DEFAULT_MAIL_PRESETS,
+    # Contracts page settings.
+    'home_station_id': 0,
+    'home_region_id': 0,
+    # List of {name, ship_type_id, ship_name, required, title_filter}.
+    'quotas': [],
 }
 
 _USER_KEYS = set(DEFAULTS)

@@ -2,6 +2,18 @@ const API = window.api.base;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+(async () => {
+  if (!window.api?.getMeta) return;
+  try {
+    const meta = await window.api.getMeta();
+    const vEl = document.getElementById('app-version');
+    const aEl = document.getElementById('app-author');
+    if (vEl && meta?.version) vEl.textContent = `v${meta.version}`;
+    if (aEl && meta?.author) aEl.innerHTML = `by <strong></strong>`;
+    if (aEl && meta?.author) aEl.querySelector('strong').textContent = meta.author;
+  } catch (_) {}
+})();
+
 const DIVISION_LABELS = {
   1: 'Master',
   2: 'Contracts',
@@ -104,6 +116,12 @@ async function loadConfig() {
 
   $('[name=corp_id]').value = cfg.corp_id || '';
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
+  if ($('[name=home_station_id]')) $('[name=home_station_id]').value = cfg.home_station_id || '';
+  if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
+  renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
+  // Kick off the ship-types fetch in the background; the datalist becomes
+  // available as soon as it resolves (cached to disk after the first call).
+  ensureShipTypes();
   $('[name=moon_ore_refining_efficiency]').value =
     cfg.moon_ore_refining_efficiency ?? cfg.refining_efficiency ?? 0.78;
   $('[name=non_moon_ore_refining_efficiency]').value =
@@ -191,6 +209,9 @@ $('#config-form').addEventListener('submit', async (e) => {
     ice_refining_efficiency: parseFloat(fd.get('ice_refining_efficiency')) || 0.78,
     moon_payout_fraction: parseFloat(fd.get('moon_payout_fraction')) || 0.80,
     non_moon_payout_fraction: parseFloat(fd.get('non_moon_payout_fraction')) || 0.90,
+    home_station_id: parseInt(fd.get('home_station_id')) || 0,
+    home_region_id: parseInt(fd.get('home_region_id')) || 0,
+    quotas: collectQuotas(),
   };
   const res = await fetch(`${API}/api/config`, {
     method: 'POST',
@@ -369,47 +390,116 @@ function escapeAttr(s) {
   })[c]);
 }
 
+const AUTH_SLOT_LABELS = {
+  slot1: 'Slot 1 (primary — wallets, corp contracts, mail)',
+  slot2: 'Slot 2 (optional — extra contract visibility)',
+  slot3: 'Slot 3 (optional — extra contract visibility)',
+};
+const AUTH_SLOTS = ['slot1', 'slot2', 'slot3'];
+
+function renderAuthSlot(slot, info) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'auth-slot';
+  wrapper.dataset.slot = slot;
+  const character = info?.character || '(not logged in)';
+  const exp = info?.expires_at
+    ? `expires ${new Date(info.expires_at * 1000).toLocaleTimeString()}`
+    : '';
+  const err = info?.error ? `<div class="auth-slot-err">⚠ ${escapeHtml(info.error)}</div>` : '';
+  const isAuth = !!info?.authenticated;
+  wrapper.innerHTML = `
+    <div class="auth-slot-head">
+      <strong>${escapeHtml(AUTH_SLOT_LABELS[slot] || slot)}</strong>
+      <span class="auth-slot-state ${isAuth ? 'ok' : 'off'}">${isAuth ? 'logged in' : 'logged out'}</span>
+    </div>
+    <div class="auth-slot-meta">${escapeHtml(character)}${exp ? ` · ${exp}` : ''}</div>
+    ${err}
+    <div class="actions">
+      <button type="button" class="auth-slot-login" data-slot="${slot}">${isAuth ? 'Re-login' : 'Login with EVE Online'}</button>
+      ${isAuth ? `<button type="button" class="secondary auth-slot-logout" data-slot="${slot}">Logout</button>` : ''}
+    </div>
+  `;
+  return wrapper;
+}
+
 async function refreshAuthStatus() {
-  $('#auth-status').textContent = 'checking...';
+  const container = $('#auth-slots');
+  if (container) container.innerHTML = '<p class="muted">Checking slots…</p>';
+  let slotsInfo = null;
   try {
-    const res = await fetch(`${API}/api/auth/status`);
-    const data = await res.json();
-    if (data.authenticated) {
-      const exp = data.expires_at ? new Date(data.expires_at * 1000).toLocaleTimeString() : '?';
-      $('#auth-status').textContent = `authenticated as ${data.character} (expires ${exp})`;
-    } else {
-      $('#auth-status').textContent = data.error
-        ? `not authenticated: ${data.error}`
-        : 'not authenticated';
-    }
+    const res = await fetch(`${API}/api/auth/slots`);
+    if (res.ok) slotsInfo = (await res.json()).slots || [];
   } catch (e) {
-    if (String(e).includes('Failed to fetch') || String(e).includes('NetworkError')) {
-      $('#auth-status').textContent =
-        'Python sidecar is not reachable on localhost:8765. ' +
-        'See sidecar.log in the app data folder for diagnostics ' +
-        '(Windows: %APPDATA%\\EVE Corp Buyback\\sidecar.log, ' +
-        'macOS: ~/Library/Application Support/EVE Corp Buyback/sidecar.log).';
+    if (container) {
+      container.innerHTML = `<p class="muted">Python sidecar not reachable on localhost:8765 (${escapeHtml(String(e))}). See sidecar.log.</p>`;
+    }
+    if ($('#auth-status')) $('#auth-status').textContent = 'sidecar unreachable';
+    return;
+  }
+  if (container) {
+    container.innerHTML = '';
+    const bySlot = Object.fromEntries((slotsInfo || []).map((s) => [s.slot, s]));
+    for (const slot of AUTH_SLOTS) {
+      container.appendChild(renderAuthSlot(slot, bySlot[slot]));
+    }
+  }
+  // Legacy single-status indicator — mirror slot 1 so the rest of the app sees a status.
+  const slot1 = (slotsInfo || []).find((s) => s.slot === 'slot1');
+  if ($('#auth-status')) {
+    if (!slot1 || !slot1.authenticated) {
+      $('#auth-status').textContent = slot1?.error
+        ? `slot1 error: ${slot1.error}`
+        : 'slot1 not authenticated';
     } else {
-      $('#auth-status').textContent = `error: ${e}`;
+      const exp = slot1.expires_at ? new Date(slot1.expires_at * 1000).toLocaleTimeString() : '?';
+      $('#auth-status').textContent = `slot1 = ${slot1.character} (expires ${exp})`;
     }
   }
 }
 
-$('#btn-login').addEventListener('click', async () => {
-  const res = await fetch(`${API}/api/auth/login`, { method: 'POST' });
+async function startSlotLogin(slot) {
+  const res = await fetch(`${API}/api/auth/login?slot=${encodeURIComponent(slot)}`, { method: 'POST' });
   if (!res.ok) {
     alert(`Login failed: ${await res.text()}`);
     return;
   }
-  $('#auth-status').textContent = 'waiting for browser login...';
+  // Poll for ~3 min — long enough for the SSO round-trip.
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 2000));
-    await refreshAuthStatus();
-    if ($('#auth-status').textContent.startsWith('authenticated')) return;
+    try {
+      const s = await fetch(`${API}/api/auth/status?slot=${encodeURIComponent(slot)}`);
+      if (s.ok) {
+        const data = await s.json();
+        if (data.authenticated) {
+          await refreshAuthStatus();
+          return;
+        }
+      }
+    } catch (_) {}
+  }
+  await refreshAuthStatus();
+}
+
+async function logoutSlot(slot) {
+  if (!confirm(`Log out ${slot}?`)) return;
+  await fetch(`${API}/api/auth/logout?slot=${encodeURIComponent(slot)}`, { method: 'POST' });
+  await refreshAuthStatus();
+}
+
+document.addEventListener('click', (e) => {
+  const loginBtn = e.target.closest('.auth-slot-login');
+  if (loginBtn) {
+    startSlotLogin(loginBtn.dataset.slot);
+    return;
+  }
+  const logoutBtn = e.target.closest('.auth-slot-logout');
+  if (logoutBtn) {
+    logoutSlot(logoutBtn.dataset.slot);
   }
 });
 
-$('#btn-refresh-status').addEventListener('click', refreshAuthStatus);
+const refreshStatusBtn = $('#btn-refresh-status');
+if (refreshStatusBtn) refreshStatusBtn.addEventListener('click', refreshAuthStatus);
 
 async function runValidateStream() {
   // Reset state on both tabs
@@ -2141,3 +2231,871 @@ _origTabHandlers.forEach((btn) => {
 
 // Initial render in case the user opens the tab via the default state
 renderReadinessDashboard();
+
+// ====================== Contracts page ======================
+// Quota editor (spreadsheet-style), region lookup, contracts scan stream,
+// quota import/export (CSV + JSON), gap CSV export and shopping list copy.
+
+function quotaRow(q) {
+  const tr = document.createElement('tr');
+  tr.className = 'quota-row';
+  tr.innerHTML = `
+    <td><input type="text" class="q-name" value="${escapeAttr(q.name || '')}" placeholder="e.g. Cerberus Shield" /></td>
+    <td><input type="text" inputmode="numeric" list="ships-datalist" class="q-tid" value="${q.ship_type_id || ''}" placeholder="type or pick…" /></td>
+    <td><input type="text" list="ship-names-datalist" class="q-sname" value="${escapeAttr(q.ship_name || '')}" placeholder="e.g. Cerberus" /></td>
+    <td><input type="number" class="q-req" min="0" value="${q.required ?? 0}" /></td>
+    <td><input type="text" class="q-title" value="${escapeAttr(q.title_filter || '')}" placeholder="optional" /></td>
+    <td><button type="button" class="q-remove secondary" title="Remove row">✕</button></td>
+  `;
+  tr.querySelector('.q-remove').addEventListener('click', () => tr.remove());
+  return tr;
+}
+
+// --- Ship-type dropdown data source ---
+let shipTypesCache = null;        // [{type_id, name, group_id, group_name}]
+let shipTypesByIdMap = null;      // type_id -> ship
+let shipTypesByNameMap = null;    // lowercased name -> ship
+let shipTypesLoading = null;
+
+async function ensureShipTypes() {
+  if (shipTypesCache) return shipTypesCache;
+  if (shipTypesLoading) return shipTypesLoading;
+  shipTypesLoading = (async () => {
+    try {
+      const res = await fetch(`${API}/api/universe/ships`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      shipTypesCache = data.ships || [];
+      shipTypesByIdMap = new Map(shipTypesCache.map((s) => [s.type_id, s]));
+      shipTypesByNameMap = new Map(shipTypesCache.map((s) => [s.name.toLowerCase(), s]));
+      buildShipDatalists(shipTypesCache);
+      return shipTypesCache;
+    } catch (e) {
+      console.warn('[shipTypes] load failed:', e);
+      shipTypesCache = [];
+      return shipTypesCache;
+    } finally {
+      shipTypesLoading = null;
+    }
+  })();
+  return shipTypesLoading;
+}
+
+function buildShipDatalists(ships) {
+  // Two datalists so users can search either by typing in the type_id column
+  // (values are type_ids, labelled with ship name) or in the ship-name column
+  // (values are ship names). Picking one auto-fills the other column via the
+  // delegated change handler below.
+  function ensureDl(id) {
+    let dl = document.getElementById(id);
+    if (!dl) {
+      dl = document.createElement('datalist');
+      dl.id = id;
+      document.body.appendChild(dl);
+    }
+    dl.innerHTML = '';
+    return dl;
+  }
+  const dlId = ensureDl('ships-datalist');
+  const dlName = ensureDl('ship-names-datalist');
+  for (const s of ships) {
+    const oid = document.createElement('option');
+    oid.value = String(s.type_id);
+    oid.label = `${s.name} — ${s.group_name}`;
+    oid.textContent = s.name;
+    dlId.appendChild(oid);
+
+    const oname = document.createElement('option');
+    oname.value = s.name;
+    oname.label = `${s.type_id} — ${s.group_name}`;
+    dlName.appendChild(oname);
+  }
+}
+
+// Auto-fill the sibling column when a ship is picked (or typed) in either input.
+document.addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (!t || !t.classList) return;
+  const row = t.closest && t.closest('tr.quota-row');
+  if (!row) return;
+  if (t.classList.contains('q-tid')) {
+    const tid = parseInt(t.value) || 0;
+    if (!tid || !shipTypesByIdMap) return;
+    const ship = shipTypesByIdMap.get(tid);
+    if (ship) {
+      const nameInput = row.querySelector('.q-sname');
+      if (nameInput && !nameInput.value.trim()) nameInput.value = ship.name;
+    }
+  } else if (t.classList.contains('q-sname')) {
+    if (!shipTypesByNameMap) return;
+    const ship = shipTypesByNameMap.get(t.value.trim().toLowerCase());
+    if (ship) {
+      const tidInput = row.querySelector('.q-tid');
+      if (tidInput && !tidInput.value.trim()) tidInput.value = String(ship.type_id);
+    }
+  }
+});
+
+function renderQuotas(list) {
+  const tbody = $('#quotas-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const rows = (list && list.length) ? list : [{}];
+  rows.forEach((q) => tbody.appendChild(quotaRow(q || {})));
+}
+
+function collectQuotas() {
+  const tbody = $('#quotas-tbody');
+  if (!tbody) return [];
+  return [...tbody.querySelectorAll('.quota-row')]
+    .map((r) => ({
+      name: r.querySelector('.q-name').value.trim(),
+      ship_type_id: parseInt(r.querySelector('.q-tid').value) || 0,
+      ship_name: r.querySelector('.q-sname').value.trim(),
+      required: parseInt(r.querySelector('.q-req').value) || 0,
+      title_filter: r.querySelector('.q-title').value.trim(),
+    }))
+    .filter((q) => q.ship_type_id || q.name);
+}
+
+const addQuotaBtn = $('#btn-add-quota');
+if (addQuotaBtn) {
+  addQuotaBtn.addEventListener('click', () => {
+    $('#quotas-tbody').appendChild(quotaRow({}));
+  });
+}
+
+// Paste-from-spreadsheet support: if the user pastes multi-line tab-separated
+// data into ANY quota input, expand into one row per line, mapping columns
+// left-to-right (name, type_id, ship_name, required, title_filter).
+$('#quotas-tbody')?.addEventListener('paste', (ev) => {
+  const text = ev.clipboardData?.getData('text') || '';
+  if (!text.includes('\n') && !text.includes('\t')) return; // single-cell paste — let the browser handle it
+  ev.preventDefault();
+  const rows = parseDelimited(text);
+  if (!rows.length) return;
+  const tbody = $('#quotas-tbody');
+  const targetRow = ev.target.closest('tr.quota-row');
+  // First parsed row replaces the cell-and-rightward of the target row, the rest are appended.
+  rows.forEach((cells, i) => {
+    if (i === 0 && targetRow) {
+      fillQuotaRowFromCells(targetRow, cells, ev.target);
+    } else {
+      const tr = quotaRow(rowFromCells(cells));
+      tbody.appendChild(tr);
+    }
+  });
+});
+
+function rowFromCells(cells) {
+  return {
+    name: cells[0] || '',
+    ship_type_id: parseInt(cells[1]) || 0,
+    ship_name: cells[2] || '',
+    required: parseInt(cells[3]) || 0,
+    title_filter: cells[4] || '',
+  };
+}
+
+function fillQuotaRowFromCells(tr, cells, startInput) {
+  const fields = ['.q-name', '.q-tid', '.q-sname', '.q-req', '.q-title'];
+  // Find the index of the input the user pasted into.
+  const startIdx = Math.max(0, fields.findIndex((sel) => tr.querySelector(sel) === startInput));
+  for (let i = 0; i < cells.length; i++) {
+    const inp = tr.querySelector(fields[startIdx + i]);
+    if (!inp) break;
+    inp.value = cells[i];
+  }
+}
+
+function parseDelimited(text) {
+  // Auto-detect tab vs comma. Each line -> array of cells. Ignores blank lines.
+  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.length);
+  if (!lines.length) return [];
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  return lines.map((line) => parseCsvLine(line, sep));
+}
+
+function parseCsvLine(line, sep) {
+  // Minimal CSV parser: handles double-quoted cells with embedded separators.
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { cur += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === sep) { out.push(cur); cur = ''; }
+      else { cur += ch; }
+    }
+  }
+  out.push(cur);
+  return out.map((c) => c.trim());
+}
+
+function csvEscape(v) {
+  const s = String(v ?? '');
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function quotasToCsv(quotas) {
+  const header = ['name', 'ship_type_id', 'ship_name', 'required', 'title_filter'];
+  const lines = [header.join(',')];
+  for (const q of quotas) {
+    lines.push([q.name, q.ship_type_id, q.ship_name, q.required, q.title_filter].map(csvEscape).join(','));
+  }
+  return lines.join('\n') + '\n';
+}
+
+function quotasFromCsvText(text) {
+  const rows = parseDelimited(text);
+  if (!rows.length) return [];
+  // Detect header row (any non-numeric ship_type_id in column 2).
+  const first = rows[0];
+  const hasHeader = first.some((c) => /^[a-zA-Z_]/.test(c)) && isNaN(parseInt(first[1]));
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  return dataRows.map(rowFromCells).filter((q) => q.ship_type_id || q.name);
+}
+
+function setQuotaIoStatus(msg) {
+  const el = $('#quota-io-status');
+  if (el) {
+    el.textContent = msg;
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
+  }
+}
+
+function downloadBlob(filename, mime, content) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+$('#btn-quota-export-csv')?.addEventListener('click', () => {
+  const data = collectQuotas();
+  downloadBlob('quotas.csv', 'text/csv', quotasToCsv(data));
+  setQuotaIoStatus(`Exported ${data.length} rows as CSV.`);
+});
+
+$('#btn-quota-export-json')?.addEventListener('click', () => {
+  const data = collectQuotas();
+  downloadBlob('quotas.json', 'application/json', JSON.stringify(data, null, 2));
+  setQuotaIoStatus(`Exported ${data.length} rows as JSON.`);
+});
+
+let _quotaImportMode = 'csv';
+$('#btn-quota-import-csv')?.addEventListener('click', () => {
+  _quotaImportMode = 'csv';
+  $('#quota-import-file').click();
+});
+$('#btn-quota-import-json')?.addEventListener('click', () => {
+  _quotaImportMode = 'json';
+  $('#quota-import-file').click();
+});
+
+$('#quota-import-file')?.addEventListener('change', async (ev) => {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  ev.target.value = '';
+  try {
+    const text = await file.text();
+    const mode = (_quotaImportMode === 'json' || file.name.toLowerCase().endsWith('.json'))
+      ? 'json' : 'csv';
+    let imported;
+    if (mode === 'json') {
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error('JSON root must be an array');
+      imported = parsed.map((q) => ({
+        name: String(q.name || ''),
+        ship_type_id: parseInt(q.ship_type_id) || 0,
+        ship_name: String(q.ship_name || ''),
+        required: parseInt(q.required) || 0,
+        title_filter: String(q.title_filter || ''),
+      }));
+    } else {
+      imported = quotasFromCsvText(text);
+    }
+    if (!imported.length) {
+      setQuotaIoStatus('No rows parsed from file.');
+      return;
+    }
+    const replace = confirm(
+      `Imported ${imported.length} quota rows. OK = replace current list. Cancel = append.`
+    );
+    const current = replace ? [] : collectQuotas();
+    renderQuotas([...current, ...imported]);
+    setQuotaIoStatus(`${replace ? 'Replaced with' : 'Appended'} ${imported.length} rows. Click "Save" to persist.`);
+  } catch (e) {
+    alert(`Import failed: ${e.message || e}`);
+  }
+});
+
+// --- Region lookup helper ---
+$('#btn-lookup-region')?.addEventListener('click', async () => {
+  const stationId = parseInt($('[name=home_station_id]').value) || 0;
+  const status = $('#region-lookup-status');
+  if (!stationId) {
+    status.textContent = 'Enter a station ID first.';
+    return;
+  }
+  status.textContent = 'looking up…';
+  try {
+    const res = await fetch(`${API}/api/region/from-station?station_id=${stationId}`);
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    $('[name=home_region_id]').value = data.region_id || '';
+    status.textContent = `${data.station_name} · ${data.system_name} · region ${data.region_id}`;
+  } catch (e) {
+    status.textContent = `lookup failed (NPC stations only) — enter region ID manually`;
+  }
+});
+
+// --- Contracts scan ---
+let lastContractsScan = null;
+
+$('#btn-contracts-scan')?.addEventListener('click', runContractsScan);
+$('#btn-contracts-export-csv')?.addEventListener('click', exportGapCsv);
+$('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
+
+async function runContractsScan() {
+  const status = $('#contracts-status');
+  const progress = $('#contracts-progress');
+  const step = progress.querySelector('.progress-step');
+  const fill = progress.querySelector('.progress-fill');
+  status.textContent = '';
+  progress.hidden = false;
+  step.textContent = 'starting…';
+  fill.style.width = '5%';
+  $('#contracts-quota-dashboard').innerHTML = '';
+  $('#contracts-list').innerHTML = '';
+  $('#contracts-count').textContent = '0';
+
+  let res;
+  try {
+    res = await fetch(`${API}/api/contracts/scan`);
+  } catch (e) {
+    status.textContent = `Network error: ${e}`;
+    progress.hidden = true;
+    return;
+  }
+  if (!res.ok) {
+    status.textContent = `HTTP ${res.status}: ${await res.text()}`;
+    progress.hidden = true;
+    return;
+  }
+
+  let progressTicks = 0;
+  await readNdjson(res, (evt) => {
+    if (evt.event === 'progress') {
+      progressTicks += 1;
+      step.textContent = evt.step || '';
+      // Indeterminate-ish: ramp 5%→95% with diminishing returns.
+      const pct = Math.min(95, 5 + progressTicks * 3);
+      fill.style.width = pct + '%';
+    } else if (evt.event === 'error') {
+      status.textContent = `Error: ${evt.message}`;
+    } else if (evt.event === 'done') {
+      lastContractsScan = evt.payload;
+      renderContractsDashboard(evt.payload);
+      step.textContent = 'done';
+      fill.style.width = '100%';
+      setTimeout(() => { progress.hidden = true; }, 600);
+    }
+  });
+}
+
+async function readNdjson(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line) continue;
+      try { onEvent(JSON.parse(line)); } catch (_) {}
+    }
+  }
+  const tail = buf.trim();
+  if (tail) {
+    try { onEvent(JSON.parse(tail)); } catch (_) {}
+  }
+}
+
+function renderContractsDashboard(payload) {
+  const root = $('#contracts-quota-dashboard');
+  root.innerHTML = '';
+  const quotas = payload.quotas || [];
+  if (!quotas.length) {
+    root.innerHTML = '<p class="muted">No quotas configured. Add some in Config.</p>';
+  } else {
+    for (const q of quotas) {
+      root.appendChild(renderQuotaBar(q));
+    }
+  }
+
+  const list = payload.contracts || [];
+  $('#contracts-count').textContent = list.length;
+  const listRoot = $('#contracts-list');
+  listRoot.innerHTML = '';
+  if (!list.length) {
+    listRoot.innerHTML = '<p class="muted">No outstanding item-exchange contracts at this station.</p>';
+    return;
+  }
+  for (const c of list) listRoot.appendChild(renderContractRow(c));
+}
+
+function renderQuotaBar(q) {
+  const required = Number(q.required) || 0;
+  const available = Number(q.available) || 0;
+  const missing = Number(q.missing) || 0;
+  const pct = required > 0 ? Math.min(100, Math.round((available / required) * 100)) : 0;
+  const state = required === 0 ? 'unset' : available >= required ? 'ok' : available > 0 ? 'partial' : 'empty';
+  const div = document.createElement('div');
+  div.className = `quota-bar quota-${state}`;
+  div.innerHTML = `
+    <div class="quota-bar-head">
+      <strong>${escapeHtml(q.name || q.ship_name || `type ${q.ship_type_id}`)}</strong>
+      <span class="muted">${escapeHtml(q.ship_name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
+      <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
+    </div>
+    <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
+  `;
+  return div;
+}
+
+function renderContractRow(c) {
+  const div = document.createElement('div');
+  div.className = 'contract-row';
+  const sources = (c.sources || []).join(', ');
+  const items = (c.items || []).filter((i) => i.is_included).slice(0, 12);
+  const itemList = items.map((i) =>
+    `<li>${escapeHtml(i.name || `type ${i.type_id}`)} × ${i.quantity}</li>`
+  ).join('');
+  const moreItems = (c.items || []).length > items.length
+    ? `<li class="muted">+ ${(c.items || []).length - items.length} more…</li>` : '';
+  const itemsErr = c.items_error ? `<div class="muted">items error: ${escapeHtml(c.items_error)}</div>` : '';
+  const price = (c.price != null) ? `${Number(c.price).toLocaleString()} ISK` : '—';
+  div.innerHTML = `
+    <div class="contract-row-head">
+      <strong>#${c.contract_id}</strong>
+      <span class="muted">${escapeHtml(c.title || '(no title)')}</span>
+      <span class="contract-sources">${escapeHtml(sources)}</span>
+    </div>
+    <div class="muted">Issuer: ${escapeHtml(c.issuer_name || '')} (${c.issuer_id ?? '?'}) · Price: ${price}</div>
+    ${itemsErr}
+    <ul class="contract-items">${itemList}${moreItems}</ul>
+  `;
+  return div;
+}
+
+function exportGapCsv() {
+  if (!lastContractsScan) {
+    alert('Run a scan first.');
+    return;
+  }
+  const rows = [['name', 'ship_name', 'ship_type_id', 'required', 'available', 'missing']];
+  for (const q of lastContractsScan.quotas || []) {
+    rows.push([
+      q.name || '', q.ship_name || '', q.ship_type_id || 0,
+      q.required || 0, q.available || 0, q.missing || 0,
+    ]);
+  }
+  const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n') + '\n';
+  downloadBlob('quota-gap.csv', 'text/csv', csv);
+}
+
+async function copyShoppingList() {
+  if (!lastContractsScan) {
+    alert('Run a scan first.');
+    return;
+  }
+  const lines = [];
+  for (const q of lastContractsScan.quotas || []) {
+    const missing = Number(q.missing) || 0;
+    if (missing > 0) {
+      const name = q.ship_name || q.name || `type ${q.ship_type_id}`;
+      lines.push(`${missing} x ${name}`);
+    }
+  }
+  const text = lines.length ? lines.join('\n') : 'No gaps — every quota is met.';
+  try {
+    await navigator.clipboard.writeText(text);
+    $('#contracts-status').textContent = `Copied ${lines.length} lines to clipboard.`;
+  } catch (e) {
+    alert(text);
+  }
+}
+
+// ============================================================
+// Sov dashboard
+// ============================================================
+
+let sovState = { data: null, loading: false, error: null, sort: 'region' };
+
+// sort modes for the sov systems tables
+const SOV_SORT_MODES = [
+  { id: 'region',         label: 'By region (A→Z)' },
+  { id: 'ihub_adm_asc',   label: 'IHUB ADM ↑ (lowest first)' },
+  { id: 'ihub_adm_desc',  label: 'IHUB ADM ↓ (highest first)' },
+];
+
+function structureAdm(sys_, typeId) {
+  const st = (sys_.structures || []).find((x) => x.structure_type_id === typeId);
+  return st && typeof st.adm === 'number' ? st.adm : null;
+}
+
+function sortAdmCompare(a, b, getter, dir) {
+  const av = getter(a);
+  const bv = getter(b);
+  // Push null/missing to the end regardless of direction.
+  if (av == null && bv == null) return 0;
+  if (av == null) return 1;
+  if (bv == null) return -1;
+  return dir === 'asc' ? av - bv : bv - av;
+}
+
+function admClass(adm) {
+  if (adm == null) return 'adm-unknown';
+  if (adm >= 5) return 'adm-good';
+  if (adm >= 3) return 'adm-warn';
+  return 'adm-bad';
+}
+
+function secClass(sec) {
+  if (sec == null) return 'sec-unknown';
+  if (sec >= 0.5) return 'sec-hi';
+  if (sec > 0.0) return 'sec-lo';
+  return 'sec-null';
+}
+
+function fmtAdm(adm) {
+  return adm == null ? '—' : Number(adm).toFixed(1);
+}
+
+function fmtSec(sec) {
+  return sec == null ? '—' : Number(sec).toFixed(1);
+}
+
+function fmtPct(x) {
+  return x == null ? '—' : `${(Number(x) * 100).toFixed(1)}%`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
+  } catch (_) { return '—'; }
+}
+
+function fmtAge(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const diffMs = d.getTime() - Date.now();
+  const absMin = Math.abs(diffMs) / 60000;
+  if (absMin < 60) return `${Math.round(absMin)} min ${diffMs > 0 ? 'from now' : 'ago'}`;
+  const h = absMin / 60;
+  if (h < 48) return `${h.toFixed(1)} h ${diffMs > 0 ? 'from now' : 'ago'}`;
+  return `${(h / 24).toFixed(1)} d ${diffMs > 0 ? 'from now' : 'ago'}`;
+}
+
+async function refreshSov() {
+  if (sovState.loading) return;
+  sovState.loading = true;
+  sovState.error = null;
+  $('#sov-status').textContent = 'Loading sov data from ESI…';
+  renderSov();
+  try {
+    const res = await fetch(`${API}/api/sov/overview`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status} — ${text}`);
+    }
+    sovState.data = await res.json();
+    $('#sov-status').textContent = `Fetched ${fmtDate(new Date(sovState.data.fetched_at * 1000).toISOString())}`;
+  } catch (e) {
+    sovState.error = String(e.message || e);
+    $('#sov-status').textContent = `Error: ${sovState.error}`;
+  } finally {
+    sovState.loading = false;
+    renderSov();
+  }
+}
+
+function renderSovTotals(d) {
+  const t = d.totals || {};
+  const corpSummary = [
+    `${t.corp_count ?? 0} corp(s)`,
+    `${t.alliance_count ?? 0} alliance(s)`,
+    t.unaffiliated_corp_count ? `${t.unaffiliated_corp_count} non-alliance` : null,
+  ].filter(Boolean).join(' · ');
+  const sortOpts = SOV_SORT_MODES.map((m) =>
+    `<option value="${m.id}"${m.id === sovState.sort ? ' selected' : ''}>${escapeHtml(m.label)}</option>`
+  ).join('');
+  return `
+    <div class="sov-totals">
+      <div class="sov-totals-head">
+        <div class="sov-totals-label">Across all your toons — ${corpSummary}</div>
+        <label class="sov-sort-label">Sort systems
+          <select id="sov-sort-select">${sortOpts}</select>
+        </label>
+      </div>
+      <div class="sov-tiles">
+        <div class="sov-tile"><div class="label">Sov systems</div><div class="value">${t.system_count ?? 0}</div></div>
+        <div class="sov-tile ${admClass(t.avg_adm)}"><div class="label">Avg ADM</div><div class="value">${fmtAdm(t.avg_adm)}</div></div>
+        <div class="sov-tile ${admClass(t.min_adm)}"><div class="label">Min ADM</div><div class="value">${fmtAdm(t.min_adm)}</div></div>
+        <div class="sov-tile ${t.active_campaigns ? 'sov-tile-alert' : ''}"><div class="label">Active campaigns</div><div class="value">${t.active_campaigns ?? 0}</div></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSovOwners(owners) {
+  const corps = (owners?.corps || []).map((c) => {
+    const tagBits = [
+      `<strong>${escapeHtml(c.name || '?')}</strong>`,
+      `<span class="muted">[${escapeHtml(c.ticker || '?')}]</span>`,
+      `<span class="muted">${c.member_count ?? '?'} members · tax ${fmtPct(c.tax_rate)}</span>`,
+      c.war_eligible ? '<span class="sov-war-eligible">war-eligible</span>' : '<span class="muted">war-immune</span>',
+    ];
+    const toonBits = (c.toons || []).map((t) => `<span class="sov-toon-chip">${escapeHtml(t.character_name || t.slot)}</span>`).join('');
+    const originBits = (c.origins || []).map((o) => `<span class="sov-origin-chip">${escapeHtml(o)}</span>`).join('');
+    return `<div class="sov-owner-corp">
+      <div class="sov-owner-line">${tagBits.join(' ')}</div>
+      <div class="sov-owner-line">${toonBits}${originBits}</div>
+    </div>`;
+  }).join('');
+  return `<div class="sov-owners">${corps}</div>`;
+}
+
+function renderSovCampaigns(camps) {
+  if (!camps?.length) return '';
+  const rows = camps.map((c) => {
+    const sysName = c.solar_system_name ? escapeHtml(c.solar_system_name) : `system ${c.solar_system_id}`;
+    const score = (c.defender_score != null && c.attackers_score != null)
+      ? `${(c.defender_score * 100).toFixed(0)}% def / ${(c.attackers_score * 100).toFixed(0)}% atk`
+      : '—';
+    const roleClass = c.role === 'defender' ? 'role-def' : 'role-atk';
+    return `<tr>
+      <td><span class="sov-role ${roleClass}">${escapeHtml(c.role || '?')}</span></td>
+      <td>${escapeHtml(c.event_label || c.event_type || '?')}</td>
+      <td>${sysName}</td>
+      <td>${score}</td>
+      <td>${fmtDate(c.start_time)} <span class="muted">(${escapeHtml(fmtAge(c.start_time))})</span></td>
+    </tr>`;
+  }).join('');
+  return `
+    <h4 class="sov-subsection">Active campaigns</h4>
+    <table class="sov-table">
+      <thead><tr><th>Role</th><th>Event</th><th>System</th><th>Score</th><th>Started</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderSovIncursions(incs) {
+  if (!incs?.length) return '';
+  const rows = incs.map((i) => `<tr>
+    <td>${escapeHtml(i.state || '?')}</td>
+    <td>${fmtPct(i.influence)}</td>
+    <td>${i.has_boss ? 'yes' : 'no'}</td>
+    <td>${(i.overlapping_system_ids || []).length} system(s)</td>
+    <td>${i.staging_solar_system_id ?? '—'}</td>
+  </tr>`).join('');
+  return `
+    <h4 class="sov-subsection">Incursions in holdings</h4>
+    <table class="sov-table">
+      <thead><tr><th>State</th><th>Influence</th><th>Boss</th><th>Overlap</th><th>Staging</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function sovSystemRowHtml(s, includeRegionCol) {
+  const ihub = s.structures.find((x) => x.structure_type_id === 32458);
+  const ihubCell = ihub
+    ? `<span class="adm-pill ${admClass(ihub.adm)}" title="vuln ${fmtDate(ihub.vulnerable_start_time)} → ${fmtDate(ihub.vulnerable_end_time)}">${fmtAdm(ihub.adm)}</span>`
+    : '<span class="muted">—</span>';
+  const activityHot = (s.ship_kills + s.pod_kills) > 0 ? 'activity-hot' : '';
+  const regionCell = includeRegionCol
+    ? `<td class="muted">${escapeHtml(s.region_name || '—')}</td>`
+    : '';
+  return `<tr>
+    <td><a href="https://evemaps.dotlan.net/system/${encodeURIComponent(s.system_name || '')}" target="_blank" rel="noopener">${escapeHtml(s.system_name || '?')}</a></td>
+    <td><span class="sec-pill ${secClass(s.security_status)}">${fmtSec(s.security_status)}</span></td>
+    ${regionCell}
+    <td class="muted">${escapeHtml(s.constellation_name || '—')}</td>
+    <td>${ihubCell}</td>
+    <td class="num ${activityHot}">${s.ship_kills}</td>
+    <td class="num">${s.pod_kills}</td>
+    <td class="num muted">${s.npc_kills}</td>
+    <td class="num muted">${s.ship_jumps}</td>
+  </tr>`;
+}
+
+function sovSystemsTableHtml(systems, includeRegionCol) {
+  const regionTh = includeRegionCol ? '<th>Region</th>' : '';
+  const rows = systems.map((s) => sovSystemRowHtml(s, includeRegionCol)).join('');
+  return `
+    <table class="sov-table sov-systems-table">
+      <thead><tr>
+        <th>System</th><th>Sec</th>${regionTh}<th>Constellation</th>
+        <th title="Infrastructure Hub ADM">IHUB ADM</th>
+        <th title="Ship kills last hour" class="num">Ships</th>
+        <th title="Pod kills last hour" class="num">Pods</th>
+        <th title="NPC kills last hour" class="num">NPC</th>
+        <th title="Ship jumps last hour" class="num">Jumps</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderSovSystems(sys) {
+  if (!sys?.length) {
+    return '<p class="muted">No sov systems for this alliance.</p>';
+  }
+  const mode = sovState.sort || 'region';
+
+  if (mode === 'region') {
+    const byRegion = new Map();
+    for (const s of sys) {
+      const key = s.region_name || `region ${s.region_id ?? '?'}`;
+      if (!byRegion.has(key)) byRegion.set(key, []);
+      byRegion.get(key).push(s);
+    }
+    const regions = [...byRegion.keys()].sort();
+    return regions.map((region) => {
+      const inRegion = byRegion.get(region)
+        .sort((a, b) => (a.system_name || '').localeCompare(b.system_name || ''));
+      return `
+        <details class="sov-region" open>
+          <summary><strong>${escapeHtml(region)}</strong> <span class="muted">(${inRegion.length})</span></summary>
+          ${sovSystemsTableHtml(inRegion, false)}
+        </details>
+      `;
+    }).join('');
+  }
+
+  // Flat, ADM-sorted view.
+  const sortMap = {
+    ihub_adm_asc:  { get: (s) => structureAdm(s, 32458), dir: 'asc'  },
+    ihub_adm_desc: { get: (s) => structureAdm(s, 32458), dir: 'desc' },
+  };
+  const spec = sortMap[mode] || sortMap.ihub_adm_asc;
+  const sorted = [...sys].sort((a, b) => sortAdmCompare(a, b, spec.get, spec.dir));
+  return sovSystemsTableHtml(sorted, true);
+}
+
+function renderSovAlliance(a) {
+  const al = a.alliance || {};
+  const s = a.summary || {};
+  const headline = `<strong>${escapeHtml(al.name || '?')}</strong> <span class="muted">[${escapeHtml(al.ticker || '?')}]</span>`;
+  const tiles = `
+    <div class="sov-tiles">
+      <div class="sov-tile"><div class="label">Sov systems</div><div class="value">${s.system_count ?? 0}</div></div>
+      <div class="sov-tile"><div class="label">IHUBs</div><div class="value">${s.ihub_count ?? 0}</div></div>
+      <div class="sov-tile ${admClass(s.avg_adm)}"><div class="label">Avg ADM</div><div class="value">${fmtAdm(s.avg_adm)}</div></div>
+      <div class="sov-tile ${admClass(s.min_adm)}"><div class="label">Min ADM</div><div class="value">${fmtAdm(s.min_adm)}</div></div>
+      <div class="sov-tile ${s.active_campaigns ? 'sov-tile-alert' : ''}"><div class="label">Active campaigns</div><div class="value">${s.active_campaigns ?? 0}</div></div>
+    </div>
+  `;
+  return `
+    <section class="sov-alliance-block">
+      <header class="sov-alliance-head">
+        <h3>${headline}</h3>
+        ${renderSovOwners(a.owners)}
+      </header>
+      ${tiles}
+      ${renderSovCampaigns(a.campaigns)}
+      ${renderSovIncursions(a.incursions)}
+      ${renderSovSystems(a.systems)}
+    </section>
+  `;
+}
+
+function renderSovUnaffiliated(corps) {
+  if (!corps?.length) return '';
+  const rows = corps.map((c) => {
+    const toons = (c.toons || []).map((t) => escapeHtml(t.character_name || t.slot)).join(', ');
+    return `<tr>
+      <td><strong>${escapeHtml(c.name || '?')}</strong> <span class="muted">[${escapeHtml(c.ticker || '?')}]</span></td>
+      <td class="num">${c.member_count ?? '?'}</td>
+      <td>${fmtPct(c.tax_rate)}</td>
+      <td>${c.war_eligible ? '<span class="sov-war-eligible">yes</span>' : 'no'}</td>
+      <td class="muted">${toons || '—'}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <section class="sov-alliance-block">
+      <header class="sov-alliance-head"><h3>Non-alliance corps</h3></header>
+      <p class="muted">These corps aren't in an alliance, so they hold no sov. Listed here because at least one toon is in them.</p>
+      <table class="sov-table">
+        <thead><tr><th>Corp</th><th class="num">Members</th><th>Tax</th><th>War-eligible</th><th>Toons</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderSov() {
+  const container = $('#sov-content');
+  if (!container) return;
+  if (sovState.loading && !sovState.data) {
+    container.innerHTML = '<p class="muted">Loading…</p>';
+    return;
+  }
+  if (sovState.error && !sovState.data) {
+    container.innerHTML = `<p class="muted">Failed to load: ${escapeHtml(sovState.error)}</p>`;
+    return;
+  }
+  const d = sovState.data;
+  if (!d) {
+    container.innerHTML = '<p class="muted">Click <em>Refresh</em> to load the sov overview.</p>';
+    return;
+  }
+  const parts = [renderSovTotals(d)];
+  if (d.auth_errors?.length) {
+    const items = d.auth_errors.map((e) => `<li>${escapeHtml(e.slot)}: ${escapeHtml(e.error)}</li>`).join('');
+    parts.push(`<details class="sov-auth-errors"><summary class="muted">Some auth slots couldn't be resolved (${d.auth_errors.length})</summary><ul>${items}</ul></details>`);
+  }
+  if (!d.alliances?.length && !d.unaffiliated_corps?.length) {
+    parts.push('<p class="muted">No corps detected. Configure a corp_id or log in on the Auth tab.</p>');
+  }
+  for (const a of d.alliances || []) parts.push(renderSovAlliance(a));
+  parts.push(renderSovUnaffiliated(d.unaffiliated_corps));
+  container.innerHTML = parts.join('');
+
+  const sortSel = $('#sov-sort-select');
+  if (sortSel) {
+    sortSel.addEventListener('change', (e) => {
+      sovState.sort = e.target.value;
+      renderSov();
+    });
+  }
+}
+
+$('#btn-sov-refresh')?.addEventListener('click', refreshSov);
+
+// Lazy-load the first time the user opens the tab.
+document.querySelector('.tab-btn[data-tab="sov"]')?.addEventListener('click', () => {
+  if (!sovState.data && !sovState.loading) refreshSov();
+});

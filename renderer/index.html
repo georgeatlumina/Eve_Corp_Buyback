@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>EVE Corp Buyback</title>
+  <title>Naval Defence Alliance Management Tool</title>
   <link rel="icon" type="image/png" href="../assets/icon-128.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header>
-    <h1>EVE Corp Buyback</h1>
+    <h1>Naval Defence Alliance Management Tool <span id="app-version" class="app-version"></span><span id="app-author" class="app-author"></span></h1>
     <nav>
       <button class="tab-btn active" data-tab="config">Config</button>
       <button class="tab-btn" data-tab="auth">Auth</button>
@@ -17,6 +17,8 @@
       <button class="tab-btn" data-tab="mail">Mail</button>
       <button class="tab-btn" data-tab="doctrines">Doctrines</button>
       <button class="tab-btn" data-tab="readiness">Readiness</button>
+      <button class="tab-btn" data-tab="contracts">Contracts</button>
+      <button class="tab-btn" data-tab="sov">Sov</button>
     </nav>
   </header>
   <main>
@@ -50,6 +52,43 @@
           <p class="muted">Moon ore covers R4–R64 (raw + compressed + graded variants). Defaults: 80% moon, 90% non-moon &amp; ice.</p>
         </fieldset>
 
+        <fieldset>
+          <legend>Contracts page — home station &amp; quotas</legend>
+          <p class="muted">Used by the Contracts tab to find outstanding item-exchange contracts that this corp has posted to alliance or public availability at one station, and tally them against a target stock list. Region ID is no longer required for the scan — kept here for the NPC-station lookup convenience.</p>
+          <div class="hs-row">
+            <label>Home station ID <input name="home_station_id" type="number" placeholder="e.g. 60003760" /></label>
+            <label>Home region ID (optional) <input name="home_region_id" type="number" placeholder="e.g. 10000002" /></label>
+            <button type="button" id="btn-lookup-region" class="secondary">Lookup region</button>
+            <span id="region-lookup-status" class="muted"></span>
+          </div>
+          <h4 class="quota-h4">Ship/doctrine quotas</h4>
+          <p class="muted">Spreadsheet-style: tab/arrow between cells, click <em>+ Row</em> to add. Tip: paste rows directly from Excel/Sheets (tab- or comma-separated). CSV header: <code>name,ship_type_id,ship_name,required,title_filter</code>.</p>
+          <div class="quota-table-wrap">
+            <table id="quotas-table" class="quota-table">
+              <thead>
+                <tr>
+                  <th>Fit name</th>
+                  <th>Ship type ID</th>
+                  <th>Ship name</th>
+                  <th>Required</th>
+                  <th>Title filter (optional)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="quotas-tbody"></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button type="button" id="btn-add-quota" class="secondary">+ Row</button>
+            <button type="button" id="btn-quota-import-csv" class="secondary">Import CSV…</button>
+            <button type="button" id="btn-quota-import-json" class="secondary">Import JSON…</button>
+            <button type="button" id="btn-quota-export-csv" class="secondary">Export CSV</button>
+            <button type="button" id="btn-quota-export-json" class="secondary">Export JSON</button>
+            <input type="file" id="quota-import-file" hidden accept=".csv,.json,text/csv,application/json" />
+            <span id="quota-io-status" class="muted"></span>
+          </div>
+        </fieldset>
+
         <label>Janice API Key (optional) <input name="janice_api_key" type="text" autocomplete="off" placeholder="X-ApiKey from Janice" /></label>
         <div class="actions">
           <button type="submit">Save</button>
@@ -60,12 +99,12 @@
 
     <section id="tab-auth" class="tab">
       <h2>Authentication</h2>
-      <p>Status: <span id="auth-status" class="muted">checking...</span></p>
+      <p class="muted">Slot&nbsp;1 is the primary character (used for wallets, corp contracts, mail). Slots&nbsp;2&nbsp;&amp;&nbsp;3 are optional alts logged in so the Contracts page can also see alliance contracts those toons have access to.</p>
+      <div id="auth-slots"></div>
+      <p>Legacy status: <span id="auth-status" class="muted">checking...</span></p>
       <div class="actions">
-        <button id="btn-login">Login with EVE Online</button>
-        <button id="btn-refresh-status" class="secondary">Refresh status</button>
+        <button id="btn-refresh-status" class="secondary">Refresh all slots</button>
       </div>
-      <p class="muted">A browser window will open. After authorizing, return to this app.</p>
     </section>
 
     <section id="tab-buyback" class="tab">
@@ -143,6 +182,36 @@
       </div>
       <p id="readiness-status" class="muted"></p>
       <div id="readiness-content"></div>
+    </section>
+
+    <section id="tab-contracts" class="tab">
+      <h2>Contracts &amp; quotas</h2>
+      <p class="muted">Scans every outstanding alliance- or public-availability item-exchange contract <strong>visible to any logged-in slot</strong> at the configured home station, and tallies them against the configured quotas. To see alliance contracts the toon must be in the alliance they were posted to; results are merged across slots and deduped. Each contract row shows which slot(s) saw it.</p>
+      <div class="actions">
+        <button id="btn-contracts-scan" type="button">Scan contracts</button>
+        <button id="btn-contracts-export-csv" type="button" class="secondary">Export gap CSV</button>
+        <button id="btn-contracts-export-text" type="button" class="secondary">Copy shopping list</button>
+      </div>
+      <p id="contracts-status" class="muted"></p>
+      <div class="progress-area" id="contracts-progress" hidden>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-step muted">starting…</div>
+      </div>
+      <div id="contracts-quota-dashboard"></div>
+      <details class="contracts-list-wrap">
+        <summary>All matching contracts (<span id="contracts-count">0</span>)</summary>
+        <div id="contracts-list"></div>
+      </details>
+    </section>
+
+    <section id="tab-sov" class="tab">
+      <h2>Sovereignty dashboard</h2>
+      <p class="muted">ADM, sov holdings, active campaigns, and live system activity for the corp's alliance. All data is public ESI — no scopes required.</p>
+      <div class="actions">
+        <button id="btn-sov-refresh" type="button">Refresh</button>
+        <span id="sov-status" class="muted"></span>
+      </div>
+      <div id="sov-content"></div>
     </section>
 
     <section id="tab-moon" class="tab">

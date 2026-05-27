@@ -1,4 +1,4 @@
-# PyInstaller spec for the EVE Corp Buyback Python sidecar.
+# PyInstaller spec for the Naval Defence Alliance Management Tool Python sidecar.
 # Build with: pyinstaller python/sidecar.spec
 # -*- mode: python ; coding: utf-8 -*-
 

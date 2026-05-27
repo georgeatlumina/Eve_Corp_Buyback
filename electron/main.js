@@ -3,11 +3,16 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 const { spawn } = require('child_process');
+const pkg = require('../package.json');
 
 const PYTHON_PORT = 8765;
 const UPDATE_REPO = 'georgeatlumina/Eve_Corp_Buyback';
+const APP_META = { version: pkg.version || '', author: pkg.author || '' };
+
+ipcMain.handle('app:meta', () => APP_META);
 let pythonProcess = null;
 let mainWindow = null;
+let splashWindow = null;
 let calculatorWindow = null;
 let aaWindow = null;
 let sidecarLogPath = null;
@@ -84,8 +89,10 @@ function startPythonSidecar() {
   });
 }
 
-async function waitForSidecar() {
-  for (let i = 0; i < 60; i++) {
+async function waitForSidecar(onTick) {
+  const maxAttempts = 60;
+  for (let i = 0; i < maxAttempts; i++) {
+    if (onTick) onTick(i, maxAttempts);
     try {
       const res = await fetch(`http://localhost:${PYTHON_PORT}/api/health`);
       if (res.ok) {
@@ -98,12 +105,86 @@ async function waitForSidecar() {
   throw new Error('Python sidecar did not respond on /api/health within 30s');
 }
 
+let splashReady = false;
+const splashPending = [];
+
+function emitSplash(pct, step) {
+  if (!splashWindow || splashWindow.isDestroyed()) return;
+  if (!splashReady) {
+    splashPending.push({ pct, step });
+    return;
+  }
+  try {
+    splashWindow.webContents.send('splash:progress', { pct, step });
+  } catch (_) {}
+}
+
+function flushSplashPending() {
+  if (!splashWindow || splashWindow.isDestroyed()) return;
+  // Coalesce to the latest pct and latest non-null step so we don't replay stale text.
+  let pct = null;
+  let step = null;
+  for (const ev of splashPending) {
+    if (typeof ev.pct === 'number') pct = ev.pct;
+    if (typeof ev.step === 'string') step = ev.step;
+  }
+  splashPending.length = 0;
+  if (pct != null || step != null) {
+    try { splashWindow.webContents.send('splash:progress', { pct, step }); } catch (_) {}
+  }
+}
+
+function createSplashWindow() {
+  splashReady = false;
+  splashPending.length = 0;
+  splashWindow = new BrowserWindow({
+    width: 560,
+    height: 230,
+    frame: false,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    show: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    title: 'Naval Defence Alliance Management Tool',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'splash-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  splashWindow.setMenuBarVisibility(false);
+  splashWindow.loadFile(path.join(__dirname, '..', 'renderer', 'splash.html'));
+  splashWindow.once('ready-to-show', () => {
+    if (splashWindow && !splashWindow.isDestroyed()) splashWindow.show();
+  });
+  splashWindow.webContents.once('did-finish-load', () => {
+    splashReady = true;
+    try { splashWindow.webContents.send('splash:meta', APP_META); } catch (_) {}
+    flushSplashPending();
+  });
+  splashWindow.on('closed', () => { splashWindow = null; splashReady = false; });
+}
+
+function closeSplashWindow() {
+  if (!splashWindow || splashWindow.isDestroyed()) return;
+  try { splashWindow.close(); } catch (_) {}
+  splashWindow = null;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
-    title: 'EVE Corp Buyback',
+    title: 'Naval Defence Alliance Management Tool',
     icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+    show: false,
+    backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -111,6 +192,12 @@ function createWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.once('ready-to-show', () => {
+    emitSplash(100, 'Ready');
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+    // Small delay so users see the bar hit 100% before the splash vanishes.
+    setTimeout(closeSplashWindow, 180);
+  });
 }
 
 function openCalculatorWindow() {
@@ -193,11 +280,21 @@ ipcMain.handle('aa:fetch-html', async (_event, urlPath) => {
 });
 
 app.whenReady().then(async () => {
+  createSplashWindow();
+  emitSplash(5, 'Initializing…');
   startPythonSidecar();
+  emitSplash(12, 'Starting Python sidecar…');
   try {
-    await waitForSidecar();
+    await waitForSidecar((i, max) => {
+      // Map poll attempts 0..max onto 12..88% so the bar moves visibly during the wait.
+      const pct = 12 + (i / max) * 76;
+      const secs = (i * 0.5).toFixed(1);
+      emitSplash(pct, `Waiting for backend (${secs}s)…`);
+    });
+    emitSplash(92, 'Backend ready · loading interface…');
   } catch (e) {
     logSidecar(`waitForSidecar: ${e.message}`);
+    emitSplash(92, 'Backend slow to respond · loading interface…');
   }
   createWindow();
   app.on('activate', () => {
@@ -241,7 +338,7 @@ async function checkForUpdate() {
   const confirm = await dialog.showMessageBox(mainWindow || null, {
     type: 'info',
     title: 'Update available',
-    message: `EVE Corp Buyback ${latestTag} is available`,
+    message: `Naval Defence Alliance Management Tool ${latestTag} is available`,
     detail: `You are running ${current}. Download the new ${asset.name} (~${Math.round((asset.size || 0) / 1024 / 1024)} MB)?`,
     buttons: ['Download', 'Later'],
     defaultId: 0,
