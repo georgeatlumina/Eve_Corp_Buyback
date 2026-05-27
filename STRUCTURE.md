@@ -32,8 +32,9 @@ Auth session, native windows, auto-update).
 
 | File | Lines | Role |
 |------|-------|------|
-| [main.js](electron/main.js) | ~353 | App lifecycle, sidecar spawn (`startPythonSidecar`), main window, calculator popout, Alliance Auth BrowserWindow + cookie-jar partition, GitHub-Releases auto-update (`checkForUpdate`). |
-| [preload.js](electron/preload.js) | 9 | `contextBridge` exposing `window.api` with `openCalculator`, `aaOpen`, `aaLogout`, `aaFetchHtml`. The renderer's *entire* surface area for IPC. |
+| [main.js](electron/main.js) | ~450 | App lifecycle, sidecar spawn (`startPythonSidecar`), splash window with progress events (`createSplashWindow`/`emitSplash`), main window, calculator popout, Alliance Auth BrowserWindow + cookie-jar partition, GitHub-Releases auto-update (`checkForUpdate`). |
+| [preload.js](electron/preload.js) | ~12 | `contextBridge` exposing `window.api` with `openCalculator`, `aaOpen`, `aaLogout`, `aaFetchHtml`, and `appMeta` (returns name+version for the title-bar version chip). |
+| [splash-preload.js](electron/splash-preload.js) | ~10 | Bridges `splash:progress` events from main into the splash renderer's DOM. |
 | [afterSign.js](electron/afterSign.js) | 21 | electron-builder hook; runs after code-signing during `npm run build:mac`. |
 
 **Sidecar log:** `<userData>/sidecar.log` — truncated each startup, captures
@@ -46,15 +47,20 @@ framework. All DOM updates are imperative.
 
 | File | Lines | Role |
 |------|-------|------|
-| [index.html](renderer/index.html) | 203 | Tab shell (Config / Auth / Buyback / Moon / Mail / Doctrines / Readiness), mail modal, calculator sidebar mount point. |
+| [index.html](renderer/index.html) | ~290 | Tab shell (Config / Auth / Buyback / Moon / Mail / Doctrines / Readiness / Contracts / Sov), mail modal, calculator sidebar mount point, quota editor table, multi-slot auth slots container. |
+| [splash.html](renderer/splash.html) | ~140 | Borderless splash window shown while the Python sidecar boots; rendered via `splash-preload.js`. |
 | [calculator.html](renderer/calculator.html) | 16 | Standalone calculator window template (popout target). |
-| [app.js](renderer/app.js) | 2143 | **Everything else.** Config form ↔ sidecar, auth status polling, SSE consumption for `/api/validate` and `/api/aa/market/stream`, buyback + moon row rendering, mail template engine, AA HTML scraping, doctrine + fit rendering, readiness dashboard. |
+| [app.js](renderer/app.js) | ~2700 | **Everything else.** Config form ↔ sidecar, multi-slot auth UI, SSE/NDJSON consumption for `/api/validate`, `/api/aa/market/stream`, and `/api/contracts/scan`, buyback + moon row rendering, mail template engine, AA HTML scraping, doctrine + fit rendering, readiness dashboard, Contracts dashboard with quota progress bars + CSV/JSON quota import-export + ship-type datalist + gap-CSV / shopping-list exports. |
 | [calculator.js](renderer/calculator.js) | 211 | Self-contained numpad calculator with 70/80/90% copy-to-clipboard buttons; mounted both inline (Moon tab sidebar) and in the popout window. |
-| [styles.css](renderer/styles.css) | 313 | Dark theme, tab styles, table layouts, progress bars, modal. |
+| [styles.css](renderer/styles.css) | ~370 | Dark theme, tab styles, table layouts, progress bars, modal, auth-slot cards, quota table, contracts dashboard quota bars. |
 
 **State lives in `app.js` module-level lets:** `cfg`, `walletData`,
-`buybackResults`, `moonResults`, `aaState`, `readinessState`. No global store
-beyond that. `readinessState` is the only chunk persisted to `localStorage`.
+`buybackResults`, `moonResults`, `aaState`, `readinessState`,
+`mailPresets`, `lastContractsScan`, `shipTypesCache`, `shipTypesByIdMap`,
+`shipTypesByNameMap`. No global store beyond that. `readinessState` is the
+only chunk persisted to `localStorage`; `shipTypesCache` is hydrated from
+the sidecar's disk-cached `/api/universe/ships` response on Config-tab
+load.
 
 ## `python/` — FastAPI sidecar
 
@@ -64,10 +70,10 @@ Fuzzwork) goes through here.
 
 | File | Lines | Role |
 |------|-------|------|
-| [server.py](python/server.py) | 576 | FastAPI app, all routes, SSE streaming for validate + AA market, EVE SSO callback page. |
-| [auth.py](python/auth.py) | 104 | EVE SSO authorize URL, code↔token exchange, refresh, token-cache file (`tokens.json`, chmod 600), JWT payload decoder. |
-| [config.py](python/config.py) | 119 | Config schema + defaults, JSON load/save (chmod 600), legacy-shape migration (`_migrate`). |
-| [esi.py](python/esi.py) | 179 | Thin ESI wrappers: `resolve_names`, `send_evemail`, `fetch_corp_wallets`, `fetch_corp_contracts`, `fetch_contract_items`, `fetch_type_info`, `fetch_group_info`, paged + non-paged `fetch_structure_orders`. |
+| [server.py](python/server.py) | ~1275 | FastAPI app, all routes, NDJSON streaming for validate / AA market / contracts scan, EVE SSO callback page, sov overview aggregator, multi-slot auth handlers, ship-type cache, region-from-station lookup. |
+| [auth.py](python/auth.py) | ~153 | EVE SSO authorize URL, code↔token exchange, refresh. Multi-slot token cache (dict keyed `slot1`/`slot2`/`slot3`; chmod 600). JWT payload decoder + `character_id_from_access_token`. Legacy single-record shape auto-migrates into slot1. |
+| [config.py](python/config.py) | ~135 | Config schema + defaults (incl. `home_structure_id`, `home_region_id`, `quotas`), JSON load/save (chmod 600), legacy-shape migration (`_migrate`). `load_config` runs `_migrate` **before** filtering by `_USER_KEYS` so renamed keys aren't dropped. |
+| [esi.py](python/esi.py) | ~458 | Thin ESI wrappers: `resolve_names`, `send_evemail`, `fetch_corp_wallets`, `fetch_corp_contracts`, `fetch_contract_items`, character contracts (`fetch_character_contracts` / `_items`), public contracts (`fetch_public_contracts_paged` / `_items`), universe lookups (`fetch_type_info`, `fetch_group_info`, `fetch_category_info`, `fetch_station/system/constellation/region_info`, `fetch_character/corporation/alliance_info`), structure markets (paged + non-paged), sov endpoints (`fetch_sovereignty_structures/map/campaigns`, `fetch_system_kills/jumps`, `fetch_incursions`), and the bulk `fetch_all_ship_types` (walks category 6). |
 | [janice.py](python/janice.py) | 211 | Janice appraisal fetch (RPC-first, API fallback), appraisal creation. `_normalize` is the single source of truth for the response shape consumed by `validate.py`. |
 | [refining.py](python/refining.py) | 325 | Type classification (`is_mineable`, `is_moon_ore`, `is_ice`, `is_prismaticite`, `is_donation`), Fuzzwork material dump loader, Fuzzwork market buy-price fetch, and the core `compute_refined_payout` that produces the moon-contract payout. |
 | [validate.py](python/validate.py) | 170 | `categorize` (courier/moon/buyback split), `validate_buyback_contract`, `process_moon_contract`, `validate_all`. Pure logic, no IO except via injected `payout_lookup`. |
@@ -77,7 +83,10 @@ Fuzzwork) goes through here.
 **Caches & state on disk** (under `EVE_BUYBACK_DATA_DIR`, typically
 `<userData>/eve_auth/`):
 - `config.json` — user settings (chmod 600).
-- `tokens.json` — ESI tokens (chmod 600).
+- `tokens.json` — ESI tokens, dict keyed by slot (chmod 600).
+- `ship_types.json` — every published ship hull `{type_id, name, group_id,
+  group_name}`. Built on first hit to `/api/universe/ships`; refresh via
+  `?refresh=true`.
 - `invTypeMaterials.csv` — Fuzzwork dump, lazy-loaded once per process.
 
 ## `assets/`

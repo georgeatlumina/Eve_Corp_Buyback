@@ -12,7 +12,7 @@ and a one-line description.
 
 ---
 
-## `python/server.py` — FastAPI sidecar entrypoint (576 LOC)
+## `python/server.py` — FastAPI sidecar entrypoint (~1275 LOC)
 
 [python/server.py](python/server.py)
 
@@ -20,31 +20,44 @@ and a one-line description.
 
 | Method+Path | Handler | Line | Purpose |
 |---|---|---|---|
-| `GET /api/health` | `health` | [62](python/server.py#L62) | Liveness probe used by `waitForSidecar`. |
-| `GET /api/config` | `get_config` | [67](python/server.py#L67) | Return merged config (defaults + saved). |
-| `POST /api/config` | `update_config` | [87](python/server.py#L87) | Partial-update saved config; pydantic `ConfigUpdate` filters keys. |
-| `GET /api/markets` | `list_markets` | [96](python/server.py#L96) | Return supported Janice market names. |
-| `GET /api/auth/status` | `auth_status` | [102](python/server.py#L102) | Cached-token → character name; refreshes if near expiry. |
-| `POST /api/auth/login` | `auth_login` | [126](python/server.py#L126) | Build SSO authorize URL + state; opens system browser. |
-| `GET /callback` | `sso_callback` | [141](python/server.py#L141) | EVE SSO redirect target; exchanges code for tokens. |
-| `POST /api/mail/send` | `send_mail` | [174](python/server.py#L174) | ESI evemail send (requires `esi-mail.send_mail.v1`). |
-| `GET /api/wallets` | `get_wallets` | [217](python/server.py#L217) | All 7 corp wallet divisions + total. |
-| `POST /api/contracts/fetch` | `fetch_contracts` | [232](python/server.py#L232) | Raw corp contracts (used to preview before validation). |
-| `POST /api/validate` | `validate` | [256](python/server.py#L256) | NDJSON-streamed buyback + moon validation. |
-| `GET /api/aa/market` | `get_aa_market` | [470](python/server.py#L470) | One-shot structure market snapshot (cached 5 min). |
-| `GET /api/aa/market/stream` | `stream_aa_market` | [565](python/server.py#L565) | NDJSON-streamed page-by-page market fetch. |
+| `GET /api/health` | `health` | [92](python/server.py#L92) | Liveness probe used by `waitForSidecar`. |
+| `GET /api/config` | `get_config` | [97](python/server.py#L97) | Return merged config (defaults + saved). |
+| `POST /api/config` | `update_config` | [120](python/server.py#L120) | Partial-update saved config; pydantic `ConfigUpdate` filters keys. |
+| `GET /api/markets` | `list_markets` | [129](python/server.py#L129) | Return supported Janice market names. |
+| `GET /api/auth/status` | `auth_status` | [161](python/server.py#L161) | Per-slot status (`slot=slot1` default); refreshes the access token if near expiry. |
+| `GET /api/auth/slots` | `auth_slots` | [167](python/server.py#L167) | Array of statuses for all 3 slots — drives the Auth-tab UI. |
+| `POST /api/auth/login` | `auth_login` | [173](python/server.py#L173) | Build SSO authorize URL + state for `slot=slotN`; opens system browser. |
+| `POST /api/auth/logout` | `auth_logout` | [190](python/server.py#L190) | Clear cached tokens for the given slot. |
+| `GET /callback` | `sso_callback` | [197](python/server.py#L197) | EVE SSO redirect target; pops state→slot mapping, exchanges code for tokens, writes them under that slot's key. |
+| `POST /api/mail/send` | `send_mail` | [230](python/server.py#L230) | ESI evemail send via slot1 (requires `esi-mail.send_mail.v1`). |
+| `GET /api/wallets` | `get_wallets` | [273](python/server.py#L273) | All 7 corp wallet divisions + total (slot1). |
+| `GET /api/universe/ships` | `get_ship_types` | [288](python/server.py#L288) | Return every published EVE ship hull; cached to disk indefinitely. `?refresh=true` rebuilds. |
+| `GET /api/region/from-station` | `region_from_station` | [317](python/server.py#L317) | NPC station ID → `{station_name, system_id, system_name, region_id}` via the universe lookup chain. |
+| `POST /api/contracts/fetch` | `fetch_contracts` | [340](python/server.py#L340) | Raw corp contracts (used to preview before validation). |
+| `POST /api/validate` | `validate` | [364](python/server.py#L364) | NDJSON-streamed buyback + moon validation. |
+| `GET /api/aa/market` | `get_aa_market` | [578](python/server.py#L578) | One-shot structure market snapshot (cached 5 min). |
+| `GET /api/aa/market/stream` | `stream_aa_market` | [673](python/server.py#L673) | NDJSON-streamed page-by-page market fetch. |
+| `GET /api/contracts/scan` | `scan_contracts` | [932](python/server.py#L932) | NDJSON-streamed Contracts-dashboard scan: walks each authed slot's corp, filters to outstanding corp-posted item-exchanges at the home structure, fetches items, tallies against configured quotas. |
+| `GET /api/sov/overview` | `sov_overview` | [1135](python/server.py#L1135) | Sov-tab aggregator: sovereignty structures + map + campaigns + system jumps/kills + incursions, all enriched with names. |
 
 ### Helpers / internals
 
-- `_callback_page(msg)` — [54](python/server.py#L54) — minimal dark-themed HTML for the SSO landing tab.
-- `ConfigUpdate` *(pydantic)* — [71](python/server.py#L71) — accepted config keys; unknown keys dropped.
-- `SendMailRequest` *(pydantic)* — [167](python/server.py#L167) — recipient/subject/body.
-- `ValidateRequest` *(pydantic)* — [245](python/server.py#L245) — optional pre-supplied `contracts`.
-- `_emit(event_type, **data)` — [249](python/server.py#L249) — encodes one NDJSON line for streams.
-- `_validate_stream(cfg, req)` — [266](python/server.py#L266) — **core pipeline.** Fetches contracts, categorises, resolves issuer names, walks buyback then moon contracts, emits `progress`/`buyback_result`/`moon_result`/`done`/`error`. Constructs an inline `payout_lookup` closure that calls `compute_refined_payout`.
-- `_summarize_orders(structure_id, orders, fetched_at)` — [447](python/server.py#L447) — fold raw structure orders → `{type_id: {min_price, total_volume, order_count}}`.
-- `_resolve_market_structure_id(cfg, structure_id)` — [508](python/server.py#L508) — falls back to first configured structure when caller doesn't pass an explicit id.
-- `_market_stream(structure_id, refresh)` — [521](python/server.py#L521) — generator for `stream_aa_market`; reuses the in-memory cache when fresh.
+- `_callback_page(msg)` — [85](python/server.py#L85) — minimal dark-themed HTML for the SSO landing tab.
+- `_normalize_slot(slot)` — [78](python/server.py#L78) — coerce optional slot to one of `VALID_SLOTS`, defaulting to `slot1`. Raises `HTTPException(400)` on invalid.
+- `_slot_status(slot)` — [135](python/server.py#L135) — single-slot status block used by both `/api/auth/status` and `/api/auth/slots`; auto-refreshes the access token if within 30s of expiry.
+- `_auth_state` — module dict tracking `{pending: state→slot, completed: slot→bool, errors: slot→str}` for the SSO callback.
+- `ConfigUpdate` *(pydantic)* — [102](python/server.py#L102) — accepted config keys (incl. `home_structure_id`, `home_region_id`, `quotas`); unknown keys dropped.
+- `SendMailRequest` *(pydantic)* — [224](python/server.py#L224) — recipient/subject/body.
+- `ValidateRequest` *(pydantic)* — [354](python/server.py#L354) — optional pre-supplied `contracts`.
+- `_emit(event_type, **data)` — [358](python/server.py#L358) — encodes one NDJSON line for streams.
+- `_validate_stream(cfg, req)` — [375](python/server.py#L375) — **buyback+moon pipeline.** Fetches contracts, categorises, resolves issuer names, walks buyback then moon contracts, emits `progress`/`buyback_result`/`moon_result`/`done`/`error`. Constructs an inline `payout_lookup` closure that calls `compute_refined_payout`.
+- `_summarize_orders(structure_id, orders, fetched_at)` — [556](python/server.py#L556) — fold raw structure orders → `{type_id: {min_price, total_volume, order_count}}`.
+- `_resolve_market_structure_id(cfg, structure_id)` — [616](python/server.py#L616) — falls back to first configured structure when caller doesn't pass an explicit id.
+- `_market_stream(structure_id, refresh)` — [629](python/server.py#L629) — generator for `stream_aa_market`; reuses the in-memory cache when fresh.
+- `_matches_quota(quota, items_named, contract)` — [762](python/server.py#L762) — returns how many times a contract counts toward a quota row (ship `type_id` required, optional `title_filter` substring).
+- `_scan_contracts_stream()` — [785](python/server.py#L785) — **Contracts dashboard pipeline.** Iterates `list_authenticated_slots()`, resolves each toon's corp via `fetch_character_info`, calls `fetch_corp_contracts` with that slot's token (dedupes corps), filters per-slot, fetches items via `fetch_contract_items`, bulk-resolves type+issuer names, tallies against configured quotas, emits one `done` with `{structure_id, corps_scanned[], contracts[], quotas[]}`.
+- `_contract_items_cache` — process-scope `dict[contract_id → items]` so back-to-back scans don't re-download every contract's items.
+- `_SOV_STRUCTURE_TYPE_NAMES` — `{32458: 'IHUB'}` (TCUs were removed in the 2024 sov rework).
 
 ---
 
@@ -88,7 +101,7 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 
 ---
 
-## `python/esi.py` — ESI wrappers (303 LOC)
+## `python/esi.py` — ESI wrappers (~458 LOC)
 
 [python/esi.py](python/esi.py)
 
@@ -100,16 +113,28 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 | `fetch_contract_items(corp_id, contract_id, access_token, user_agent)` | [72](python/esi.py#L72) | Items in one corp contract. |
 | `fetch_type_info(type_id, user_agent)` | [88](python/esi.py#L88) | Type metadata, in-process cached (`_TYPE_INFO_CACHE`). |
 | `fetch_group_info(group_id, user_agent)` | [104](python/esi.py#L104) | Group metadata, in-process cached (`_GROUP_INFO_CACHE`). |
-| `fetch_structure_orders_paged(structure_id, access_token, user_agent)` | [120](python/esi.py#L120) | **Generator** yielding `(page, max_pages, batch)`. Used for SSE progress. |
-| `fetch_structure_orders(structure_id, access_token, user_agent)` | [149](python/esi.py#L149) | Convenience wrapper that consumes the generator. |
-| `fetch_corp_contracts(corp_id, access_token, user_agent)` | [157](python/esi.py#L157) | Paginated corp contracts. |
-| `fetch_public_contracts_paged(region_id, user_agent)` | [182](python/esi.py#L182) | Generator over public contracts in a region. |
-| `fetch_public_contract_items(contract_id, user_agent)` | [210](python/esi.py#L210) | Items for a public contract. |
-| `fetch_character_contracts(character_id, access_token, user_agent)` | [235](python/esi.py#L235) | Personal contracts visible to a character. |
-| `fetch_character_contract_items(character_id, contract_id, access_token, user_agent)` | [260](python/esi.py#L260) | Items for one character-visible contract. |
-| `fetch_station_info(station_id, user_agent)` | [274](python/esi.py#L274) | NPC station lookup (→ derive region_id). |
-| `fetch_system_info(system_id, user_agent)` | [285](python/esi.py#L285) | System metadata. |
-| `fetch_constellation_info(constellation_id, user_agent)` | [295](python/esi.py#L295) | Constellation metadata. |
+| `fetch_category_info(category_id, user_agent)` | [120](python/esi.py#L120) | Universe category metadata (e.g. category 6 = Ship → list of group ids). |
+| `fetch_all_ship_types(user_agent)` | [131](python/esi.py#L131) | Walks category 6 → groups → type ids → bulk `resolve_names`. Returns `[{type_id, name, group_id, group_name}]` for every published ship hull (~560 entries). Cached to disk server-side; used by the quota-editor dropdown. |
+| `fetch_structure_orders_paged(structure_id, access_token, user_agent)` | [167](python/esi.py#L167) | **Generator** yielding `(page, max_pages, batch)`. Used for SSE progress. |
+| `fetch_structure_orders(structure_id, access_token, user_agent)` | [196](python/esi.py#L196) | Convenience wrapper that consumes the generator. |
+| `fetch_corp_contracts(corp_id, access_token, user_agent)` | [204](python/esi.py#L204) | Paginated corp contracts. Used by Buyback validation, Moon processing, and the Contracts scan. |
+| `fetch_public_contracts_paged(region_id, user_agent)` | [229](python/esi.py#L229) | Generator over public contracts in a region. (Available for future region-wide use; not currently called.) |
+| `fetch_public_contract_items(contract_id, user_agent)` | [257](python/esi.py#L257) | Items for a public contract. |
+| `fetch_character_contracts(character_id, access_token, user_agent)` | [282](python/esi.py#L282) | Contracts where the character is issuer/acceptor/assignee. (Available; the active Contracts scan uses the corp endpoint instead per the ESI-limitation notes in [CONTEXT.md](CONTEXT.md).) |
+| `fetch_character_contract_items(character_id, contract_id, access_token, user_agent)` | [307](python/esi.py#L307) | Items for one character-visible contract. |
+| `fetch_station_info(station_id, user_agent)` | [321](python/esi.py#L321) | NPC station lookup (→ derive system_id → region_id). |
+| `fetch_system_info(system_id, user_agent)` | [332](python/esi.py#L332) | System metadata. |
+| `fetch_constellation_info(constellation_id, user_agent)` | [342](python/esi.py#L342) | Constellation metadata. |
+| `fetch_region_info(region_id, user_agent)` | [352](python/esi.py#L352) | Region metadata. |
+| `fetch_character_info(character_id, user_agent)` | [362](python/esi.py#L362) | Returns `{corporation_id, alliance_id, ...}` — used by the Contracts scan to map each authed slot to its corp. |
+| `fetch_corporation_info(corp_id, user_agent)` | [373](python/esi.py#L373) | Corp metadata (name, ticker, alliance_id, …). |
+| `fetch_alliance_info(alliance_id, user_agent)` | [384](python/esi.py#L384) | Alliance metadata. |
+| `fetch_sovereignty_structures(user_agent)` | [395](python/esi.py#L395) | All sov structures (IHUBs after the 2024 rework). |
+| `fetch_sovereignty_map(user_agent)` | [406](python/esi.py#L406) | System→owner map. |
+| `fetch_sovereignty_campaigns(user_agent)` | [417](python/esi.py#L417) | In-progress sov campaigns. |
+| `fetch_system_kills(user_agent)` | [428](python/esi.py#L428) | Per-system kill stats (last hour). |
+| `fetch_system_jumps(user_agent)` | [439](python/esi.py#L439) | Per-system jump counts. |
+| `fetch_incursions(user_agent)` | [450](python/esi.py#L450) | Active incursions. |
 
 ---
 
@@ -132,7 +157,7 @@ Constants: `BUYBACK_PERCENTAGE = 0.90`, `JANICE_MARKET_IDS = {Jita 4-4: 2, Amarr
 
 ---
 
-## `python/auth.py` — EVE SSO (154 LOC)
+## `python/auth.py` — EVE SSO multi-slot (~153 LOC)
 
 [python/auth.py](python/auth.py)
 
@@ -156,16 +181,16 @@ Constants: `BUYBACK_PERCENTAGE = 0.90`, `JANICE_MARKET_IDS = {Jita 4-4: 2, Amarr
 
 ---
 
-## `python/config.py` — settings persistence (119 LOC)
+## `python/config.py` — settings persistence (~135 LOC)
 
 [python/config.py](python/config.py)
 
-- `_fresh_default()` — [57](python/config.py#L57) — deep copy of the `DEFAULTS` dict (so structures/mail_presets don't share references).
-- `_migrate(cfg)` — [65](python/config.py#L65) — bring older config shapes forward (old dict-shaped structures → list shape; ensure baseline scopes; split legacy single `refining_efficiency`).
-- `load_config()` — [102](python/config.py#L102) — read+migrate+merge over defaults.
-- `save_config(cfg)` — [114](python/config.py#L114) — filter to known keys, persist chmod 600.
+- `_fresh_default()` — [63](python/config.py#L63) — deep copy of the `DEFAULTS` dict (so structures/mail_presets don't share references).
+- `_migrate(cfg)` — [71](python/config.py#L71) — bring older config shapes forward: old dict-shaped structures → list shape; ensure baseline scopes (including `esi-contracts.read_character_contracts.v1`); split legacy single `refining_efficiency`; rename `home_station_id` → `home_structure_id`.
+- `load_config()` — [116](python/config.py#L116) — read raw → `_migrate` → filter by `_USER_KEYS` → merge over fresh defaults. **Migration runs before filtering** so renamed keys aren't dropped silently on upgrade.
+- `save_config(cfg)` — [130](python/config.py#L130) — filter to known keys, persist chmod 600.
 
-Module-level: `AUTH_DIR` (from `EVE_BUYBACK_DATA_DIR` env or `.eve_auth/` next to repo), `DEFAULT_STRUCTURES`, `JANICE_MARKETS`, `DEFAULT_MAIL_PRESETS`, `DEFAULTS`.
+Module-level: `AUTH_DIR` (from `EVE_BUYBACK_DATA_DIR` env or `.eve_auth/` next to repo), `DEFAULT_STRUCTURES`, `JANICE_MARKETS`, `DEFAULT_MAIL_PRESETS`, `DEFAULTS`. New keys in `DEFAULTS`: `home_structure_id`, `home_region_id`, `quotas`.
 
 ---
 
@@ -224,12 +249,21 @@ notarization.
 
 ---
 
-## `renderer/app.js` — UI logic (2143 LOC, vanilla JS)
+## `renderer/app.js` — UI logic (~2700 LOC, vanilla JS)
 
 [renderer/app.js](renderer/app.js)
 
 State lives in module-level lets near the top: `cfg`, `walletData`,
-`buybackResults`, `moonResults`, `aaState`, `readinessState`.
+`buybackResults`, `moonResults`, `aaState`, `readinessState`,
+`mailPresets`, `lastContractsScan`, `shipTypesCache`, `shipTypesByIdMap`,
+`shipTypesByNameMap`.
+
+> **Note on line numbers below:** the function inventory was originally
+> captured at app.js ~2143 LOC. The Contracts/Auth/quota additions
+> appended ~600 lines after the Readiness block, so earlier line numbers
+> are still roughly accurate for the original sections (Config / Buyback /
+> Moon / Mail / Doctrines / Readiness), but the Contracts and multi-slot
+> auth functions live at the bottom of the file (~line 2220+).
 
 ### Helpers + result classification
 
@@ -245,10 +279,14 @@ State lives in module-level lets near the top: `cfg`, `walletData`,
 - `structureRow(s)` — [146](renderer/app.js#L146) — HTML for one structure row.
 - `collectStructures()` — [162](renderer/app.js#L162) — read editor → JSON.
 
-### Auth tab
+### Auth tab (multi-slot)
 
-- `refreshAuthStatus()` — [372](renderer/app.js#L372) — poll `/api/auth/status`, render character/expiry.
-- (No standalone login fn; the login button calls `/api/auth/login` inline and then polls `refreshAuthStatus` until `completed`.)
+- `AUTH_SLOT_LABELS` / `AUTH_SLOTS` — [393–398](renderer/app.js#L393) — slot name → human label, and the canonical slot list.
+- `renderAuthSlot(slot, info)` — [400](renderer/app.js#L400) — HTML for one auth-slot card (character name, expiry, login/logout buttons).
+- `refreshAuthStatus()` — [425](renderer/app.js#L425) — fetch `/api/auth/slots`, render all three slots, mirror slot1 status into the legacy single-status indicator.
+- `startSlotLogin(slot)` — [460](renderer/app.js#L460) — POST `/api/auth/login?slot=...`, then poll `/api/auth/status?slot=...` for up to ~3 minutes waiting for the browser-side SSO round-trip.
+- `logoutSlot(slot)` — [483](renderer/app.js#L483) — confirm + POST `/api/auth/logout?slot=...`, then refresh the UI.
+- Delegated click handler on `.auth-slot-login` / `.auth-slot-logout` (right below) routes button clicks to the above.
 
 ### Validation streaming
 
@@ -333,6 +371,50 @@ State lives in module-level lets near the top: `cfg`, `walletData`,
 
 ---
 
+### Contracts tab — quota editor + scan + exports
+
+- `quotaRow(q)` — [2239](renderer/app.js#L2239) — HTML for one quota row (`q-name`, `q-tid`, `q-sname`, `q-req`, `q-title`, remove button). `q-tid`/`q-sname` are wired to the ship-type datalists.
+- `ensureShipTypes()` — [2260](renderer/app.js#L2260) — lazy GET `/api/universe/ships`, build `shipTypesCache` + lookup maps (`shipTypesByIdMap`, `shipTypesByNameMap`), populate datalists. Returns a memoized promise so concurrent callers share one fetch.
+- `buildShipDatalists(ships)` — [2284](renderer/app.js#L2284) — populate the two `<datalist>`s (`#ships-datalist` keyed by `type_id`, `#ship-names-datalist` keyed by name); appended to `<body>` on first build.
+- Delegated `change` listener (just below `buildShipDatalists`) — auto-fills the sibling column when the user picks/types a ship in either of the two datalist-bound inputs.
+- `renderQuotas(list)` — [2339](renderer/app.js#L2339) — render the quotas `<tbody>`.
+- `collectQuotas()` — [2347](renderer/app.js#L2347) — read editor → JSON, dropping rows with no `ship_type_id` and no name.
+- Paste-from-spreadsheet handler on `#quotas-tbody` — multi-line paste of TSV/CSV expands into one row per line; first row fills the cell-and-rightward of the paste target, the rest are appended.
+- `rowFromCells(cells)` — [2391](renderer/app.js#L2391) — map a delimited row's cells onto the quota schema.
+- `fillQuotaRowFromCells(tr, cells, startInput)` — [2400](renderer/app.js#L2400) — fill a row's inputs starting from the input the user pasted into.
+- `parseDelimited(text)` — [2410](renderer/app.js#L2410) — auto-detect tab vs comma delimiter; return list of cell-arrays.
+- `parseCsvLine(line, sep)` — [2419](renderer/app.js#L2419) — minimal CSV parser handling double-quoted cells.
+- `csvEscape(v)` / `quotasToCsv(quotas)` / `quotasFromCsvText(text)` — [2440–2461](renderer/app.js#L2440) — quota CSV round-trip with header detection.
+- `setQuotaIoStatus(msg)` — [2465](renderer/app.js#L2465) — flash a transient status message in the quota-IO area.
+- `downloadBlob(filename, mime, content)` — utility used by all the export buttons.
+- Quota import/export button handlers — `#btn-quota-import-csv`, `#btn-quota-import-json`, `#btn-quota-export-csv`, `#btn-quota-export-json`, `#quota-import-file` change handler. Imports prompt **replace or append**.
+- `#btn-lookup-region` handler — GET `/api/region/from-station?station_id=...` and fill the region input on success.
+- `lastContractsScan` — module-level let cached from the last successful `runContractsScan`; powers the export buttons.
+- `runContractsScan()` — [2571](renderer/app.js#L2571) — GET `/api/contracts/scan` (NDJSON), update progress, store the `done` payload, render dashboard + contract list.
+- `readNdjson(response, onEvent)` — [2618](renderer/app.js#L2618) — generic NDJSON line-stream reader used by Contracts and AA market scans.
+- `renderContractsDashboard(payload)` — [2640](renderer/app.js#L2640) — render per-quota progress bars + the (collapsible) list of matching contracts.
+- `renderQuotaBar(q)` — [2663](renderer/app.js#L2663) — single quota row with progress bar; class derived from `required` vs `available` (`ok` / `partial` / `empty` / `unset`).
+- `renderContractRow(c)` — [2682](renderer/app.js#L2682) — one contract card showing title, sources (corp + targeted-at label), issuer, items (truncated to 12).
+- `exportGapCsv()` — [2707](renderer/app.js#L2707) — CSV of `{name, ship_name, ship_type_id, required, available, missing}` rows.
+- `copyShoppingList()` — [2723](renderer/app.js#L2723) — clipboard copy of `N x <ship>` lines for in-game multi-buy.
+
+### Sov tab
+
+The Sov tab is built on top of `GET /api/sov/overview` and runs entirely
+off public ESI data (no auth needed). Top-level functions live at the
+bottom of `app.js`:
+
+- `structureAdm(sys_, typeId)` — [2758](renderer/app.js#L2758) — pull ADM for a structure from a system record.
+- `sortAdmCompare(a, b, getter, dir)` / `admClass(adm)` / `secClass(sec)` / `fmtAdm(adm)` / `fmtSec(sec)` / `fmtPct(x)` / `fmtDate(iso)` / `fmtAge(iso)` — [2763–2820](renderer/app.js#L2763) — formatting helpers.
+- `refreshSov()` — [2820](renderer/app.js#L2820) — GET `/api/sov/overview`, render all panels.
+- `renderSovTotals(d)` — [2843](renderer/app.js#L2843) — header stats.
+- `renderSovOwners(owners)` — [2871](renderer/app.js#L2871) — per-alliance ownership table.
+- `renderSovCampaigns(camps)` — [2889](renderer/app.js#L2889) — active sov campaigns.
+- `renderSovIncursions(incs)` — [2914](renderer/app.js#L2914) — active incursions.
+- `sovSystemRowHtml(s, includeRegionCol)` — [2932](renderer/app.js#L2932) — per-system row.
+
+---
+
 ## `renderer/calculator.js` — popout calculator (211 LOC)
 
 [renderer/calculator.js](renderer/calculator.js)
@@ -345,13 +427,17 @@ percentaged value to the clipboard.
 
 ---
 
-## `renderer/index.html` — UI shell (203 LOC)
+## `renderer/index.html` — UI shell (~290 LOC)
 
 [renderer/index.html](renderer/index.html)
 
-Static markup only. Defines the seven tabs (`Config / Auth / Buyback / Moon /
-Mail / Doctrines / Readiness`), the mail modal, and the calculator-sidebar
-mount point. No inline scripts beyond loading `calculator.js` then `app.js`.
+Static markup only. Defines nine tabs (`Config / Auth / Buyback / Moon /
+Mail / Doctrines / Readiness / Contracts / Sov`), the mail modal, the
+calculator-sidebar mount point, the spreadsheet-style quota editor table
+(`#quotas-table`), and the multi-slot auth slots container
+(`#auth-slots`). No inline scripts beyond loading `calculator.js` then
+`app.js`. The ship-type `<datalist>`s are not in the static markup —
+they're appended to `<body>` by `buildShipDatalists` on first need.
 
 ---
 

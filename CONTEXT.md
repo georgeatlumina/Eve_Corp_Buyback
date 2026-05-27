@@ -25,8 +25,18 @@ member-submitted contracts:
 Once triaged, each row gets one-click EVE-mail buttons rendered from
 user-defined templates, so accept/reject responses can be sent in seconds.
 
+A third stream tracks **doctrine stocking**: the Contracts tab scans every
+authenticated character's corp contracts endpoint for outstanding
+item-exchange contracts at the home structure and tallies them against a
+user-configured quota list (ship hull + required count). Each quota row gets
+a green/amber/red progress bar; the dashboard exports a gap CSV or a plain
+shopping list for in-game multi-buy.
+
 A secondary feature scans corp doctrines from Alliance Auth (`auth.navaldefence.org`)
-and cross-references each fit against the corp market for stocking gaps.
+and cross-references each fit against the corp market for stocking gaps. A
+**Sov** tab gives an at-a-glance read on alliance sovereignty (IHUBs, system
+jumps/kills, incursions) — built on top of public ESI endpoints, no auth
+required.
 
 ## Stakeholders & users
 
@@ -67,15 +77,26 @@ mineral pricing).
 
 ## Key flows
 
-### Authentication (EVE SSO PKCE-less, app-credential flow)
+### Authentication (EVE SSO PKCE-less, app-credential flow, multi-slot)
 
 [python/auth.py](python/auth.py) implements EVE SSO with embedded app
-credentials (`get_app_credentials`). `POST /api/auth/login` returns a
-browser-bound authorize URL with a one-shot state token; EVE redirects to
-`GET /callback` on the same sidecar port, which exchanges the code for
-access/refresh tokens via `exchange_code_for_tokens` and persists them to
-`<userData>/eve_auth/tokens.json` (chmod 600). `get_valid_access_token`
-auto-refreshes on every protected call.
+credentials (`get_app_credentials`). The on-disk token cache is a dict keyed
+by **slot name** (`slot1` / `slot2` / `slot3`) so up to three EVE characters
+can be authenticated at once — slot1 is the primary (wallets, corp
+contracts, mail), slots 2 & 3 are optional alts that widen Contracts-tab
+visibility into other corps. Legacy single-record `tokens.json` shape
+auto-migrates into `slot1` on first load (`_load_all_slots`).
+
+`POST /api/auth/login?slot=slotN` returns a browser-bound authorize URL with
+a one-shot state token; the state is keyed back to the slot in the
+in-process `_auth_state['pending']` dict. EVE redirects to `GET /callback`
+on the same sidecar port, which pops the slot out of the pending map,
+exchanges the code for access/refresh tokens via `exchange_code_for_tokens`
+and persists them under that slot key in `<userData>/eve_auth/tokens.json`
+(chmod 600). `get_valid_access_token(slot=...)` auto-refreshes on every
+protected call. `POST /api/auth/logout?slot=...` clears a single slot;
+`GET /api/auth/slots` returns the per-slot status array used by the
+Auth-tab UI.
 
 ### Buyback validation pipeline (`POST /api/validate` with `kind=buyback`)
 
@@ -126,6 +147,46 @@ market snapshot via `fetch_structure_orders_paged` — streamed because the EVE
 structure-markets endpoint is paginated and slow. Readiness state persists in
 localStorage so a fresh app launch can resume the previous scan.
 
+### Contracts dashboard (`GET /api/contracts/scan`)
+
+Streamed from `_scan_contracts_stream` in [python/server.py](python/server.py):
+
+1. For each authenticated slot, resolve the toon's corp via
+   `fetch_character_info` and call `fetch_corp_contracts` with that slot's
+   token. Corps already covered by an earlier slot are skipped to avoid
+   duplicate fetches. A 403 from one corp surfaces as a per-slot warning;
+   the stream continues with the next slot.
+2. Filter each corp's contracts: `type=item_exchange`, `status=outstanding`,
+   `start_location_id == home_structure_id`, `for_corporation=True`,
+   `issuer_corporation_id == that corp`. The `availability` field is
+   **ignored** because corp-posted alliance fits in this dataset typically
+   come back as `availability=personal` with `assignee_id=alliance_id`, not
+   `availability=alliance`.
+3. Dedupe by `contract_id`; remember which corp+token surfaced each one so
+   item fetches don't mis-route.
+4. `fetch_contract_items` per contract (cached by contract_id in
+   `_contract_items_cache`); `resolve_names` bulk-resolves type and issuer
+   names.
+5. `_matches_quota` tallies each contract against each configured quota
+   (match by ship `type_id` plus optional case-insensitive `title_filter`).
+6. Emit one `done` event with `{structure_id, corps_scanned, contracts[],
+   quotas[]}`. The UI renders per-quota progress bars (green/amber/red),
+   and offers a gap-CSV download plus a clipboard shopping-list copy.
+
+**The quota editor** in the Config tab is a spreadsheet-style table with
+type-ahead dropdowns powered by `GET /api/universe/ships` —
+`fetch_all_ship_types` walks ESI category 6 (Ship) once on first call
+(~20s, ~50 ESI requests) and caches the resulting ~560-entry list to
+`<userData>/eve_auth/ship_types.json`. Subsequent loads return from disk in
+~70ms. The renderer mounts two `<datalist>`s (one keyed by `type_id`, one
+keyed by name); picking from either column auto-fills the other.
+
+**ESI limitation worth knowing.** ESI does NOT expose contracts that other
+alliance corps post to "my alliance" availability — the in-game alliance
+contracts tab uses CCP's non-ESI client API. So this scan sees only what
+corps you hold a director / Contract Manager token for. Adding more slots
+widens visibility one corp at a time.
+
 ## Data & persistence
 
 Everything user-specific lives under `EVE_BUYBACK_DATA_DIR`:
@@ -134,8 +195,16 @@ Everything user-specific lives under `EVE_BUYBACK_DATA_DIR`:
 
 Files in that directory:
 - `config.json` — chmod 600. Schema in [python/config.py](python/config.py)
-  `DEFAULTS`. Old shapes are migrated forward by `_migrate`.
-- `tokens.json` — chmod 600. ESI access/refresh tokens.
+  `DEFAULTS`. Old shapes are migrated forward by `_migrate` (note: migration
+  runs **before** the `_USER_KEYS` filter in `load_config` so legacy keys
+  like `home_station_id` → `home_structure_id` can be renamed without being
+  silently dropped).
+- `tokens.json` — chmod 600. ESI tokens, dict keyed by slot
+  (`slot1`/`slot2`/`slot3`); see Authentication flow above.
+- `ship_types.json` — flat list of every published EVE ship hull
+  (`type_id`, `name`, `group_id`, `group_name`). Built once via
+  `fetch_all_ship_types`; manually refresh by hitting
+  `/api/universe/ships?refresh=true` (e.g. after an EVE expansion).
 - `invTypeMaterials.csv` — Fuzzwork material dump, refreshed lazily.
 - `sidecar.log` — last sidecar run's stdout/stderr (truncated each startup).
 
@@ -169,6 +238,18 @@ localStorage** (`readinessState`), not on disk.
 - **Prismaticite accepted-but-flagged.** It can't be cleanly auto-priced.
   Accepting it and showing a banded "manual payout" border is intentional —
   see commits `ff5d245` / `22ab77b`.
+- **`home_station_id` → `home_structure_id` (v1.0.0).** The Contracts-page
+  location key was renamed because the filter has always been on ESI's
+  generic `start_location_id`, which equally accepts NPC station IDs and
+  player-structure (citadel) IDs. `_migrate` carries old values forward and
+  `load_config` was reordered to migrate **before** filtering, so legacy
+  keys aren't dropped on upgrade. Region ID stays in config for the NPC
+  station lookup convenience but isn't required by the scan.
+- **Contracts scan iterates per slot's corp, not slot1 only (v1.0.0).** ESI
+  has no endpoint for "contracts visible in my alliance tab", so each
+  director / Contract Manager token unlocks exactly one corp's postings.
+  Multi-slot auth makes it possible to aggregate across several alliance
+  corps if you can get tokens from each.
 
 ## Common entry points
 

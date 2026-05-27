@@ -7,7 +7,13 @@ It pulls outstanding contracts from ESI, appraises them against Janice, checks
 that they were issued to the correct structure for their item category, and —
 for moon contracts — refines the compressed ore and reports a recommended ISK
 payout. It also ships with EVE-mail templates so you can accept/reject in one
-click, and an Alliance Auth doctrine readiness scanner.
+click, an Alliance Auth doctrine readiness scanner, a multi-account Contracts
+dashboard that tallies corp-posted doctrine fits against user-configured
+quotas, and a sovereignty overview built on public ESI data.
+
+> Internal docs: [CONTEXT.md](CONTEXT.md) (architecture & key flows),
+> [STRUCTURE.md](STRUCTURE.md) (file layout), [FUNCTIONS.md](FUNCTIONS.md)
+> (function-level index).
 
 ## Install
 
@@ -21,11 +27,15 @@ https://github.com/georgeatlumina/Eve_Corp_Buyback/releases/latest
 ## Quick start
 
 1. **Configure** — open the **Config** tab and set your corp ID, structures,
-   markets, and refining/payout fractions (see [Configuration](#configuration)
-   below). Save.
-2. **Authenticate** — open the **Auth** tab and click *Login with EVE Online*.
-   A browser window opens; sign in with the character that has the corp roles
-   to read contracts and wallets. Approve the scopes and return to the app.
+   markets, refining/payout fractions, and (optionally) the home-structure ID
+   + ship quotas for the Contracts dashboard (see
+   [Configuration](#configuration) below). Save.
+2. **Authenticate** — open the **Auth** tab. **Slot 1** is required and is
+   used for wallets, corp contracts, and mail; click *Login with EVE Online*
+   on slot 1 and sign in with the character holding the corp roles. **Slots
+   2 & 3** are optional alts: if they hold director / Contract Manager roles
+   in *other* alliance corps, logging them in widens the Contracts-tab
+   coverage to those corps.
 3. **Fetch buyback contracts** — go to the **Buyback** tab and click *Fetch &
    validate*. Each outstanding contract is appraised against Janice and
    checked against your routing rules. Green = approve, red = reject, with the
@@ -35,7 +45,13 @@ https://github.com/georgeatlumina/Eve_Corp_Buyback/releases/latest
    your configured efficiencies and a recommended payout is shown. Use the
    built-in calculator sidebar to quickly multiply by 70/80/90% if you want
    to adjust on the fly.
-5. **Send mail** — once mail presets are configured (Mail tab), every contract
+5. **Check doctrine stocking** — go to the **Contracts** tab and click *Scan
+   contracts*. The app walks every authenticated slot's corp endpoint,
+   filters to outstanding item-exchange contracts at your home structure,
+   and tallies each one against the configured quotas. Per-quota progress
+   bars go green/amber/red; the *Export gap CSV* and *Copy shopping list*
+   buttons make it easy to top up missing stock.
+6. **Send mail** — once mail presets are configured (Mail tab), every contract
    row gets a button per preset. Click it to preview the rendered mail and
    send it to that contract's issuer.
 
@@ -97,6 +113,48 @@ the refined-mineral figure is what you pay.
 
 Refined payout = refined mineral value × payout fraction.
 
+### Contracts dashboard — home structure & quotas
+
+The **Contracts** tab tracks outstanding doctrine fits posted by your corp
+(and any other corp that an authed slot holds Contract Manager / Director
+roles in) at one structure.
+
+- **Home structure ID** — the numeric `start_location_id` ESI uses for that
+  station/citadel. Right-click the structure in-game → *Set Destination* →
+  copy from the URL, or pull from one of the contracts in the Buyback tab.
+  Despite the name, this field accepts both NPC station IDs and player
+  structure (citadel) IDs.
+- **Home region ID (optional)** — only used by the *Lookup region* button
+  (which derives the region from an NPC station ID via ESI). Not required
+  for the contracts scan itself. The lookup button does not work for player
+  structures — enter the region manually if needed.
+- **Ship/doctrine quotas** — spreadsheet-style table with five columns:
+  *Fit name*, *Ship type ID*, *Ship name*, *Required*, *Title filter
+  (optional)*. The Ship type ID and Ship name columns are backed by a
+  type-ahead dropdown of every published EVE ship hull (fetched once,
+  cached to `<userData>/eve_auth/ship_types.json`); picking one auto-fills
+  the other. A contract counts toward a quota when:
+  - the contract contains at least one item with the quota's `ship_type_id`
+    (matched on `is_included=true` items), and
+  - the optional `title_filter` substring (case-insensitive) matches the
+    contract title (used for distinguishing doctrine variants, e.g.
+    `shield` vs `armor`).
+
+  Each row is independent — a contract with 2 Cerberi counts as 2 toward
+  the Cerberus quota.
+
+**Bulk-editing quotas:** paste rows directly from Excel / Google Sheets
+(tab- or comma-separated) into any quota cell to expand into multiple rows.
+The *Import CSV…* / *Import JSON…* buttons load a `quotas.csv` /
+`quotas.json` file from disk (prompts replace-or-append). *Export CSV* /
+*Export JSON* save the current quota list. CSV header:
+`name,ship_type_id,ship_name,required,title_filter`.
+
+**ESI limitation worth knowing.** The in-game "my alliance" contracts tab
+uses a non-ESI backend, so contracts posted by other alliance corps that
+you don't hold a director / Contract Manager token for **stay invisible**.
+Add more slots on the Auth tab to widen coverage one corp at a time.
+
 ### Janice API key (optional)
 
 Paste your `X-ApiKey` from [janice.e-351.com](https://janice.e-351.com/) to
@@ -123,6 +181,13 @@ will pull fittings and the **Readiness** tab will cross-reference them
 against the first configured structure's market. Sign in once via the in-app
 button; the session is remembered. Capital-tier fits are excluded by default
 — toggle in the Readiness *Settings* drawer.
+
+### Sov tab (no config needed)
+
+The **Sov** tab aggregates public-ESI sovereignty data (IHUB ADM, system
+ownership map, active campaigns, system jumps/kills, incursions) into a
+single dashboard. No auth required — it runs entirely off public
+endpoints.
 
 ## Troubleshooting
 
@@ -160,6 +225,16 @@ Make sure the character you signed in with is actually a member of the corp
 ID you configured, and has roles to read corp contracts/wallets. If the
 config was saved with a different `corp_id` after authenticating, log out
 and log back in.
+
+### Contracts tab shows 0 contracts even though there are clearly some in-game
+
+Most likely you're looking at contracts posted by *other* alliance corps —
+the in-game "my alliance" tab uses CCP's non-ESI client API, so ESI only
+exposes contracts your authenticated tokens are party to (issuer/acceptor/
+assignee, including corps each slot is a director of). To widen visibility:
+log in additional slots on the Auth tab with directors / Contract Managers
+of the other alliance corps. See the *Contracts dashboard* config section
+above for details.
 
 ## Running from source (development)
 
