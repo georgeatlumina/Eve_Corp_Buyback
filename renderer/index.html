@@ -14,6 +14,7 @@
       <button class="tab-btn" data-tab="auth">Auth</button>
       <button class="tab-btn" data-tab="buyback">Buyback</button>
       <button class="tab-btn" data-tab="moon">Moon</button>
+      <button class="tab-btn" data-tab="working">Working</button>
       <button class="tab-btn" data-tab="mail">Mail</button>
       <button class="tab-btn" data-tab="doctrines">Doctrines</button>
       <button class="tab-btn" data-tab="readiness">Readiness</button>
@@ -245,6 +246,37 @@
             </div>
           </div>
           <div id="calc-mount"></div>
+          <p class="muted calc-help">Click the display, then use numpad to type. 70/80/90% copies to clipboard.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="tab-working" class="tab">
+      <div class="moon-layout">
+        <div class="moon-main">
+          <h2>Working — pinned moon contracts</h2>
+          <p class="muted">Offline workspace for admins. <strong>Pin</strong> any moon-tab row to copy its full snapshot here; pins are saved to <code>&lt;userData&gt;/eve_auth/pinned_contracts.json</code> and survive app close + Moon-tab re-fetches. Click a pin to open it: paste the actual refined minerals from the in-game refinery into the Janice box and the app applies the contract's original blended payout fraction to whatever Janice prices that paste at.</p>
+          <div class="actions">
+            <button id="btn-working-refresh" class="secondary" type="button">Refresh pins</button>
+            <button id="btn-working-toggle-calc" class="secondary" type="button">Hide calculator</button>
+            <span id="working-status" class="muted"></span>
+          </div>
+          <div class="working-filter-bar">
+            <button class="working-filter-btn active" data-filter="all" type="button">All</button>
+            <button class="working-filter-btn" data-filter="pending" type="button">Pending</button>
+            <button class="working-filter-btn" data-filter="paid" type="button">Paid</button>
+            <button class="working-filter-btn" data-filter="disputed" type="button">Disputed</button>
+          </div>
+          <div id="working-list"></div>
+        </div>
+        <aside class="moon-sidebar" id="working-calc-sidebar">
+          <div class="calc-header">
+            <strong>Calculator</strong>
+            <div class="calc-header-actions">
+              <button id="btn-working-calc-popout" class="calc-icon-btn" type="button" title="Open in window">⇱</button>
+            </div>
+          </div>
+          <div id="working-calc-mount"></div>
           <p class="muted calc-help">Click the display, then use numpad to type. 70/80/90% copies to clipboard.</p>
         </aside>
       </div>

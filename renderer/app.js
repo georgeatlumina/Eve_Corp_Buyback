@@ -379,6 +379,9 @@ function buildMoonRow(r) {
        </div>`
     ).join('')}
     ${contentsBlock}
+    <div class="moon-pin-row">
+      <button type="button" class="btn-pin-moon secondary" data-contract-id="${r.contract_id}">📌 Pin to Working</button>
+    </div>
     ${buildMailButtonsRow(r, 'moon')}
   `;
   return div;
@@ -3099,3 +3102,387 @@ $('#btn-sov-refresh')?.addEventListener('click', refreshSov);
 document.querySelector('.tab-btn[data-tab="sov"]')?.addEventListener('click', () => {
   if (!sovState.data && !sovState.loading) refreshSov();
 });
+
+// ====================== Working tab ======================
+// Pinned moon contracts persisted server-side at
+// <userData>/eve_auth/pinned_contracts.json. Survives Moon-tab re-fetches,
+// renderer refreshes, and app close+reopen. Per-pin Janice paste box runs a
+// fresh appraisal against actual refined minerals and applies the snapshot's
+// blended payout fraction.
+
+const PIN_STATUSES = ['pending', 'paid', 'disputed'];
+const workingState = {
+  pins: [],
+  filter: 'all',
+  expanded: new Set(),
+  loading: false,
+  calcMounted: false,
+};
+
+async function loadPinnedContracts() {
+  if (workingState.loading) return;
+  workingState.loading = true;
+  const status = $('#working-status');
+  if (status) status.textContent = 'loading pins…';
+  try {
+    const res = await fetch(`${API}/api/pinned`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    workingState.pins = Array.isArray(data.pins) ? data.pins : [];
+    if (status) status.textContent = `${workingState.pins.length} pin${workingState.pins.length === 1 ? '' : 's'}`;
+    renderWorkingTab();
+  } catch (e) {
+    if (status) status.textContent = `error loading pins: ${e}`;
+  } finally {
+    workingState.loading = false;
+  }
+}
+
+async function pinMoonContract(contractId) {
+  const snapshot = lastResults.moon.find((r) => r.contract_id === contractId);
+  if (!snapshot) {
+    alert('No moon result for that contract in memory. Re-run "Fetch & process" on the Moon tab first.');
+    return;
+  }
+  const btns = document.querySelectorAll(`.btn-pin-moon[data-contract-id="${contractId}"]`);
+  btns.forEach((b) => { b.disabled = true; b.textContent = '📌 pinning…'; });
+  try {
+    const res = await fetch(`${API}/api/pinned`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contract_id: contractId, snapshot }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    workingState.pins = data.pins || [];
+    btns.forEach((b) => { b.textContent = '📌 Pinned ✓'; });
+    setTimeout(() => {
+      btns.forEach((b) => { b.disabled = false; b.textContent = '📌 Pin to Working'; });
+    }, 1500);
+    renderWorkingTab();
+  } catch (e) {
+    alert(`Pin failed: ${e}`);
+    btns.forEach((b) => { b.disabled = false; b.textContent = '📌 Pin to Working'; });
+  }
+}
+
+async function unpinContract(contractId) {
+  if (!confirm(`Remove pin for contract ${contractId}?`)) return;
+  try {
+    const res = await fetch(`${API}/api/pinned/${contractId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    workingState.pins = data.pins || [];
+    workingState.expanded.delete(contractId);
+    renderWorkingTab();
+  } catch (e) {
+    alert(`Unpin failed: ${e}`);
+  }
+}
+
+async function patchPin(contractId, patch) {
+  try {
+    const res = await fetch(`${API}/api/pinned/${contractId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    // Splice the returned pin back into our list.
+    const idx = workingState.pins.findIndex((p) => p.contract_id === contractId);
+    if (idx >= 0) workingState.pins[idx] = data.pin;
+    renderWorkingTab();
+  } catch (e) {
+    alert(`Update failed: ${e}`);
+  }
+}
+
+async function runPinAppraisal(contractId, pasteText) {
+  const detail = document.querySelector(`.pin-card[data-contract-id="${contractId}"] .pin-detail`);
+  const statusEl = detail?.querySelector('.pin-appraise-status');
+  const btn = detail?.querySelector('.btn-pin-appraise');
+  if (!pasteText.trim()) {
+    if (statusEl) statusEl.textContent = 'paste box is empty';
+    return;
+  }
+  if (statusEl) statusEl.textContent = 'appraising with Janice…';
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/pinned/${contractId}/appraise`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paste_text: pasteText, persist: true }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const idx = workingState.pins.findIndex((p) => p.contract_id === contractId);
+    if (idx >= 0) workingState.pins[idx] = data.pin;
+    renderWorkingTab();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `appraisal failed: ${e}`;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderWorkingTab() {
+  const root = $('#working-list');
+  if (!root) return;
+  const filtered = workingState.filter === 'all'
+    ? workingState.pins
+    : workingState.pins.filter((p) => (p.status || 'pending') === workingState.filter);
+  if (!filtered.length) {
+    root.innerHTML = `<p class="muted">No ${workingState.filter === 'all' ? '' : workingState.filter + ' '}pins. Pin a moon contract from the Moon tab to start.</p>`;
+    return;
+  }
+  root.innerHTML = '';
+  for (const p of filtered) root.appendChild(buildPinCard(p));
+}
+
+function buildPinCard(pin) {
+  const snap = pin.snapshot || {};
+  const refined = snap.payout?.refined;
+  const recPayout = refined?.recommended_payout;
+  const fraction = pin.blended_fraction;
+  const status = pin.status || 'pending';
+  const isExpanded = workingState.expanded.has(pin.contract_id);
+  const pinnedDate = pin.pinned_at ? new Date(pin.pinned_at).toLocaleDateString() : '?';
+
+  const div = document.createElement('div');
+  div.className = `pin-card pin-${status} ${isExpanded ? 'expanded' : ''}`;
+  div.dataset.contractId = pin.contract_id;
+
+  const summary = `
+    <div class="pin-summary" data-pin-toggle="1">
+      <div class="pin-summary-head">
+        <strong>#${pin.contract_id}</strong>
+        <span class="pin-issuer">${escapeHtml(snap.issuer_name || 'unknown')}</span>
+        <span class="pin-status pin-status-${status}">${status}</span>
+        <span class="pin-summary-spacer"></span>
+        <span class="pin-summary-payout">${recPayout != null ? Math.round(recPayout).toLocaleString() + ' ISK' : '—'}</span>
+        <span class="muted">${(fraction != null ? (fraction * 100).toFixed(1) + '%' : '?')} blended</span>
+        <span class="pin-summary-caret">${isExpanded ? '▾' : '▸'}</span>
+      </div>
+      <div class="muted pin-summary-meta">
+        ${escapeHtml(snap.title || '(no title)')} · pinned ${pinnedDate}
+      </div>
+    </div>
+  `;
+  div.innerHTML = summary + (isExpanded ? renderPinDetail(pin) : '');
+  return div;
+}
+
+function renderPinDetail(pin) {
+  const cid = pin.contract_id;
+  const snap = pin.snapshot || {};
+  const refined = snap.payout?.refined;
+  const items = snap.payout?.items || [];
+  const fraction = pin.blended_fraction;
+  const fracPct = fraction != null ? (fraction * 100).toFixed(2) : '?';
+
+  // Quick-paste hint for the textarea (refined-mineral list from the snapshot).
+  const refinedBreakdown = refined?.breakdown || [];
+  const hintLines = refinedBreakdown.map((b) =>
+    `${(b.name || `type ${b.type_id}`)}\t${b.quantity}`,
+  ).join('\n');
+
+  const appraisals = pin.appraisals || [];
+  const lastAppraisal = appraisals[0];
+
+  const recPayoutHtml = refined?.recommended_payout != null
+    ? `<span class="payout-copy" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(refined.recommended_payout)}">${Math.round(refined.recommended_payout).toLocaleString()}</span> ISK`
+    : '—';
+  const snapBlock = `
+    <div class="pin-snap">
+      <div class="pin-snap-line"><span class="muted">Original recommended payout:</span> <strong>${recPayoutHtml}</strong></div>
+      <div class="pin-snap-line"><span class="muted">Moon refined value:</span> ${refined?.moon_value != null ? Math.round(refined.moon_value).toLocaleString() : '—'} × ${refined?.moon_payout_fraction != null ? (refined.moon_payout_fraction * 100).toFixed(0) + '%' : '?'} = ${refined?.moon_payout != null ? Math.round(refined.moon_payout).toLocaleString() : '—'}</div>
+      <div class="pin-snap-line"><span class="muted">Non-moon refined value:</span> ${refined?.non_moon_value != null ? Math.round(refined.non_moon_value).toLocaleString() : '—'} × ${refined?.non_moon_payout_fraction != null ? (refined.non_moon_payout_fraction * 100).toFixed(0) + '%' : '?'} = ${refined?.non_moon_payout != null ? Math.round(refined.non_moon_payout).toLocaleString() : '—'}</div>
+      <div class="pin-snap-line pin-snap-blend">
+        <span class="muted">Blended fraction used for fresh appraisals:</span> <strong>${fracPct}%</strong>
+      </div>
+    </div>
+  `;
+
+  const lastBlock = lastAppraisal ? `
+    <div class="pin-last-appraisal">
+      <h4>Last appraisal — ${new Date(lastAppraisal.timestamp).toLocaleString()}</h4>
+      <div>Janice [${escapeHtml(lastAppraisal.source || '?')}] @ ${escapeHtml(lastAppraisal.market_name || '?')}: <strong>${Math.round(lastAppraisal.janice_total).toLocaleString()} ISK</strong>${lastAppraisal.janice_code ? ` (<a href="https://janice.e-351.com/a/${escapeHtml(lastAppraisal.janice_code)}" target="_blank" rel="noopener">view</a>)` : ''}</div>
+      <div>× <strong>${(lastAppraisal.fraction_used * 100).toFixed(2)}%</strong> blended fraction</div>
+      <div class="pin-payout-final">→ Payout: <span class="payout-copy" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(lastAppraisal.payout)}">${Math.round(lastAppraisal.payout).toLocaleString()}</span> ISK</div>
+      ${lastAppraisal.api_fallback_reason ? `<div class="muted">Janice API fallback: ${escapeHtml(lastAppraisal.api_fallback_reason)}</div>` : ''}
+    </div>
+  ` : '';
+
+  const historyBlock = appraisals.length > 1 ? `
+    <details class="pin-history">
+      <summary>Appraisal history (${appraisals.length})</summary>
+      ${appraisals.slice(1).map((a) => `
+        <div class="pin-history-row">
+          <span class="muted">${new Date(a.timestamp).toLocaleString()}</span> —
+          Janice <strong>${Math.round(a.janice_total).toLocaleString()}</strong> ×
+          ${(a.fraction_used * 100).toFixed(2)}% =
+          <strong><span class="payout-copy" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(a.payout)}">${Math.round(a.payout).toLocaleString()}</span></strong>
+          ${a.janice_code ? `<a href="https://janice.e-351.com/a/${escapeHtml(a.janice_code)}" target="_blank" rel="noopener">[view]</a>` : ''}
+        </div>
+      `).join('')}
+    </details>
+  ` : '';
+
+  const contentsBlock = items.length ? `
+    <details>
+      <summary>Original contract contents (${items.length} items)</summary>
+      ${renderItemsTable(items.map((i) => ({ name: i.name || `type ${i.type_id}`, quantity: i.quantity })), ['name', 'quantity'])}
+    </details>
+  ` : '';
+
+  return `
+    <div class="pin-detail">
+      ${snapBlock}
+      <div class="pin-paste-row">
+        <label class="pin-paste-label">Paste actual refined minerals here (one per line, EVE format):</label>
+        <textarea class="pin-paste" rows="6" placeholder="${hintLines ? escapeAttr(hintLines.split('\n').slice(0, 3).join('\n') + (hintLines.split('\n').length > 3 ? '\n…' : '')) : 'Tritanium\\t100000\\nPyerite\\t50000\\n…'}"></textarea>
+        <div class="pin-paste-actions">
+          <button type="button" class="btn-pin-appraise" data-contract-id="${cid}">Appraise & apply ${fracPct}%</button>
+          <button type="button" class="btn-pin-prefill secondary" data-contract-id="${cid}" title="Fill with the original calculated refined breakdown">Pre-fill from snapshot</button>
+          <span class="muted pin-appraise-status"></span>
+        </div>
+      </div>
+      ${lastBlock}
+      ${historyBlock}
+      ${contentsBlock}
+      <div class="pin-meta-row">
+        <label class="pin-status-label">
+          Status
+          <select class="pin-status-select" data-contract-id="${cid}">
+            ${PIN_STATUSES.map((s) => `<option value="${s}" ${(pin.status || 'pending') === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </label>
+        <label class="pin-notes-label">
+          Notes
+          <textarea class="pin-notes" data-contract-id="${cid}" rows="2" placeholder="admin notes (auto-saved on blur)">${escapeHtml(pin.notes || '')}</textarea>
+        </label>
+      </div>
+      <div class="pin-actions">
+        <button type="button" class="btn-pin-unpin secondary" data-contract-id="${cid}">Remove pin</button>
+        <span class="muted" data-pin-prefill-payload="${escapeAttr(hintLines)}"></span>
+      </div>
+    </div>
+  `;
+}
+
+function togglePinExpanded(contractId) {
+  if (workingState.expanded.has(contractId)) workingState.expanded.delete(contractId);
+  else workingState.expanded.add(contractId);
+  renderWorkingTab();
+}
+
+// ---- Event wiring ----
+
+// Pin button on moon rows (delegated).
+document.addEventListener('click', (e) => {
+  const pinBtn = e.target.closest('.btn-pin-moon');
+  if (pinBtn) {
+    const cid = parseInt(pinBtn.dataset.contractId, 10);
+    if (cid) pinMoonContract(cid);
+    return;
+  }
+});
+
+// Working-tab click delegation: expand/collapse, appraise, prefill, unpin.
+$('#working-list')?.addEventListener('click', (e) => {
+  const card = e.target.closest('.pin-card');
+  if (!card) return;
+  const cid = parseInt(card.dataset.contractId, 10);
+  if (!cid) return;
+
+  if (e.target.closest('.btn-pin-appraise')) {
+    const paste = card.querySelector('.pin-paste')?.value || '';
+    runPinAppraisal(cid, paste);
+    return;
+  }
+  if (e.target.closest('.btn-pin-prefill')) {
+    const payload = card.querySelector('[data-pin-prefill-payload]')?.getAttribute('data-pin-prefill-payload');
+    const ta = card.querySelector('.pin-paste');
+    if (ta && payload) {
+      // Replace escaped chars from attribute encoding.
+      const txt = payload.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      ta.value = txt;
+    }
+    return;
+  }
+  if (e.target.closest('.btn-pin-unpin')) {
+    unpinContract(cid);
+    return;
+  }
+  // Toggle expanded if the click was on the summary header.
+  if (e.target.closest('[data-pin-toggle]')) {
+    togglePinExpanded(cid);
+  }
+});
+
+// Status / notes change handlers.
+$('#working-list')?.addEventListener('change', (e) => {
+  const sel = e.target.closest('.pin-status-select');
+  if (sel) {
+    const cid = parseInt(sel.dataset.contractId, 10);
+    if (cid) patchPin(cid, { status: sel.value });
+  }
+});
+$('#working-list')?.addEventListener('blur', (e) => {
+  const ta = e.target.closest('.pin-notes');
+  if (ta) {
+    const cid = parseInt(ta.dataset.contractId, 10);
+    if (cid) patchPin(cid, { notes: ta.value });
+  }
+}, true);
+
+// Filter pills.
+document.querySelectorAll('.working-filter-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.working-filter-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    workingState.filter = btn.dataset.filter;
+    renderWorkingTab();
+  });
+});
+
+// Refresh button + lazy-mount calculator on first tab visit.
+$('#btn-working-refresh')?.addEventListener('click', loadPinnedContracts);
+
+function initWorkingTab() {
+  if (!workingState.calcMounted) {
+    const mount = $('#working-calc-mount');
+    if (mount && typeof window.mountCalculator === 'function') {
+      window.mountCalculator(mount);
+      workingState.calcMounted = true;
+    }
+    const sidebar = $('#working-calc-sidebar');
+    const toggleBtn = $('#btn-working-toggle-calc');
+    if (sidebar && toggleBtn && !toggleBtn.dataset.bound) {
+      toggleBtn.dataset.bound = '1';
+      toggleBtn.addEventListener('click', () => {
+        const hidden = sidebar.hasAttribute('hidden');
+        if (hidden) {
+          sidebar.removeAttribute('hidden');
+          toggleBtn.textContent = 'Hide calculator';
+        } else {
+          sidebar.setAttribute('hidden', '');
+          toggleBtn.textContent = 'Show calculator';
+        }
+      });
+    }
+    const popoutBtn = $('#btn-working-calc-popout');
+    if (popoutBtn && !popoutBtn.dataset.bound) {
+      popoutBtn.dataset.bound = '1';
+      popoutBtn.addEventListener('click', () => {
+        if (window.api && typeof window.api.openCalculator === 'function') window.api.openCalculator();
+      });
+    }
+  }
+  loadPinnedContracts();
+}
+
+document.querySelector('.tab-btn[data-tab="working"]')?.addEventListener('click', initWorkingTab);
+
+// Boot: load pins eagerly so the badge count is correct without a tab visit.
+loadPinnedContracts();

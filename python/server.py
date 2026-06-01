@@ -929,6 +929,131 @@ def _scan_contracts_stream():
     })
 
 
+# ----------------------- Working tab: pinned moon contracts -----------------------
+
+# Imported here (not at module top) to keep the pinned module independent of
+# the rest of server.py — it only depends on config.AUTH_DIR.
+from pinned import (
+    append_appraisal,
+    load_pinned,
+    remove_pin,
+    update_pin_fields,
+    upsert_pin,
+)
+
+
+class PinUpsert(BaseModel):
+    contract_id: int
+    pinned_at: Optional[str] = None
+    snapshot: dict
+
+
+class PinPatch(BaseModel):
+    notes: Optional[str] = None
+    status: Optional[str] = None  # 'pending' | 'paid' | 'disputed'
+
+
+class PinAppraise(BaseModel):
+    paste_text: str
+    market_name: Optional[str] = None  # defaults to cfg['moon_market']
+    persist: bool = True
+
+
+@app.get('/api/pinned')
+def get_pinned():
+    """Return every pinned contract. The Working tab calls this on mount."""
+    return {'pins': load_pinned()}
+
+
+@app.post('/api/pinned')
+def post_pinned(req: PinUpsert):
+    """Add or refresh a pinned contract. Re-pinning preserves notes/status/
+    appraisals while replacing the snapshot."""
+    if not req.snapshot or int(req.snapshot.get('contract_id') or 0) != req.contract_id:
+        raise HTTPException(400, 'snapshot.contract_id must match contract_id')
+    from datetime import datetime, timezone
+    pinned_at = req.pinned_at or datetime.now(timezone.utc).isoformat()
+    try:
+        pins = upsert_pin(req.snapshot, pinned_at)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return {'pins': pins}
+
+
+@app.delete('/api/pinned/{contract_id}')
+def delete_pinned(contract_id: int):
+    return {'pins': remove_pin(contract_id)}
+
+
+@app.patch('/api/pinned/{contract_id}')
+def patch_pinned(contract_id: int, patch: PinPatch):
+    payload = patch.model_dump(exclude_unset=True)
+    try:
+        pin = update_pin_fields(contract_id, payload)
+    except KeyError:
+        raise HTTPException(404, f'pin {contract_id} not found')
+    return {'pin': pin}
+
+
+@app.post('/api/pinned/{contract_id}/appraise')
+def appraise_pinned(contract_id: int, req: PinAppraise):
+    """Run a Janice appraisal against the admin's pasted refined-mineral text
+    and apply the pin's saved blended payout fraction. Appends the result to
+    the pin's appraisal history and returns it.
+    """
+    from datetime import datetime, timezone
+    from janice import create_appraisal_from_text
+
+    pins = load_pinned()
+    pin = next((p for p in pins if int(p.get('contract_id') or 0) == contract_id), None)
+    if not pin:
+        raise HTTPException(404, f'pin {contract_id} not found')
+
+    cfg = load_config()
+    market_name = req.market_name or cfg.get('moon_market') or 'Jita 4-4'
+    api_key = cfg.get('janice_api_key') or None
+
+    try:
+        result = create_appraisal_from_text(
+            req.paste_text, market_name, api_key=api_key, persist=req.persist,
+        )
+    except Exception as e:
+        raise HTTPException(502, f'Janice appraisal failed: {e}')
+
+    janice_total = float(result.get('total_buy_price') or 0)
+    fraction = float(pin.get('blended_fraction') or 0)
+    payout = janice_total * fraction
+    paste_preview = (req.paste_text or '').strip().splitlines()
+    preview_str = ' / '.join(paste_preview[:3])[:120]
+    # `_normalize` always sets `code=''` on create paths; the persistent code
+    # actually lives on the raw response body. Try both shapes.
+    raw = result.get('raw') or {}
+    janice_code = (
+        result.get('code')
+        or raw.get('code')
+        or raw.get('id')
+        or None
+    )
+
+    appraisal_record = {
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'janice_total': janice_total,
+        'fraction_used': fraction,
+        'payout': payout,
+        'market_name': result.get('market_name') or market_name,
+        'janice_code': janice_code or None,
+        'items_count': len(result.get('items') or []),
+        'paste_preview': preview_str,
+        'source': result.get('source'),
+        'api_fallback_reason': result.get('api_fallback_reason'),
+    }
+    try:
+        pin = append_appraisal(contract_id, appraisal_record)
+    except KeyError:
+        raise HTTPException(404, f'pin {contract_id} not found')
+    return {'pin': pin, 'appraisal': appraisal_record}
+
+
 @app.get('/api/contracts/scan')
 def scan_contracts():
     """NDJSON stream of outstanding item-exchange contracts posted by any

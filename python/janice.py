@@ -159,7 +159,38 @@ def create_appraisal(items, market_name, api_key=None):
     return result
 
 
-def _create_via_rpc(input_text, market_id):
+def create_appraisal_from_text(input_text, market_name, api_key=None, persist=False):
+    """Create a Janice appraisal from a raw paste (one EVE-format line per item).
+
+    Janice's RPC and REST endpoints both accept the input as plain text — the
+    same shape an admin pastes from the in-game inventory window. This is the
+    Working-tab entrypoint where the admin pastes the actual refined minerals
+    rather than a list constructed from contract items. Set ``persist=True``
+    to ask Janice to save the appraisal so the returned ``code`` can be turned
+    into a shareable ``https://janice.e-351.com/a/<code>`` URL.
+    """
+    if not input_text or not input_text.strip():
+        raise ValueError('paste text is empty')
+    market_id = JANICE_MARKET_IDS.get(market_name)
+    if market_id is None:
+        raise ValueError(f'Unknown Janice market: {market_name!r}')
+
+    api_error = None
+    if api_key:
+        try:
+            return _create_via_api(input_text, market_id, api_key, persist=persist)
+        except Exception as e:
+            api_error = f'{type(e).__name__}: {e}'
+            print(f'[janice] REST API create-from-text failed ({api_error}); '
+                  'falling back to RPC', file=sys.stderr, flush=True)
+
+    result = _create_via_rpc(input_text, market_id, persist=persist)
+    if api_error:
+        result['api_fallback_reason'] = api_error
+    return result
+
+
+def _create_via_rpc(input_text, market_id, persist=False):
     resp = requests.post(
         JANICE_RPC_URL,
         json={
@@ -171,7 +202,7 @@ def _create_via_rpc(input_text, market_id):
                 'pricing': 'buy',
                 'pricingVariant': 'immediate',
                 'marketId': market_id,
-                'persist': False,
+                'persist': bool(persist),
                 'compactize': True,
                 'pricePercentage': 1.0,
             },
@@ -187,7 +218,7 @@ def _create_via_rpc(input_text, market_id):
     return _normalize('', body['result'], source='rpc')
 
 
-def _create_via_api(input_text, market_id, api_key):
+def _create_via_api(input_text, market_id, api_key, persist=False):
     resp = requests.post(
         f'{JANICE_API_BASE}/appraisal',
         params={
@@ -195,7 +226,7 @@ def _create_via_api(input_text, market_id, api_key):
             'designation': 'appraisal',
             'pricing': 'buy',
             'pricingVariant': 'immediate',
-            'persist': 'false',
+            'persist': 'true' if persist else 'false',
             'compactize': 'true',
             'pricePercentage': '1.0',
         },

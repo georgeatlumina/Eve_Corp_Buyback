@@ -424,3 +424,68 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .sov-sort-label select { background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.25em 0.5em; font-size: 0.85em; }
 .sov-table a { color: #7cd; text-decoration: none; }
 .sov-table a:hover { color: #aef; text-decoration: underline; }
+
+/* ===== Working tab (pinned moon contracts) ===== */
+.moon-pin-row { display: flex; gap: 0.4em; margin-top: 0.6em; padding-top: 0.4em; }
+.btn-pin-moon { padding: 0.4em 0.8em; font-size: 0.85em; }
+.btn-pin-moon:disabled { opacity: 0.7; cursor: default; }
+
+.working-filter-bar { display: flex; gap: 0.4em; margin: 0.6em 0 1em; }
+.working-filter-btn { background: #2a2a2a; color: #aaa; border: 1px solid #444; padding: 0.4em 1em; border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: 500; }
+.working-filter-btn:hover { background: #333; color: #eee; }
+.working-filter-btn.active { background: #4a8; color: #111; border-color: #4a8; font-weight: 600; }
+
+.pin-card { background: #262626; border: 1px solid #3a3a3a; border-left: 4px solid #888; border-radius: 4px; margin: 0.5em 0; }
+.pin-card.pin-pending { border-left-color: #e8c84a; }
+.pin-card.pin-paid { border-left-color: #4a8; }
+.pin-card.pin-disputed { border-left-color: #d44; }
+.pin-card.expanded { background: #2a2a2a; }
+
+.pin-summary { padding: 0.55em 0.9em; cursor: pointer; user-select: none; }
+.pin-summary:hover { background: #2e2e2e; }
+.pin-card.expanded .pin-summary { border-bottom: 1px solid #3a3a3a; }
+.pin-summary-head { display: flex; gap: 0.75em; align-items: baseline; flex-wrap: wrap; }
+.pin-summary-head > strong { font-variant-numeric: tabular-nums; }
+.pin-issuer { color: #cde; }
+.pin-summary-spacer { flex: 1; }
+.pin-summary-payout { font-weight: 600; color: #4a8; font-variant-numeric: tabular-nums; }
+.pin-summary-caret { color: #888; min-width: 1em; text-align: center; }
+.pin-summary-meta { margin-top: 0.2em; font-size: 0.85em; }
+.pin-status { font-size: 0.75em; padding: 0.1em 0.5em; border-radius: 999px; border: 1px solid #444; }
+.pin-status-pending { color: #e8c84a; border-color: #5a4a1a; }
+.pin-status-paid { color: #4a8; border-color: #1a3a2a; }
+.pin-status-disputed { color: #f88; border-color: #5a1a1a; }
+
+.pin-detail { padding: 0.6em 0.9em 0.9em; }
+.pin-snap { background: #1f1f1f; border: 1px solid #333; border-radius: 4px; padding: 0.5em 0.75em; margin-bottom: 0.7em; font-size: 0.9em; }
+.pin-snap-line { padding: 0.1em 0; font-variant-numeric: tabular-nums; }
+.pin-snap-blend { margin-top: 0.3em; padding-top: 0.3em; border-top: 1px solid #333; }
+
+.pin-paste-row { margin: 0.6em 0; }
+.pin-paste-label { display: block; font-size: 0.9em; margin-bottom: 0.3em; color: #cde; }
+.pin-paste { width: 100%; padding: 0.5em; background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; resize: vertical; }
+.pin-paste-actions { display: flex; gap: 0.5em; align-items: center; margin-top: 0.4em; flex-wrap: wrap; }
+.btn-pin-appraise { padding: 0.5em 1em; font-size: 0.9em; }
+.btn-pin-appraise:disabled { opacity: 0.7; cursor: progress; }
+.pin-appraise-status { font-size: 0.85em; }
+
+.pin-last-appraisal { background: #1a2a22; border: 1px solid #2a5a3a; border-radius: 4px; padding: 0.6em 0.8em; margin: 0.6em 0; }
+.pin-last-appraisal h4 { margin: 0 0 0.4em; font-size: 0.95em; color: #cde; }
+.pin-last-appraisal > div { padding: 0.1em 0; font-size: 0.9em; }
+.pin-payout-final { font-size: 1.2em; font-weight: 700; color: #4a8; margin-top: 0.4em; padding-top: 0.4em; border-top: 1px solid #2a5a3a; }
+
+.pin-history { margin: 0.6em 0; }
+.pin-history > summary { color: #aaa; font-size: 0.85em; cursor: pointer; padding: 0.2em 0; }
+.pin-history > summary:hover { color: #eee; }
+.pin-history-row { padding: 0.2em 0; font-size: 0.85em; font-variant-numeric: tabular-nums; border-bottom: 1px solid #2a2a2a; }
+.pin-history-row a { color: #88c; }
+
+.pin-meta-row { display: flex; gap: 0.8em; align-items: flex-start; flex-wrap: wrap; margin: 0.6em 0; }
+.pin-status-label { display: flex; flex-direction: column; gap: 0.25em; font-size: 0.85em; color: #aaa; flex: 0 0 auto; }
+.pin-status-select { padding: 0.3em 0.5em; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; }
+.pin-notes-label { display: flex; flex-direction: column; gap: 0.25em; font-size: 0.85em; color: #aaa; flex: 1; min-width: 240px; }
+.pin-notes { padding: 0.4em 0.6em; background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 4px; resize: vertical; }
+
+.pin-actions { display: flex; gap: 0.5em; align-items: center; margin-top: 0.6em; padding-top: 0.5em; border-top: 1px solid #333; }
+.btn-pin-unpin { padding: 0.35em 0.8em; font-size: 0.85em; background: #3a2a2a; color: #f88; border: 1px solid #5a3a3a; }
+.btn-pin-unpin:hover { background: #4a2a2a; }
