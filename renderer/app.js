@@ -14,6 +14,19 @@ const $$ = (sel) => document.querySelectorAll(sel);
   } catch (_) {}
 })();
 
+document.getElementById('btn-check-update')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  if (btn.disabled || !window.api?.checkForUpdate) return;
+  btn.disabled = true;
+  btn.classList.add('spinning');
+  try {
+    await window.api.checkForUpdate();
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  }
+});
+
 const DIVISION_LABELS = {
   1: 'Master',
   2: 'Contracts',

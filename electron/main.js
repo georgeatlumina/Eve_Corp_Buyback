@@ -10,6 +10,7 @@ const UPDATE_REPO = 'georgeatlumina/Eve_Corp_Buyback';
 const APP_META = { version: pkg.version || '', author: pkg.author || '' };
 
 ipcMain.handle('app:meta', () => APP_META);
+ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
 let pythonProcess = null;
 let mainWindow = null;
 let splashWindow = null;
@@ -302,22 +303,53 @@ app.whenReady().then(async () => {
   });
   // Update check runs in the background after the window is visible so we
   // don't block startup. Errors are swallowed (logged to sidecar.log only).
-  setTimeout(() => checkForUpdate().catch((e) => logSidecar(`update check threw: ${e}`)), 2000);
+  // First check fires 2s after startup, then re-checks every hour so users
+  // who leave the app open for days still get release prompts. A pending
+  // dialog from a previous tick suppresses re-prompting until the user
+  // dismisses it (checkForUpdate is naturally re-entrant against dialog).
+  const runUpdateCheck = () =>
+    checkForUpdate().catch((e) => logSidecar(`update check threw: ${e}`));
+  setTimeout(runUpdateCheck, 2000);
+  setInterval(runUpdateCheck, 60 * 60 * 1000);
 });
 
 
 // ---------- Auto-update (download-and-open flow) ----------
 
-async function checkForUpdate() {
+// Per-session dedupe so the hourly poll doesn't repeatedly prompt for the
+// same version after the user clicked "Later". Cleared on app restart.
+let dismissedUpdateTag = null;
+let updateDialogOpen = false;
+
+async function checkForUpdate({ interactive = false } = {}) {
   if (!app.isPackaged) {
     logSidecar('update check skipped (not packaged)');
+    if (interactive) {
+      await dialog.showMessageBox(mainWindow || null, {
+        type: 'info',
+        title: 'Update check',
+        message: 'Running an unpackaged build — auto-update is disabled.',
+        detail: 'Update checks only work in installed releases (DMG / NSIS).',
+        buttons: ['OK'],
+      });
+    }
     return;
   }
+  if (updateDialogOpen) return;  // a previous tick is still waiting on the user
   let latest;
   try {
     latest = await httpsGetJson(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`);
   } catch (e) {
     logSidecar(`update check failed: ${e.message || e}`);
+    if (interactive) {
+      await dialog.showMessageBox(mainWindow || null, {
+        type: 'warning',
+        title: 'Update check failed',
+        message: 'Could not reach GitHub to check for updates.',
+        detail: String(e.message || e),
+        buttons: ['OK'],
+      });
+    }
     return;
   }
   const current = app.getVersion();
@@ -325,6 +357,18 @@ async function checkForUpdate() {
   if (!latestTag) return;
   if (compareSemver(latestTag, current) <= 0) {
     logSidecar(`up to date (current=${current}, latest=${latestTag})`);
+    if (interactive) {
+      await dialog.showMessageBox(mainWindow || null, {
+        type: 'info',
+        title: 'Up to date',
+        message: `You're running the latest version (${current}).`,
+        buttons: ['OK'],
+      });
+    }
+    return;
+  }
+  if (!interactive && dismissedUpdateTag === latestTag) {
+    logSidecar(`update ${latestTag} already dismissed this session — skipping prompt`);
     return;
   }
   logSidecar(`update available: ${latestTag} (current ${current})`);
@@ -332,19 +376,36 @@ async function checkForUpdate() {
   const asset = pickPlatformAsset(latest.assets || []);
   if (!asset) {
     logSidecar('no matching asset for this platform');
+    if (interactive) {
+      await dialog.showMessageBox(mainWindow || null, {
+        type: 'info',
+        title: 'Update available',
+        message: `${latestTag} is available, but no installer for your platform was attached to the release.`,
+        buttons: ['OK'],
+      });
+    }
     return;
   }
 
-  const confirm = await dialog.showMessageBox(mainWindow || null, {
-    type: 'info',
-    title: 'Update available',
-    message: `Naval Defence Alliance Management Tool ${latestTag} is available`,
-    detail: `You are running ${current}. Download the new ${asset.name} (~${Math.round((asset.size || 0) / 1024 / 1024)} MB)?`,
-    buttons: ['Download', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (confirm.response !== 0) return;
+  updateDialogOpen = true;
+  let confirm;
+  try {
+    confirm = await dialog.showMessageBox(mainWindow || null, {
+      type: 'info',
+      title: 'Update available',
+      message: `Naval Defence Alliance Management Tool ${latestTag} is available`,
+      detail: `You are running ${current}. Download the new ${asset.name} (~${Math.round((asset.size || 0) / 1024 / 1024)} MB)?`,
+      buttons: ['Download', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+  } finally {
+    updateDialogOpen = false;
+  }
+  if (confirm.response !== 0) {
+    dismissedUpdateTag = latestTag;
+    return;
+  }
 
   const destPath = path.join(app.getPath('downloads'), asset.name);
   try {

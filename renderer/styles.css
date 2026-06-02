@@ -6,6 +6,11 @@ header h1 { margin: 0 0 0.6em; font-size: 1.4em; }
 .app-author { display: inline-block; margin-left: 0.4em; font-size: 0.55em; font-weight: 400; color: #99a; vertical-align: middle; letter-spacing: 0.2px; }
 .app-author strong { color: #cfd; font-weight: 600; }
 .app-author:empty { display: none; }
+.check-update-btn { display: inline-block; margin-left: 0.3em; padding: 0.05em 0.45em; font-size: 0.7em; line-height: 1.2; font-weight: 500; color: #cfd; background: #1a3a2a; border: 1px solid #2d5a44; border-radius: 999px; vertical-align: middle; cursor: pointer; transition: background 0.12s ease; }
+.check-update-btn:hover { background: #2a5a44; }
+.check-update-btn:disabled { opacity: 0.6; cursor: progress; }
+.check-update-btn.spinning { animation: spin 0.9s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 nav { display: flex; gap: 0.5em; flex-wrap: wrap; }
 .tab-btn { background: #333; color: #eee; border: 0; padding: 0.5em 1em; cursor: pointer; border-radius: 4px; font-size: 0.95em; }
 .tab-btn.active { background: #4a8; color: #111; font-weight: 600; }
