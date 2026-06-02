@@ -2,7 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electro
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const pkg = require('../package.json');
 
 const PYTHON_PORT = 8765;
@@ -40,9 +40,42 @@ function logSidecar(line) {
   process.stdout.write && process.stdout.write(text);
 }
 
+function killOrphanSidecars() {
+  // Defensive: a previous app instance that crashed (or was force-quit via Task
+  // Manager) can leave its python child running and still bound to port 8765.
+  // The fresh sidecar then fails with WSAEADDRINUSE / EADDRINUSE and exits,
+  // while the orphan keeps serving traffic from older code (e.g. missing
+  // /api/pinned, /api/contracts/scan). Sweep any leftovers before we spawn.
+  // The current run's pythonProcess (if any) is killed first to avoid
+  // self-targeting on hot-reload from `app.relaunch()`.
+  if (pythonProcess && !pythonProcess.killed) {
+    try { pythonProcess.kill(); } catch (_) {}
+    pythonProcess = null;
+  }
+  try {
+    if (process.platform === 'win32') {
+      // /F = force, /T = also kill child processes, /IM matches by image name.
+      // Returns 128 / "process not found" when there's nothing to kill — fine.
+      const r = spawnSync('taskkill', ['/F', '/T', '/IM', 'sidecar.exe'], {
+        windowsHide: true,
+      });
+      if (r.status === 0) logSidecar('killed orphan sidecar.exe via taskkill');
+    } else {
+      // pkill returns 1 when no matches; ignore. Match against the basename
+      // only so dev `python3 server.py` runs aren't caught.
+      const r = spawnSync('pkill', ['-x', 'sidecar'], { windowsHide: true });
+      if (r.status === 0) logSidecar('killed orphan sidecar via pkill');
+    }
+  } catch (err) {
+    logSidecar(`orphan cleanup failed (non-fatal): ${err.message || err}`);
+  }
+}
+
 function startPythonSidecar() {
   // Truncate previous log on each startup so the file always reflects this run.
   try { fs.writeFileSync(ensureLogPath(), ''); } catch (_) {}
+
+  killOrphanSidecars();
 
   const userDataDir = path.join(app.getPath('userData'), 'eve_auth');
   const env = {
