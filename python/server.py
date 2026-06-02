@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import uvicorn
@@ -55,6 +56,14 @@ from esi import (
     fetch_system_kills,
     resolve_names,
     send_evemail,
+)
+from janice import create_appraisal, create_appraisal_from_text
+from pinned import (
+    append_appraisal,
+    load_pinned,
+    remove_pin,
+    update_pin_fields,
+    upsert_pin,
 )
 from refining import compute_refined_payout, is_donation, is_mineable, is_prismaticite
 from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
@@ -373,8 +382,6 @@ def validate(req: ValidateRequest):
 
 
 def _validate_stream(cfg, req):
-    from janice import create_appraisal
-
     if not cfg.get('corp_id'):
         yield _emit('error', message='Configure corp_id first')
         return
@@ -931,16 +938,6 @@ def _scan_contracts_stream():
 
 # ----------------------- Working tab: pinned moon contracts -----------------------
 
-# Imported here (not at module top) to keep the pinned module independent of
-# the rest of server.py — it only depends on config.AUTH_DIR.
-from pinned import (
-    append_appraisal,
-    load_pinned,
-    remove_pin,
-    update_pin_fields,
-    upsert_pin,
-)
-
 
 class PinUpsert(BaseModel):
     contract_id: int
@@ -971,7 +968,6 @@ def post_pinned(req: PinUpsert):
     appraisals while replacing the snapshot."""
     if not req.snapshot or int(req.snapshot.get('contract_id') or 0) != req.contract_id:
         raise HTTPException(400, 'snapshot.contract_id must match contract_id')
-    from datetime import datetime, timezone
     pinned_at = req.pinned_at or datetime.now(timezone.utc).isoformat()
     try:
         pins = upsert_pin(req.snapshot, pinned_at)
@@ -1001,9 +997,6 @@ def appraise_pinned(contract_id: int, req: PinAppraise):
     and apply the pin's saved blended payout fraction. Appends the result to
     the pin's appraisal history and returns it.
     """
-    from datetime import datetime, timezone
-    from janice import create_appraisal_from_text
-
     pins = load_pinned()
     pin = next((p for p in pins if int(p.get('contract_id') or 0) == contract_id), None)
     if not pin:
