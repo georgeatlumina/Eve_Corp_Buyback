@@ -339,6 +339,11 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .hs-row { display: flex; gap: 0.8em; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.6em; }
 .hs-row label { margin: 0; flex: 0 0 auto; min-width: 200px; }
 .quota-h4 { margin: 1em 0 0.3em; }
+.aq-row { display: flex; gap: 0.8em; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.4em; }
+.aq-url-label { flex: 1 1 360px; margin: 0; }
+.aq-url-label input { width: 100%; max-width: none; }
+.aq-auto-label { display: inline-flex; gap: 0.4em; align-items: center; font-size: 0.9em; padding-bottom: 0.45em; }
+.aq-auto-label input { width: auto; margin: 0; }
 .quota-table-wrap { overflow-x: auto; max-width: 100%; }
 .quota-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
 .quota-table th { text-align: left; color: #aaa; font-weight: 500; padding: 0.4em 0.5em; border-bottom: 1px solid #444; background: #222; position: sticky; top: 0; }

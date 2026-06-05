@@ -88,9 +88,32 @@
             <input type="file" id="quota-import-file" hidden accept=".csv,.json,text/csv,application/json" />
             <span id="quota-io-status" class="muted"></span>
           </div>
+
+          <h4 class="quota-h4">Alliance quota sync</h4>
+          <p class="muted">Pull quotas from a single source of truth. The admin creates a <strong>secret gist</strong> at <a href="https://gist.github.com" target="_blank" rel="noopener">gist.github.com</a> (not "public" — pick "Create secret gist") containing the quota JSON, then copies the <strong>Raw</strong> URL. Secret gists are unlisted but the raw URL is fetchable to anyone who has it — share the URL via your usual alliance channel (Discord, AA). Users paste the URL below and click <em>Sync now</em>. Accepts a bare JSON array, <code>{quotas: [...]}</code>, or the full export envelope.</p>
+          <div class="aq-row">
+            <label class="aq-url-label">Alliance quota URL <input name="alliance_quota_url" type="url" placeholder="https://gist.githubusercontent.com/&hellip;/raw/quotas.json" /></label>
+            <label class="aq-auto-label"><input name="alliance_quota_auto_sync" type="checkbox" /> Auto-sync on app start</label>
+          </div>
+          <div class="actions">
+            <button type="button" id="btn-quota-sync" class="secondary">Sync now</button>
+            <span id="quota-sync-status" class="muted"></span>
+          </div>
         </fieldset>
 
         <label>Janice API Key (optional) <input name="janice_api_key" type="text" autocomplete="off" placeholder="X-ApiKey from Janice" /></label>
+
+        <fieldset>
+          <legend>Backup &amp; share</legend>
+          <p class="muted">Download a JSON file of every setting on this tab — corp ID, structures, refining settings, mail presets, home structure, quotas. Useful for backing up before a re-install, or sharing a baseline config with another admin. ESI tokens are <strong>not</strong> exported (they stay in <code>tokens.json</code>); the Janice API key is included by default but can be left out at export time.</p>
+          <div class="actions">
+            <button type="button" id="btn-export-config" class="secondary">Export config…</button>
+            <button type="button" id="btn-import-config" class="secondary">Import config…</button>
+            <input type="file" id="config-import-file" hidden accept=".json,application/json" />
+            <span id="config-io-status" class="muted"></span>
+          </div>
+        </fieldset>
+
         <div class="actions">
           <button type="submit">Save</button>
           <span id="config-status" class="muted"></span>

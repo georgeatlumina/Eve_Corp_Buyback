@@ -55,6 +55,14 @@ DEFAULTS = {
     'home_region_id': 0,
     # List of {name, ship_type_id, ship_name, required, title_filter}.
     'quotas': [],
+    # Optional alliance-wide quota distribution: admin hosts a JSON file
+    # (GitHub Gist raw URL, raw.githubusercontent.com, or any reachable
+    # https endpoint) and users sync from it. Auto-sync hits the URL once
+    # at sidecar startup if both URL and flag are set.
+    'alliance_quota_url': '',
+    'alliance_quota_auto_sync': False,
+    'alliance_quota_last_synced': '',   # ISO timestamp of last successful sync
+    'alliance_quota_last_status': '',   # short human-readable last result
 }
 
 _USER_KEYS = set(DEFAULTS)

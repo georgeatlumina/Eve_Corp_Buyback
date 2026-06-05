@@ -8,6 +8,7 @@ import webbrowser
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import requests
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -124,6 +125,8 @@ class ConfigUpdate(BaseModel):
     home_structure_id: Optional[int] = None
     home_region_id: Optional[int] = None
     quotas: Optional[list[dict]] = None
+    alliance_quota_url: Optional[str] = None
+    alliance_quota_auto_sync: Optional[bool] = None
 
 
 @app.post('/api/config')
@@ -321,6 +324,170 @@ def get_ship_types(refresh: bool = False):
     except Exception:
         pass
     return {'ships': ships, 'from_cache': False}
+
+
+class QuotaSyncRequest(BaseModel):
+    url: Optional[str] = None  # falls back to cfg['alliance_quota_url']
+
+
+def _coerce_quota_row(row):
+    """Normalise one quota record. Returns None if it's not usable."""
+    if not isinstance(row, dict):
+        return None
+    try:
+        type_id = int(row.get('ship_type_id') or 0)
+    except (TypeError, ValueError):
+        type_id = 0
+    if not type_id:
+        return None
+    try:
+        required = int(row.get('required') or 0)
+    except (TypeError, ValueError):
+        required = 0
+    return {
+        'name': str(row.get('name') or '').strip(),
+        'ship_type_id': type_id,
+        'ship_name': str(row.get('ship_name') or '').strip(),
+        'required': required,
+        'title_filter': str(row.get('title_filter') or '').strip(),
+    }
+
+
+def _extract_quotas_from_payload(payload):
+    """Accept several shapes from an alliance-shared file:
+
+      - bare array of quota rows:        [ {...}, {...}, ... ]
+      - simple wrapper:                  { "quotas": [ ... ] }
+      - reused export envelope:          { "_meta": {...}, "config": {"quotas": [...]} }
+      - reused export envelope (flat):   { "_meta": {...}, "quotas": [ ... ] }
+    """
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        if isinstance(payload.get('config'), dict) and isinstance(payload['config'].get('quotas'), list):
+            rows = payload['config']['quotas']
+        elif isinstance(payload.get('quotas'), list):
+            rows = payload['quotas']
+        else:
+            rows = None
+    else:
+        rows = None
+    if rows is None:
+        raise ValueError(
+            'expected a JSON array of quotas, or an object with a "quotas" '
+            'array (optionally wrapped in {_meta, config}).'
+        )
+    cleaned = [c for c in (_coerce_quota_row(r) for r in rows) if c]
+    return cleaned
+
+
+def _resolve_gist_page_url(url, user_agent):
+    """If `url` is a gist *page* URL (gist.github.com/<user>/<id>[/...]) rather
+    than a raw-file URL, hit the GitHub Gists API to discover the first file's
+    raw URL and return that. Otherwise return the URL unchanged.
+
+    The "Share" button on a gist hands you the page URL — most users will
+    paste that rather than the buried Raw link, so we accept either.
+    """
+    import re
+    m = re.match(
+        r'^https?://gist\.github\.com/[^/]+/(?P<id>[0-9a-fA-F]{20,})(?:/.*)?$',
+        url,
+    )
+    if not m:
+        return url
+    gist_id = m.group('id')
+    api = f'https://api.github.com/gists/{gist_id}'
+    r = requests.get(
+        api,
+        headers={'Accept': 'application/vnd.github+json', 'User-Agent': user_agent},
+        timeout=15,
+    )
+    r.raise_for_status()
+    data = r.json()
+    files = data.get('files') or {}
+    if not files:
+        raise ValueError(f'gist {gist_id} has no files')
+    # Prefer a *.json file if there is one; fall back to the first file.
+    json_files = [v for k, v in files.items() if k.lower().endswith('.json')]
+    chosen = (json_files or list(files.values()))[0]
+    raw = chosen.get('raw_url')
+    if not raw:
+        raise ValueError(f'gist {gist_id} file {chosen.get("filename")!r} has no raw_url')
+    return raw
+
+
+def _sync_quotas_from_url(url, cfg, persist=True):
+    """Fetch `url`, parse, validate, optionally write to config. Returns the
+    new quota list and a short status string (used for last-sync metadata).
+
+    Unauthenticated fetch only — use a public URL or a "secret" (unlisted)
+    GitHub gist. Secret gists are reachable to anyone who has the raw URL
+    but don't show up in profile/search, which is the lowest-friction way
+    to share alliance quotas without setting up auth.
+
+    URL forms accepted:
+      - https://gist.github.com/<user>/<id>           (page URL — resolved via API)
+      - https://gist.githubusercontent.com/.../raw/...
+      - https://raw.githubusercontent.com/<org>/<repo>/<branch>/<path>
+      - any other https URL serving the JSON directly
+    """
+    if not url or not url.strip():
+        raise ValueError('alliance_quota_url is not set')
+    url = url.strip()
+    if not (url.startswith('https://') or url.startswith('http://')):
+        raise ValueError(f'alliance_quota_url must start with http(s):// (got {url!r})')
+    ua = get_user_agent()
+    fetch_url = _resolve_gist_page_url(url, ua)
+    resp = requests.get(
+        fetch_url,
+        headers={'Accept': 'application/json', 'User-Agent': ua},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    try:
+        payload = resp.json()
+    except ValueError:
+        # Some hosts serve JSON as text/plain; resp.json() already handles
+        # encoding but invalid JSON content raises here.
+        raise ValueError('response was not valid JSON')
+    quotas = _extract_quotas_from_payload(payload)
+    if persist:
+        cfg['quotas'] = quotas
+        cfg['alliance_quota_url'] = url
+        cfg['alliance_quota_last_synced'] = datetime.now(timezone.utc).isoformat()
+        cfg['alliance_quota_last_status'] = f'ok — {len(quotas)} quota row(s)'
+        save_config(cfg)
+    return quotas
+
+
+@app.post('/api/quotas/sync')
+def sync_quotas(req: QuotaSyncRequest):
+    """Pull the alliance quota JSON from a public URL (typically a GitHub
+    gist raw link) and replace this user's quotas with the fetched list.
+
+    Server-side fetch avoids renderer-side CORS surprises, lets future
+    versions add auth headers if needed, and gives us one validation
+    pathway for both manual and auto-sync triggers.
+    """
+    cfg = load_config()
+    url = (req.url or cfg.get('alliance_quota_url') or '').strip()
+    try:
+        quotas = _sync_quotas_from_url(url, cfg)
+    except requests.exceptions.RequestException as e:
+        # Persist the failure so the UI can surface it on next load.
+        cfg = load_config()  # reload — _sync_quotas_from_url may have mutated then failed mid-write
+        cfg['alliance_quota_url'] = url or cfg.get('alliance_quota_url', '')
+        cfg['alliance_quota_last_status'] = f'fetch failed: {e}'
+        save_config(cfg)
+        raise HTTPException(502, f'Fetch failed: {e}')
+    except (ValueError, KeyError) as e:
+        cfg = load_config()
+        cfg['alliance_quota_url'] = url or cfg.get('alliance_quota_url', '')
+        cfg['alliance_quota_last_status'] = f'parse failed: {e}'
+        save_config(cfg)
+        raise HTTPException(400, f'Invalid quota file: {e}')
+    return {'quotas': quotas, 'config': load_config()}
 
 
 @app.get('/api/region/from-station')

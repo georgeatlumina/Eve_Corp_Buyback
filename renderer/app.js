@@ -132,6 +132,13 @@ async function loadConfig() {
   if ($('[name=home_structure_id]')) $('[name=home_structure_id]').value = cfg.home_structure_id || '';
   if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
   renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
+  if ($('[name=alliance_quota_url]')) {
+    $('[name=alliance_quota_url]').value = cfg.alliance_quota_url || '';
+  }
+  if ($('[name=alliance_quota_auto_sync]')) {
+    $('[name=alliance_quota_auto_sync]').checked = !!cfg.alliance_quota_auto_sync;
+  }
+  renderQuotaSyncStatus(cfg);
   // Kick off the ship-types fetch in the background; the datalist becomes
   // available as soon as it resolves (cached to disk after the first call).
   ensureShipTypes();
@@ -208,10 +215,14 @@ $('#btn-add-structure').addEventListener('click', () => {
   $('#structures-list').appendChild(structureRow({ name: '', id: 0, accepts: [] }));
 });
 
-$('#config-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const body = {
+// Read the live Config form into the payload shape /api/config expects.
+// Used by both the Save handler and the whole-config export so an unsaved
+// edit (e.g. a freshly-pasted alliance quota URL) still flows into the
+// exported file without making the user Save first.
+function collectConfigForm() {
+  const form = $('#config-form');
+  const fd = new FormData(form);
+  return {
     corp_id: parseInt(fd.get('corp_id')) || 0,
     structures: collectStructures(),
     janice_market: $('#janice-market').value,
@@ -225,11 +236,17 @@ $('#config-form').addEventListener('submit', async (e) => {
     home_structure_id: parseInt(fd.get('home_structure_id')) || 0,
     home_region_id: parseInt(fd.get('home_region_id')) || 0,
     quotas: collectQuotas(),
+    alliance_quota_url: (fd.get('alliance_quota_url') || '').toString().trim(),
+    alliance_quota_auto_sync: $('[name=alliance_quota_auto_sync]')?.checked || false,
   };
+}
+
+$('#config-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
   const res = await fetch(`${API}/api/config`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(collectConfigForm()),
   });
   $('#config-status').textContent = res.ok ? 'Saved.' : 'Error saving.';
   setTimeout(() => ($('#config-status').textContent = ''), 2500);
@@ -957,7 +974,7 @@ document.addEventListener('click', async (e) => {
   openMailModal(contract, kind, idx);
 });
 
-loadConfig();
+loadConfig().then(maybeAutoSyncQuotas);
 refreshAuthStatus();
 initMoonCalculator();
 
@@ -2556,6 +2573,190 @@ $('#quota-import-file')?.addEventListener('change', async (ev) => {
     alert(`Import failed: ${e.message || e}`);
   }
 });
+
+// --- Whole-config export / import ---
+// Exports every saved key on the Config tab (corp ID, structures, refining
+// settings, mail presets, home structure, quotas, market hubs). ESI tokens
+// are not in config.json so they don't get exported. The Janice API key is
+// optional — the user picks at export time. Import does a full REPLACE of
+// the keys present in the file (anything missing falls back to defaults via
+// the existing _migrate + DEFAULTS merge in python/config.py).
+
+// Keys that should never leave the user's machine in an export. Auth/ESI
+// tokens already live elsewhere; sync-state side data (last_synced/_status)
+// is per-machine and would be misleading if shared.
+const CONFIG_EXPORT_NEVER = new Set([
+  'scopes',
+  'alliance_quota_last_synced',
+  'alliance_quota_last_status',
+]);
+
+function setConfigIoStatus(msg) {
+  const el = $('#config-io-status');
+  if (el) {
+    el.textContent = msg;
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+  }
+}
+
+$('#btn-export-config')?.addEventListener('click', async () => {
+  // Read directly from the live form so unsaved edits (a freshly-pasted
+  // alliance quota URL, a toggled auto-sync checkbox, an edited quota row)
+  // are captured. No need to Save first.
+  const cfg = collectConfigForm();
+  // Strip keys that aren't useful to share. Strip api key unless user opts in.
+  const includeKey = cfg.janice_api_key
+    ? confirm('Include the Janice API key in the export?\n\nOK = include (file will contain your private key — fine for personal backup, NOT safe to share).\nCancel = leave it out (recipient will need to enter their own key after import).')
+    : false;
+  const out = { ...cfg };
+  for (const k of CONFIG_EXPORT_NEVER) delete out[k];
+  if (!includeKey) delete out.janice_api_key;
+
+  // Stamp the export so future imports can recognise / migrate as needed.
+  let appVersion = '';
+  try { appVersion = (await window.api?.getMeta?.())?.version || ''; } catch (_) {}
+  const payload = {
+    _meta: {
+      exported_at: new Date().toISOString(),
+      app_version: appVersion,
+      schema: 'eve-corp-buyback-config/1',
+    },
+    config: out,
+  };
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadBlob(`eve-corp-buyback-config-${stamp}.json`, 'application/json',
+    JSON.stringify(payload, null, 2));
+  setConfigIoStatus(`Exported ${Object.keys(out).length} settings${includeKey ? ' (incl. API key)' : ''}.`);
+});
+
+$('#btn-import-config')?.addEventListener('click', () => {
+  $('#config-import-file').click();
+});
+
+$('#config-import-file')?.addEventListener('change', async (ev) => {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  ev.target.value = '';
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (e) {
+    alert(`Import failed: not valid JSON — ${e.message || e}`);
+    return;
+  }
+  // Accept both the wrapped {_meta, config} envelope from our own export and
+  // a bare config object (in case a user hand-edits or trims the file).
+  const incoming = (parsed && parsed.config && typeof parsed.config === 'object')
+    ? parsed.config
+    : parsed;
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+    alert('Import failed: expected a JSON object with config keys.');
+    return;
+  }
+  for (const k of CONFIG_EXPORT_NEVER) delete incoming[k];
+
+  const keyCount = Object.keys(incoming).length;
+  if (!keyCount) {
+    alert('Import failed: the file contains no recognisable config keys.');
+    return;
+  }
+  const summary = Object.keys(incoming).sort().slice(0, 10).join(', ')
+    + (keyCount > 10 ? `, … (+${keyCount - 10} more)` : '');
+  if (!confirm(`Import will REPLACE these settings on this machine:\n\n${summary}\n\nContinue?`)) return;
+
+  try {
+    const res = await fetch(`${API}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(incoming),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  } catch (e) {
+    alert(`Import failed: ${e}`);
+    return;
+  }
+  // Re-pull from the sidecar so the form repopulates with the saved values
+  // (defaults filled in for any missing keys via _migrate).
+  await loadConfig();
+  setConfigIoStatus(`Imported ${keyCount} settings.`);
+});
+
+// --- Alliance quota sync ---
+// Pull the quota list from a public URL (typically a GitHub gist raw link)
+// shared by the alliance admin. Sync runs server-side via /api/quotas/sync
+// to dodge renderer CORS surprises. Auto-sync hits the URL once after
+// loadConfig() resolves if the flag is set; manual sync is the button.
+
+let allianceQuotaAutoSyncDone = false;
+
+function renderQuotaSyncStatus(cfg) {
+  const el = $('#quota-sync-status');
+  if (!el) return;
+  const last = (cfg.alliance_quota_last_synced || '').trim();
+  const status = (cfg.alliance_quota_last_status || '').trim();
+  if (!last && !status) {
+    el.textContent = '';
+    return;
+  }
+  const lastTxt = last ? new Date(last).toLocaleString() : '?';
+  el.textContent = status ? `last sync: ${lastTxt} — ${status}` : `last sync: ${lastTxt}`;
+}
+
+async function runQuotaSync({ silent = false } = {}) {
+  const btn = $('#btn-quota-sync');
+  const status = $('#quota-sync-status');
+  // Use the current field value first; saving the form isn't a prerequisite.
+  const url = ($('[name=alliance_quota_url]')?.value || '').trim();
+  if (!url) {
+    if (!silent) {
+      if (status) status.textContent = 'enter a URL first';
+    }
+    return null;
+  }
+  if (btn) btn.disabled = true;
+  if (status && !silent) status.textContent = 'syncing…';
+  try {
+    const res = await fetch(`${API}/api/quotas/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = text;
+      try { msg = JSON.parse(text).detail || text; } catch (_) {}
+      throw new Error(`HTTP ${res.status}: ${msg}`);
+    }
+    const data = await res.json();
+    const cfg = data.config || {};
+    renderQuotas(Array.isArray(data.quotas) ? data.quotas : []);
+    renderQuotaSyncStatus(cfg);
+    if (status && !silent) {
+      status.textContent = `synced — ${(data.quotas || []).length} quota row(s) replaced`;
+      setTimeout(() => renderQuotaSyncStatus(cfg), 4000);
+    }
+    return data.quotas || [];
+  } catch (e) {
+    if (status) status.textContent = `sync failed: ${e.message || e}`;
+    if (!silent) console.error('[quota-sync]', e);
+    return null;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+$('#btn-quota-sync')?.addEventListener('click', () => runQuotaSync({ silent: false }));
+
+async function maybeAutoSyncQuotas() {
+  if (allianceQuotaAutoSyncDone) return;
+  const auto = $('[name=alliance_quota_auto_sync]')?.checked;
+  const url = ($('[name=alliance_quota_url]')?.value || '').trim();
+  if (!auto || !url) return;
+  allianceQuotaAutoSyncDone = true;
+  // Silent so a transient network blip on launch doesn't yank the user's
+  // attention; failures still show in the last-sync chip.
+  await runQuotaSync({ silent: true });
+}
 
 // --- Region lookup helper ---
 $('#btn-lookup-region')?.addEventListener('click', async () => {
