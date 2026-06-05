@@ -121,6 +121,7 @@ async function loadConfig() {
   // and choose a hub. Saving Config will recreate the config file from defaults.
   fillMarket('#janice-market', markets, cfg?.janice_market);
   fillMarket('#moon-market', markets, cfg?.moon_market);
+  if ($('#appraise-market')) fillMarket('#appraise-market', markets, cfg?.janice_market);
 
   if (!cfg) {
     console.warn('[loadConfig] no config — populating dropdowns only');
@@ -3700,3 +3701,247 @@ document.querySelector('.tab-btn[data-tab="working"]')?.addEventListener('click'
 
 // Boot: load pins eagerly so the badge count is correct without a tab visit.
 loadPinnedContracts();
+
+// ====================== Appraisal tab ======================
+// Paste box -> POST /api/appraise -> renders the Janice block (full
+// Janice-style detail) followed by a Mutamarket addendum that lists each
+// abyssal type in the paste with its marketplace-median and AI-estimator
+// median prices.
+
+function fmtIsk(n) {
+  if (n == null || isNaN(n)) return '—';
+  return Math.round(n).toLocaleString() + ' ISK';
+}
+
+function renderAppraiseResult(data) {
+  const root = $('#appraise-result');
+  if (!root) return;
+  if (!data) { root.innerHTML = ''; return; }
+
+  const j = data.janice || {};
+  const mkt = data.market_name || '?';
+  const codeLink = j.code
+    ? ` (<a href="https://janice.e-351.com/a/${escapeHtml(j.code)}" target="_blank" rel="noopener">view on Janice</a>)`
+    : '';
+  const fallback = j.api_fallback_reason
+    ? `<div class="appraise-warn">⚠ Janice REST API failed — used RPC fallback: ${escapeHtml(j.api_fallback_reason)}</div>`
+    : '';
+
+  // Helper: render one price column (Buy / Split / Sell) with a copy-on-click
+  // headline value and a row of percentage-modifier chips that each copy the
+  // (price × pct/100) figure when clicked.
+  const PRICE_PCTS = [80, 90, 100, 110, 120];
+  function priceColumn(label, value) {
+    const v = Math.round(value || 0);
+    const chips = PRICE_PCTS.map((p) => {
+      const modded = Math.round(v * p / 100);
+      const cls = p === 100 ? 'appraise-pct appraise-pct-100' : 'appraise-pct';
+      return `<button type="button" class="${cls} copyable" data-copy="${modded}" title="Copy ${modded.toLocaleString()} ISK">${p}% <span class="muted">${modded.toLocaleString()}</span></button>`;
+    }).join('');
+    return `
+      <div class="appraise-price-col">
+        <div class="muted appraise-price-label">${label}</div>
+        <strong class="appraise-price-headline copyable" role="button" tabindex="0" title="Click to copy" data-copy="${v}">${fmtIsk(value)}</strong>
+        <div class="appraise-pct-row">${chips}</div>
+      </div>
+    `;
+  }
+
+  const imm = j.prices_immediate || {};
+  const eff = j.prices_effective || {};
+  const showEffectiveBlock = (eff.buy_total !== imm.buy_total) || (eff.split_total !== imm.split_total) || (eff.sell_total !== imm.sell_total);
+
+  const janiceBlock = `
+    <div class="appraise-block appraise-janice">
+      <h3>Janice — non-abyssal items</h3>
+      ${fallback}
+      <div class="appraise-line">
+        <span class="muted">Items priced:</span>
+        <strong>${j.item_count || 0}</strong>
+        <span class="muted"> · Market:</span>
+        <strong>${escapeHtml(mkt)}</strong>
+        <span class="muted"> · Source:</span>
+        <strong>${escapeHtml(j.source || '?')}</strong>
+        ${codeLink ? `<span class="muted">${codeLink}</span>` : ''}
+      </div>
+      <h4 class="appraise-price-section-h">Immediate prices <span class="muted">(current orders on the book)</span></h4>
+      <div class="appraise-prices">
+        ${priceColumn('Buy', imm.buy_total)}
+        ${priceColumn('Split', imm.split_total)}
+        ${priceColumn('Sell', imm.sell_total)}
+      </div>
+      ${showEffectiveBlock ? `
+        <details class="appraise-effective">
+          <summary>Effective prices <span class="muted">(smoothed via recent history)</span></summary>
+          <div class="appraise-prices">
+            ${priceColumn('Buy', eff.buy_total)}
+            ${priceColumn('Split', eff.split_total)}
+            ${priceColumn('Sell', eff.sell_total)}
+          </div>
+        </details>
+      ` : ''}
+    </div>
+  `;
+
+  const ab = data.abyssals || [];
+  let abyssalBlock;
+  if (!ab.length) {
+    abyssalBlock = `
+      <div class="appraise-block appraise-abyssal-empty">
+        <h3>Mutamarket — abyssal addendum</h3>
+        <p class="muted">No abyssal items detected in this paste. (Names beginning with <code>Abyssal …</code> are auto-routed through Mutamarket.)</p>
+      </div>
+    `;
+  } else {
+    const rows = ab.map((r) => {
+      const m = r.marketplace, e = r.estimator;
+      const mMed = m?.median;
+      const eMed = e?.median;
+      const mkTot = r.marketplace_total_median;
+      const eTot = r.estimator_total_median;
+      const err = r.error ? `<div class="muted">error: ${escapeHtml(r.error)}</div>` : '';
+      return `
+        <tr>
+          <td><strong>${escapeHtml(r.name || `type ${r.type_id}`)}</strong>
+            <div class="muted">type ${r.type_id} · ${r.total_listings} listing${r.total_listings === 1 ? '' : 's'}${err}</div>
+          </td>
+          <td class="num">${r.quantity}</td>
+          <td class="num">
+            ${mMed != null
+              ? `${fmtIsk(mMed)}<div class="muted">${m.count} active sale${m.count === 1 ? '' : 's'} · min ${fmtIsk(m.min)} · max ${fmtIsk(m.max)}</div>`
+              : '<span class="muted">no active listings</span>'}
+          </td>
+          <td class="num">
+            ${eMed != null
+              ? `${fmtIsk(eMed)}<div class="muted">${e.count} sample${e.count === 1 ? '' : 's'} · μ ${fmtIsk(e.mean)}</div>`
+              : '<span class="muted">no estimator data</span>'}
+          </td>
+          <td class="num">${mkTot != null ? `<strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(mkTot)}">${fmtIsk(mkTot)}</strong>` : '—'}</td>
+          <td class="num">${eTot != null ? `<strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(eTot)}">${fmtIsk(eTot)}</strong>` : '—'}</td>
+        </tr>
+      `;
+    }).join('');
+    abyssalBlock = `
+      <div class="appraise-block appraise-abyssal">
+        <h3>Mutamarket — abyssal addendum</h3>
+        <table class="appraise-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th class="num">Qty</th>
+              <th class="num">Marketplace median<br><span class="muted">live seller asks</span></th>
+              <th class="num">Estimator median<br><span class="muted">Mutamarket AI</span></th>
+              <th class="num">× qty (market)</th>
+              <th class="num">× qty (estimator)</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  const t = data.totals || {};
+  const grandBlock = `
+    <div class="appraise-block appraise-grand">
+      <h3>Combined totals</h3>
+      <div class="appraise-grand-grid">
+        <div>
+          <div class="muted">Janice (non-abyssal)</div>
+          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.janice_total_buy || 0)}">${fmtIsk(t.janice_total_buy)}</strong>
+        </div>
+        <div>
+          <div class="muted">Mutamarket — marketplace</div>
+          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.abyssal_marketplace_median_total || 0)}">${fmtIsk(t.abyssal_marketplace_median_total)}</strong>
+        </div>
+        <div>
+          <div class="muted">Mutamarket — estimator</div>
+          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.abyssal_estimator_median_total || 0)}">${fmtIsk(t.abyssal_estimator_median_total)}</strong>
+        </div>
+        <div class="appraise-grand-sum">
+          <div class="muted">Grand (Janice + market)</div>
+          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.grand_marketplace_median || 0)}">${fmtIsk(t.grand_marketplace_median)}</strong>
+        </div>
+        <div class="appraise-grand-sum">
+          <div class="muted">Grand (Janice + estimator)</div>
+          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.grand_estimator_median || 0)}">${fmtIsk(t.grand_estimator_median)}</strong>
+        </div>
+      </div>
+    </div>
+  `;
+
+  root.innerHTML = janiceBlock + abyssalBlock + grandBlock;
+}
+
+// Delegated click-to-copy for any .copyable span in the appraisal result.
+// Mirrors the .payout-copy pattern used elsewhere; one shared handler so
+// new copyable elements pick it up automatically.
+document.addEventListener('click', async (e) => {
+  const el = e.target.closest('#appraise-result .copyable');
+  if (!el) return;
+  const v = el.dataset.copy || '';
+  try {
+    await navigator.clipboard.writeText(v);
+    const prev = el.dataset.prevText ?? el.textContent;
+    el.dataset.prevText = prev;
+    el.textContent = 'copied!';
+    el.classList.add('payout-copied');
+    setTimeout(() => {
+      el.textContent = prev;
+      el.classList.remove('payout-copied');
+    }, 900);
+  } catch (_) {}
+});
+
+async function runAppraise() {
+  const paste = $('#appraise-paste')?.value || '';
+  const market = $('#appraise-market')?.value || '';
+  const persist = $('#appraise-persist')?.checked || false;
+  const status = $('#appraise-status');
+  const btn = $('#btn-appraise');
+  if (!paste.trim()) {
+    if (status) status.textContent = 'paste something first';
+    return;
+  }
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'appraising…';
+  try {
+    const res = await fetch(`${API}/api/appraise`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paste_text: paste, market_name: market || undefined, persist }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = text;
+      try { msg = JSON.parse(text).detail || text; } catch (_) {}
+      throw new Error(`HTTP ${res.status}: ${msg}`);
+    }
+    const data = await res.json();
+    renderAppraiseResult(data);
+    if (status) {
+      const ab = (data.abyssals || []).length;
+      status.textContent = ab
+        ? `done · ${data.janice?.item_count || 0} items via Janice · ${ab} abyssal type${ab === 1 ? '' : 's'} via Mutamarket`
+        : `done · ${data.janice?.item_count || 0} items via Janice (no abyssals detected)`;
+    }
+  } catch (e) {
+    if (status) status.textContent = `failed: ${e.message || e}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+$('#btn-appraise')?.addEventListener('click', runAppraise);
+$('#btn-appraise-clear')?.addEventListener('click', () => {
+  if ($('#appraise-paste')) $('#appraise-paste').value = '';
+  if ($('#appraise-status')) $('#appraise-status').textContent = '';
+  renderAppraiseResult(null);
+});
+// Ctrl/Cmd-Enter inside the textarea = run appraisal.
+$('#appraise-paste')?.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runAppraise();
+  }
+});

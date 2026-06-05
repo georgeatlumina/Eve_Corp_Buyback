@@ -59,6 +59,7 @@ from esi import (
     send_evemail,
 )
 from janice import create_appraisal, create_appraisal_from_text
+from mutamarket import appraise_abyssal_type, is_abyssal_item_name
 from pinned import (
     append_appraisal,
     load_pinned,
@@ -1101,6 +1102,166 @@ def _scan_contracts_stream():
         'contracts': contracts_out,
         'quotas': quotas_out,
     })
+
+
+# ----------------------- Appraisal tab (Janice + Mutamarket) -----------------------
+
+
+class AppraiseRequest(BaseModel):
+    paste_text: str
+    market_name: Optional[str] = None  # defaults to cfg['janice_market']
+    persist: bool = False              # ask Janice to keep a shareable code
+
+
+def _parse_input_lines(input_text: str) -> list[dict]:
+    """Mirror Janice's line parser so we can recover the user's typed names.
+
+    Janice echoes the input in its response but doesn't return per-item
+    names in its structured items list — only itemType_eid + amount. To
+    label rows in the Abyssal addendum with the names the user actually
+    pasted, we re-parse the input here. Returns a list of
+    ``{name, amount}`` in input order (same order Janice's items use).
+    """
+    import re as _re
+    out = []
+    for line in _re.split(r'\n+', input_text or ''):
+        line = line.strip()
+        if not line:
+            continue
+        parts = _re.split(r'\t+|\s{2,}', line)
+        name = parts[0].strip()
+        try:
+            amount = int(parts[1].replace(',', '').replace(' ', '').strip()) if len(parts) > 1 else 1
+        except (ValueError, IndexError):
+            amount = 1
+        out.append({'name': name, 'amount': amount})
+    return out
+
+
+@app.post('/api/appraise')
+def appraise(req: AppraiseRequest):
+    """Run a Janice appraisal and a Mutamarket per-type lookup on any abyssal
+    items in the same paste. Returns both sides so the renderer can show:
+
+      - the full Janice block (covers everything pricable on the regular
+        market — abyssals show up here at 0 ISK)
+      - an "abyssal addendum" block with per-type marketplace + estimator
+        stats for each abyssal type in the paste
+
+    No client-side splitting needed; the caller pastes the whole thing.
+    """
+    if not req.paste_text or not req.paste_text.strip():
+        raise HTTPException(400, 'paste_text is empty')
+
+    cfg = load_config()
+    market_name = req.market_name or cfg.get('janice_market') or 'Jita 4-4'
+    api_key = cfg.get('janice_api_key') or None
+    ua = get_user_agent()
+
+    # --- Janice side ---
+    try:
+        janice_result = create_appraisal_from_text(
+            req.paste_text, market_name, api_key=api_key, persist=req.persist,
+        )
+    except Exception as e:
+        raise HTTPException(502, f'Janice appraisal failed: {e}')
+
+    raw = janice_result.get('raw') or {}
+    raw_items = raw.get('items') or []
+    parsed_names = _parse_input_lines(raw.get('input') or req.paste_text)
+
+    # --- Detect abyssals from Janice's typed items list ---
+    # Two signals: (a) Janice priced the item at 0 with no buy/sell volume —
+    # i.e. it's unknown to the regular market; (b) the input line name starts
+    # with "Abyssal ". Either alone is noisy (a) catches unpublished items
+    # too; (b) doesn't have a type_id without Janice. Intersection of the two
+    # gives us "definitely an abyssal we can price".
+    abyssal_rows: list[dict] = []
+    by_type: dict[int, dict] = {}
+    for idx, item in enumerate(raw_items):
+        # Janice's REST API returns items with a nested `itemType` block; the
+        # anonymous RPC returns a flat `itemType_eid`. Support both so the
+        # endpoint works regardless of whether the user has a Janice API key.
+        itype = item.get('itemType') or {}
+        type_id = int(item.get('itemType_eid') or itype.get('eid') or 0)
+        amount = int(item.get('amount') or 0)
+        # Janice sets the top-level `price` to 0 for every item — real prices
+        # live under effectivePrices. The reliable "this isn't on the regular
+        # market" signal is buy_volume AND sell_volume both being zero, which
+        # for an abyssal-named item is conclusive (true abyssal modules are
+        # unique items and never trade on the regional market).
+        buy_vol = int(item.get('buyVolume') or 0)
+        sell_vol = int(item.get('sellVolume') or 0)
+        # Prefer Janice's canonical name (REST shape carries it), fall back to
+        # the line the user pasted.
+        name = (itype.get('name')
+                or (parsed_names[idx]['name'] if idx < len(parsed_names) else ''))
+        if not type_id or amount <= 0:
+            continue
+        looks_like_abyssal_name = is_abyssal_item_name(name)
+        zero_market_volume = (buy_vol == 0 and sell_vol == 0)
+        if not (looks_like_abyssal_name and zero_market_volume):
+            continue
+        # Roll up duplicate type_ids on the paste (admin pasted N "Abyssal Damage
+        # Control" rows — Mutamarket lookup is per-type, quantities sum).
+        bucket = by_type.setdefault(type_id, {'name': name, 'quantity': 0})
+        bucket['quantity'] += amount
+        # Preserve first-seen name for display.
+    for type_id, agg in by_type.items():
+        per_type = appraise_abyssal_type(type_id, agg['quantity'], ua)
+        per_type['name'] = agg['name']
+        abyssal_rows.append(per_type)
+
+    # --- Surface buy/split/sell totals from Janice ---
+    # immediatePrices = "use what's on the market right now" (what most
+    # appraisers want to see). effectivePrices is a slightly smoothed view
+    # blending recent history; included alongside so the UI can offer both.
+    def _grab_prices(block_name):
+        b = raw.get(block_name) or {}
+        # Top-level summary blocks use totalBuyPrice / totalSplitPrice /
+        # totalSellPrice. The per-item blocks confusingly use the inverse
+        # field order (buyPriceTotal). Support both — Janice's docs aren't
+        # explicit about which payload shape ships when.
+        return {
+            'buy_total': float(b.get('totalBuyPrice') or b.get('buyPriceTotal') or 0),
+            'split_total': float(b.get('totalSplitPrice') or b.get('splitPriceTotal') or 0),
+            'sell_total': float(b.get('totalSellPrice') or b.get('sellPriceTotal') or 0),
+        }
+
+    immediate = _grab_prices('immediatePrices')
+    effective = _grab_prices('effectivePrices')
+
+    # --- Combined totals ---
+    janice_total = float(janice_result.get('total_buy_price') or 0)
+    abyssal_market_total = sum(
+        (r.get('marketplace_total_median') or 0) for r in abyssal_rows
+    )
+    abyssal_estimator_total = sum(
+        (r.get('estimator_total_median') or 0) for r in abyssal_rows
+    )
+
+    return {
+        'market_name': janice_result.get('market_name') or market_name,
+        'janice': {
+            'code': janice_result.get('code') or (raw.get('code') if isinstance(raw, dict) else None),
+            'total_buy_price': janice_total,
+            'effective_offer': janice_result.get('effective_offer'),
+            'percentage': janice_result.get('percentage'),
+            'source': janice_result.get('source'),
+            'api_fallback_reason': janice_result.get('api_fallback_reason'),
+            'item_count': len(raw_items),
+            'prices_immediate': immediate,
+            'prices_effective': effective,
+        },
+        'abyssals': abyssal_rows,
+        'totals': {
+            'janice_total_buy': janice_total,
+            'abyssal_marketplace_median_total': abyssal_market_total,
+            'abyssal_estimator_median_total': abyssal_estimator_total,
+            'grand_marketplace_median': janice_total + abyssal_market_total,
+            'grand_estimator_median': janice_total + abyssal_estimator_total,
+        },
+    }
 
 
 # ----------------------- Working tab: pinned moon contracts -----------------------

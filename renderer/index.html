@@ -15,6 +15,7 @@
       <button class="tab-btn" data-tab="buyback">Buyback</button>
       <button class="tab-btn" data-tab="moon">Moon</button>
       <button class="tab-btn" data-tab="working">Working</button>
+      <button class="tab-btn" data-tab="appraisal">Appraisal</button>
       <button class="tab-btn" data-tab="mail">Mail</button>
       <button class="tab-btn" data-tab="doctrines">Doctrines</button>
       <button class="tab-btn" data-tab="readiness">Readiness</button>
@@ -150,6 +151,22 @@
         <button class="filter-btn" data-filter="errors">Errors</button>
       </div>
       <div id="results"></div>
+    </section>
+
+    <section id="tab-appraisal" class="tab">
+      <h2>Appraisal — Janice + Mutamarket</h2>
+      <p class="muted">Paste anything from the in-game inventory window. <strong>Non-abyssal items</strong> get a normal Janice appraisal (the same code the Buyback / Moon tabs already use). <strong>Abyssal modules</strong> are routed through <a href="https://mutamarket.com" target="_blank" rel="noopener">Mutamarket</a> automatically — for each abyssal type in the paste, we pull the live listings and report both the <em>marketplace median</em> (real seller asking prices) and the <em>estimator median</em> (Mutamarket's AI fair-value estimate). The two prices are shown separately; sum them as you prefer.</p>
+      <div class="appraise-row">
+        <label>Trade hub <select id="appraise-market"></select></label>
+        <label class="appraise-persist-label"><input type="checkbox" id="appraise-persist" checked /> Save a shareable Janice link</label>
+      </div>
+      <textarea id="appraise-paste" class="appraise-paste" rows="10" placeholder="Paste EVE-format items here — one per line, e.g.&#10;Abyssal Stasis Webifier&#9;1&#10;Damage Control II&#9;1&#10;Tritanium&#9;10000"></textarea>
+      <div class="actions">
+        <button id="btn-appraise" type="button">Appraise</button>
+        <button id="btn-appraise-clear" type="button" class="secondary">Clear</button>
+        <span id="appraise-status" class="muted"></span>
+      </div>
+      <div id="appraise-result"></div>
     </section>
 
     <section id="tab-mail" class="tab">

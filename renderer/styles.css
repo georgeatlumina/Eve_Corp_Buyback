@@ -499,3 +499,53 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .pin-actions { display: flex; gap: 0.5em; align-items: center; margin-top: 0.6em; padding-top: 0.5em; border-top: 1px solid #333; }
 .btn-pin-unpin { padding: 0.35em 0.8em; font-size: 0.85em; background: #3a2a2a; color: #f88; border: 1px solid #5a3a3a; }
 .btn-pin-unpin:hover { background: #4a2a2a; }
+
+/* ===== Appraisal tab (Janice + Mutamarket) ===== */
+.appraise-row { display: flex; gap: 1.2em; align-items: flex-end; flex-wrap: wrap; margin: 0.6em 0; }
+.appraise-row label { margin: 0; }
+.appraise-persist-label { display: inline-flex; gap: 0.4em; align-items: center; font-size: 0.9em; padding-bottom: 0.3em; }
+.appraise-persist-label input { width: auto; margin: 0; }
+.appraise-paste { width: 100%; padding: 0.6em; background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; resize: vertical; }
+
+.appraise-block { background: #262626; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.8em 1em; margin: 0.6em 0; }
+.appraise-block h3 { margin: 0 0 0.5em; font-size: 1.05em; color: #cde; }
+.appraise-block.appraise-janice { border-left: 4px solid #4a8; }
+.appraise-block.appraise-abyssal { border-left: 4px solid #b67ee8; }
+.appraise-block.appraise-abyssal-empty { border-left: 4px solid #555; }
+.appraise-block.appraise-grand { border-left: 4px solid #e8c84a; }
+.appraise-warn { background: #4a3a1a; border-left: 3px solid #d8a72a; padding: 0.35em 0.6em; margin-bottom: 0.4em; color: #ffe19a; border-radius: 3px; font-size: 0.85em; }
+.appraise-line { padding: 0.15em 0; font-variant-numeric: tabular-nums; }
+.appraise-line-total { font-size: 1.15em; margin-top: 0.3em; padding-top: 0.4em; border-top: 1px solid #333; }
+
+.appraise-table { width: 100%; border-collapse: collapse; font-size: 0.88em; margin-top: 0.3em; }
+.appraise-table th, .appraise-table td { padding: 0.45em 0.6em; border-bottom: 1px solid #333; text-align: left; vertical-align: top; }
+.appraise-table th { color: #aaa; font-weight: 500; background: #222; }
+.appraise-table td.num, .appraise-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.appraise-table .muted { display: block; font-size: 0.82em; margin-top: 0.15em; }
+
+.appraise-grand-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6em 1.2em; margin-top: 0.3em; }
+.appraise-grand-grid > div { padding: 0.5em 0.7em; background: #1f1f1f; border: 1px solid #333; border-radius: 4px; }
+.appraise-grand-grid > div strong { display: block; font-size: 1.1em; margin-top: 0.15em; font-variant-numeric: tabular-nums; }
+.appraise-grand-grid > div.appraise-grand-sum { background: #1a3a2a; border-color: #2d5a44; }
+.appraise-grand-grid > div.appraise-grand-sum strong { color: #4a8; font-size: 1.25em; }
+
+#appraise-result .copyable { cursor: pointer; padding: 0 0.15em; border-radius: 3px; transition: background 0.12s ease; }
+#appraise-result .copyable:hover { background: #2a5a44; }
+#appraise-result .copyable.payout-copied { background: #4a8; color: #0d1f17; }
+
+/* ===== Appraisal: buy/split/sell + percentage modifiers ===== */
+.appraise-price-section-h { margin: 0.8em 0 0.3em; font-size: 0.95em; color: #cde; font-weight: 600; }
+.appraise-prices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6em; margin: 0.3em 0; }
+.appraise-price-col { background: #1f1f1f; border: 1px solid #333; border-radius: 4px; padding: 0.55em 0.75em; }
+.appraise-price-label { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }
+.appraise-price-headline { display: block; font-size: 1.35em; font-weight: 700; margin: 0.2em 0 0.4em; font-variant-numeric: tabular-nums; color: #4a8; }
+.appraise-pct-row { display: flex; flex-wrap: wrap; gap: 0.3em; }
+.appraise-pct { background: #2a2a2a; color: #cde; border: 1px solid #444; border-radius: 999px; padding: 0.2em 0.6em; font-size: 0.78em; font-weight: 500; cursor: pointer; font-variant-numeric: tabular-nums; transition: background 0.1s ease; }
+.appraise-pct:hover { background: #355; color: #fff; }
+.appraise-pct .muted { font-size: 0.85em; margin-left: 0.3em; }
+.appraise-pct.appraise-pct-100 { background: #1a3a2a; border-color: #2d5a44; color: #cfd; }
+.appraise-pct.appraise-pct-100:hover { background: #2a5a44; }
+.appraise-pct.payout-copied { background: #4a8; color: #0d1f17; border-color: #4a8; }
+
+.appraise-effective { margin-top: 0.5em; }
+.appraise-effective > summary { cursor: pointer; color: #cde; padding: 0.3em 0; font-size: 0.9em; }
