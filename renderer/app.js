@@ -2888,8 +2888,8 @@ function renderQuotaBar(q) {
   div.className = `quota-bar quota-${state}`;
   div.innerHTML = `
     <div class="quota-bar-head">
-      <strong>${escapeHtml(q.name || q.ship_name || `type ${q.ship_type_id}`)}</strong>
-      <span class="muted">${escapeHtml(q.ship_name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
+      <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
+      <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
       <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
     </div>
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
