@@ -366,10 +366,13 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .quota-bar-fill { height: 100%; background: #4a8; transition: width 200ms ease; }
 .quota-bar.quota-partial .quota-bar-fill { background: #e8c84a; }
 .quota-bar.quota-empty .quota-bar-fill { background: #d44; }
-.quota-bar { cursor: pointer; }
-.quota-expand-caret { margin-left: 0.3em; font-size: 0.75em; color: #888; user-select: none; }
-.quota-expand-panel { margin-top: 0.6em; border-top: 1px solid #333; padding-top: 0.5em; display: flex; flex-direction: column; gap: 0.3em; }
-.quota-expand-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; font-size: 0.88em; }
+.quota-bar { cursor: pointer; transition: border-color 0.15s; }
+.quota-bar:hover { filter: brightness(1.12); }
+.quota-expand-caret { margin-left: 0.5em; font-size: 1em; color: #7af; user-select: none; transition: transform 0.15s; }
+.quota-expand-panel { margin-top: 0.6em; border-top: 1px solid #333; padding-top: 0.5em; display: none; flex-direction: column; gap: 0.3em; }
+.quota-expand-panel.open { display: flex; }
+.quota-expand-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; font-size: 0.88em; cursor: pointer; border-radius: 3px; padding: 0.15em 0.3em; margin: -0.15em -0.3em; }
+.quota-expand-row:hover { background: rgba(255,255,255,0.05); }
 .quota-expand-label { color: #aaa; }
 .quota-amarr-price { font-variant-numeric: tabular-nums; color: #cde; }
 

@@ -1031,11 +1031,8 @@ function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function extractTypeId(src) {
-  if (!src) return null;
-  const m = /\/types\/(\d+)\//.exec(src);
-  return m ? parseInt(m[1], 10) : null;
-}
+// extractTypeId, parseDoctrinesHtml, parseDoctrineDetail, parseFitDetail,
+// fmtIsk, fmtMillions — defined in parse-utils.js loaded before this script.
 
 const aaState = {
   view: 'list',
@@ -1048,6 +1045,36 @@ const aaState = {
   marketLoading: false,
   marketError: null,
 };
+
+// Fit index: maps lowercased fit name → fitId, built lazily from AA doctrine pages.
+const _fitIndex = new Map();
+const _fitDetailCache = new Map();
+let _fitIndexBuilding = null;
+
+async function buildFitIndex() {
+  if (!window.api?.aaFetchHtml) return;
+  const res = await window.api.aaFetchHtml('/fittings/');
+  if (!res.ok || /\/account\/login\//.test(res.finalUrl)) return;
+  const doctrines = parseDoctrinesHtml(res.html);
+  await Promise.all(doctrines.map(async (d) => {
+    if (!d.id) return;
+    const dr = await window.api.aaFetchHtml(`/fittings/doctrine/${d.id}/`);
+    if (!dr.ok) return;
+    const detail = parseDoctrineDetail(dr.html);
+    for (const fit of detail.fits) {
+      if (fit.id && fit.name) _fitIndex.set(fit.name.toLowerCase(), fit.id);
+    }
+  }));
+}
+
+async function getFitDetail(fitId) {
+  if (_fitDetailCache.has(fitId)) return _fitDetailCache.get(fitId);
+  const res = await window.api.aaFetchHtml(`/fittings/fit/${fitId}/`);
+  if (!res.ok) return null;
+  const detail = parseFitDetail(res.html);
+  _fitDetailCache.set(fitId, detail);
+  return detail;
+}
 
 function refreshAllMarketViews() {
   if (aaState.view === 'fit') renderAaView();
@@ -1152,109 +1179,6 @@ function computeFitAvailability(fitItems, market) {
   return { items: itemsWithAvailability, available, missing, unknown, total: known.length, pct };
 }
 
-function parseDoctrinesHtml(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const rows = doc.querySelectorAll('#docTable tbody tr');
-  const out = [];
-  rows.forEach((tr) => {
-    const tds = tr.querySelectorAll(':scope > td');
-    if (tds.length < 4) return;
-    const nameLink = tds[0].querySelector('a[href*="/fittings/doctrine/"]');
-    const icon = tds[0].querySelector('img');
-    const m = nameLink ? /\/fittings\/doctrine\/(\d+)\//.exec(nameLink.getAttribute('href') || '') : null;
-    const id = m ? parseInt(m[1], 10) : null;
-    const name = (nameLink ? nameLink.textContent : '').trim().replace(/\s+/g, ' ');
-    const iconUrl = icon ? icon.getAttribute('src') : null;
-    const catEl = tds[1].querySelector('a[href*="/fittings/cat/"]');
-    const category = catEl ? catEl.textContent.trim() : '';
-    const description = (tds[2].textContent || '').trim();
-    const seen = new Set();
-    const ships = [];
-    tds[3].querySelectorAll('img[alt]').forEach((img) => {
-      const alt = (img.getAttribute('alt') || '').trim();
-      if (alt && !seen.has(alt)) { seen.add(alt); ships.push(alt); }
-    });
-    out.push({ id, name, iconUrl, category, description, ships });
-  });
-  return out;
-}
-
-function parseDoctrineDetail(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const headerCard = doc.querySelector('.col-md-3 .card-body') || doc.querySelector('.card-body');
-  const headerImg = headerCard?.querySelector('img');
-  const iconUrl = headerImg?.getAttribute('src') || null;
-  const name = (headerImg?.getAttribute('alt') || '').trim();
-  const catEl = headerCard?.querySelector('a[href*="/fittings/cat/"]');
-  const category = catEl ? catEl.textContent.trim() : '';
-  const fits = [];
-  doc.querySelectorAll('#fitTable tbody tr').forEach((tr) => {
-    const tds = tr.querySelectorAll(':scope > td');
-    if (tds.length < 4) return;
-    const link = tds[0].querySelector('a[href*="/fittings/fit/"]');
-    const m = link ? /\/fittings\/fit\/(\d+)\//.exec(link.getAttribute('href') || '') : null;
-    const id = m ? parseInt(m[1], 10) : null;
-    const icon = tds[0].querySelector('img');
-    const lastSpan = link?.querySelectorAll('span') ? link.querySelectorAll('span')[link.querySelectorAll('span').length - 1] : null;
-    const fitName = (lastSpan?.textContent || link?.textContent || '').trim().replace(/\s+/g, ' ');
-    const fitIconUrl = icon?.getAttribute('src') || null;
-    const shipType = (tds[1].textContent || '').trim();
-    const fitCatEl = tds[2].querySelector('a[href*="/fittings/cat/"]');
-    const fitCategory = fitCatEl ? fitCatEl.textContent.trim() : '';
-    const description = (tds[3].textContent || '').trim();
-    fits.push({ id, name: fitName, iconUrl: fitIconUrl, shipType, category: fitCategory, description });
-  });
-  return { name, iconUrl, category, fits };
-}
-
-function parseFitDetail(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const nameEl = doc.querySelector('h3');
-  const name = (nameEl?.textContent || '').trim().replace(/\s+/g, ' ');
-
-  const hullImg = doc.querySelector('#bigship img');
-  const hullName = (hullImg?.getAttribute('alt') || '').trim();
-  const hullTypeId = extractTypeId(hullImg?.getAttribute('src'));
-
-  const doctrines = [];
-  doc.querySelectorAll('dl dd a[href*="/fittings/doctrine/"]').forEach((a) => {
-    const m = /\/fittings\/doctrine\/(\d+)\//.exec(a.getAttribute('href') || '');
-    if (m) doctrines.push({ id: parseInt(m[1], 10), name: a.textContent.trim() });
-  });
-
-  const slotModules = [];
-  doc.querySelectorAll('.fitting-item img').forEach((img) => {
-    const moduleName = (img.getAttribute('alt') || '').trim();
-    const typeId = extractTypeId(img.getAttribute('src'));
-    const slotId = img.closest('.fitting-item')?.id || '';
-    slotModules.push({ name: moduleName, typeId, slotId });
-  });
-
-  const nameTypeId = {};
-  if (hullName && hullTypeId) nameTypeId[hullName] = hullTypeId;
-  doc.querySelectorAll('img[alt]').forEach((img) => {
-    const src = img.getAttribute('src') || '';
-    const alt = (img.getAttribute('alt') || '').trim();
-    const tid = extractTypeId(src);
-    if (alt && tid && !nameTypeId[alt]) nameTypeId[alt] = tid;
-  });
-
-  const buyBtn = doc.querySelector('#buyAllButton');
-  const buyText = buyBtn?.getAttribute('data-clipboard-text') || '';
-  const items = [];
-  buyText.split(/\r?\n/).forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    const m = /^(.+?)\s+x(\d+)\s*$/.exec(trimmed);
-    if (!m) return;
-    items.push({ name: m[1].trim(), qty: parseInt(m[2], 10), typeId: nameTypeId[m[1].trim()] || null });
-  });
-
-  const eftEl = doc.querySelector('#eft-fitting');
-  const eft = (eftEl?.value ?? eftEl?.textContent ?? '').trim();
-
-  return { name, hullName, hullTypeId, doctrines, slotModules, items, eft };
-}
 
 function renderDoctrines(list) {
   const container = $('#doctrines-list');
@@ -2894,39 +2818,87 @@ function renderQuotaBar(q) {
       <span class="quota-expand-caret">▸</span>
     </div>
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
-    <div class="quota-expand-panel" hidden>
+    <div class="quota-expand-panel">
       <div class="quota-expand-row">
         <span class="quota-expand-label">Contract price (115% Amarr sell)</span>
         <span class="quota-amarr-price muted">—</span>
       </div>
     </div>
   `;
-  let priceLoaded = false;
-  div.addEventListener('click', async () => {
+  // First click: toggle expand panel. Second click on the price row: fetch price.
+  div.addEventListener('click', (e) => {
+    if (e.target.closest('.quota-expand-panel')) return; // handled separately
     const panel = div.querySelector('.quota-expand-panel');
     const caret = div.querySelector('.quota-expand-caret');
-    const opening = panel.hidden;
-    panel.hidden = !opening;
-    caret.textContent = opening ? '▾' : '▸';
-    if (opening && !priceLoaded && q.ship_type_id) {
-      priceLoaded = true;
-      const priceEl = div.querySelector('.quota-amarr-price');
-      priceEl.textContent = 'loading…';
-      try {
+    panel.classList.toggle('open');
+    caret.textContent = panel.classList.contains('open') ? '▾' : '▸';
+  });
+
+  const expandRow = div.querySelector('.quota-expand-row');
+  let priceLoaded = false;
+  expandRow.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (priceLoaded) return;
+    priceLoaded = true;
+    const priceEl = div.querySelector('.quota-amarr-price');
+    const labelEl = div.querySelector('.quota-expand-label');
+    expandRow.style.cursor = 'default';
+    const fmt = fmtIsk;
+    const fmtM = fmtMillions;
+    try {
+      let fitDetail = null;
+      if (window.api?.aaFetchHtml && q.name) {
+        priceEl.textContent = 'searching fits…';
+        if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
+        await _fitIndexBuilding;
+        const fitId = _fitIndex.get(q.name.toLowerCase());
+        if (fitId) {
+          priceEl.textContent = 'pricing fit…';
+          fitDetail = await getFitDetail(fitId);
+        }
+      }
+
+      if (fitDetail?.items?.length) {
+        const itemsWithId = fitDetail.items.filter((i) => i.typeId);
+        const uniqueIds = [...new Set(itemsWithId.map((i) => i.typeId))];
+        const priceResults = await Promise.all(
+          uniqueIds.map((tid) =>
+            fetch(`${API}/api/market/amarr-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+          )
+        );
+        const priceMap = new Map();
+        priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
+
+        let total = 0;
+        const unpriced = [];
+        for (const item of fitDetail.items) {
+          const p = item.typeId ? priceMap.get(item.typeId) : null;
+          if (p != null) total += p * item.qty;
+          else unpriced.push(item.name);
+        }
+
+        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · full fit)';
+        if (total > 0) {
+          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)} ISK)`;
+          if (unpriced.length) priceEl.title = `No Amarr price for: ${unpriced.join(', ')}`;
+          priceEl.classList.remove('muted');
+        } else {
+          priceEl.textContent = 'no Amarr prices found for fit items';
+        }
+      } else {
+        priceEl.textContent = 'loading…';
         const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}`);
         const data = await res.json();
+        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
         if (data.min_sell != null) {
-          const base = data.min_sell;
-          const marked = base * 1.15;
-          const fmt = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-          priceEl.textContent = `${fmt(marked)} ISK  (Amarr sell: ${fmt(base)} ISK)`;
+          priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)} ISK)`;
           priceEl.classList.remove('muted');
         } else {
           priceEl.textContent = 'no sell orders in Amarr';
         }
-      } catch {
-        priceEl.textContent = 'error fetching price';
       }
+    } catch {
+      priceEl.textContent = 'error fetching price';
     }
   });
   return div;
