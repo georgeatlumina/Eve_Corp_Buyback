@@ -375,6 +375,13 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .quota-expand-row:hover { background: rgba(255,255,255,0.05); }
 .quota-expand-label { color: #aaa; }
 .quota-amarr-price { font-variant-numeric: tabular-nums; color: #cde; }
+.quota-row-warning { background: rgba(232, 164, 74, 0.08); border-radius: 3px; }
+.quota-not-in-auth { color: #e8a44a !important; font-weight: 600; }
+.quota-unpriced-toggle { margin-left: 0.4em; color: #e8a44a; cursor: pointer; font-size: 0.9em; }
+.quota-unpriced-toggle:hover { text-decoration: underline; }
+.quota-unpriced-list { margin-top: 0.4em; padding: 0.4em 0.6em; background: #1e1e1e; border-radius: 4px; border: 1px solid #3a3a3a; font-size: 0.85em; }
+.quota-unpriced-item { color: #bbb; padding: 0.1em 0; }
+.quota-unpriced-actions { display: flex; gap: 0.6em; margin-top: 0.4em; padding-top: 0.4em; border-top: 1px solid #333; }
 
 .contracts-list-wrap { margin-top: 1em; }
 .contracts-list-wrap > summary { cursor: pointer; color: #cde; padding: 0.4em 0; }

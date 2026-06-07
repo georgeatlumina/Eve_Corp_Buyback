@@ -10,6 +10,7 @@ const UPDATE_REPO = 'georgeatlumina/Eve_Corp_Buyback';
 const APP_META = { version: pkg.version || '', author: pkg.author || '' };
 
 ipcMain.handle('app:meta', () => APP_META);
+ipcMain.handle('open-external', (_event, url) => shell.openExternal(url));
 ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
 let pythonProcess = null;
 let mainWindow = null;

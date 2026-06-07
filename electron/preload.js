@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('api', {
   aaOpen: () => ipcRenderer.invoke('aa:open'),
   aaLogout: () => ipcRenderer.invoke('aa:logout'),
   aaFetchHtml: (path) => ipcRenderer.invoke('aa:fetch-html', path),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 });

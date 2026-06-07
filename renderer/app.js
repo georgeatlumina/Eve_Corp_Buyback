@@ -2802,6 +2802,46 @@ function renderContractsDashboard(payload) {
   for (const c of list) listRoot.appendChild(renderContractRow(c));
 }
 
+function renderUnpricedToggle(priceEl, unpriced) {
+  const count = unpriced.length;
+  const label = document.createElement('span');
+  label.className = 'quota-unpriced-toggle';
+  label.textContent = `· ${count} item${count !== 1 ? 's' : ''} unpriced`;
+  priceEl.appendChild(label);
+
+  const listDiv = document.createElement('div');
+  listDiv.className = 'quota-unpriced-list';
+  listDiv.hidden = true;
+
+  const copyText = unpriced.map((i) => `${i.name} x${i.qty}`).join('\n');
+  const janiceUrl = `https://janice.e-351.com/a/new?market=2&q=${encodeURIComponent(copyText)}`;
+
+  listDiv.innerHTML = unpriced.map((i) =>
+    `<div class="quota-unpriced-item">${escapeHtml(i.name)} × ${i.qty}</div>`
+  ).join('') + `
+    <div class="quota-unpriced-actions">
+      <button class="link-btn quota-unpriced-copy">Copy list</button>
+      <button class="link-btn quota-unpriced-janice">Open in Janice</button>
+    </div>`;
+
+  priceEl.closest('.quota-expand-panel').appendChild(listDiv);
+
+  label.addEventListener('click', (e) => {
+    e.stopPropagation();
+    listDiv.hidden = !listDiv.hidden;
+  });
+
+  listDiv.querySelector('.quota-unpriced-copy').addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(copyText);
+  });
+
+  listDiv.querySelector('.quota-unpriced-janice').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (window.api?.openExternal) window.api.openExternal(janiceUrl);
+  });
+}
+
 function renderQuotaBar(q) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
@@ -2874,22 +2914,31 @@ function renderQuotaBar(q) {
         for (const item of fitDetail.items) {
           const p = item.typeId ? priceMap.get(item.typeId) : null;
           if (p != null) total += p * item.qty;
-          else unpriced.push(item.name);
+          else unpriced.push({ name: item.name, qty: item.qty });
         }
 
         if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · full fit)';
         if (total > 0) {
           priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)} ISK)`;
-          if (unpriced.length) priceEl.title = `No Amarr price for: ${unpriced.join(', ')}`;
           priceEl.classList.remove('muted');
+          if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
           priceEl.textContent = 'no Amarr prices found for fit items';
         }
       } else {
+        const notInAuth = _fitIndex.size > 0; // index built but this ship isn't in any doctrine
         priceEl.textContent = 'loading…';
         const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}`);
         const data = await res.json();
-        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
+        if (notInAuth) {
+          if (labelEl) {
+            labelEl.textContent = '⚠ Not in alliance fits — hull price only';
+            labelEl.classList.add('quota-not-in-auth');
+          }
+          expandRow.classList.add('quota-row-warning');
+        } else {
+          if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
+        }
         if (data.min_sell != null) {
           priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)} ISK)`;
           priceEl.classList.remove('muted');
