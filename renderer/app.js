@@ -2898,9 +2898,13 @@ function renderQuotaBar(q) {
         }
       }
 
-      if (fitDetail?.items?.length) {
-        const itemsWithId = fitDetail.items.filter((i) => i.typeId);
-        const uniqueIds = [...new Set(itemsWithId.map((i) => i.typeId))];
+      if (fitDetail?.hullTypeId || fitDetail?.slotModules?.length) {
+        // Price hull + fitted slot modules only; excludes ammo, implants, and other consumables
+        const pricingItems = [];
+        if (fitDetail.hullTypeId) pricingItems.push({ typeId: fitDetail.hullTypeId, name: fitDetail.hullName || 'Hull', qty: 1 });
+        for (const m of (fitDetail.slotModules || [])) pricingItems.push({ typeId: m.typeId || null, name: m.name, qty: 1 });
+
+        const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
         const priceResults = await Promise.all(
           uniqueIds.map((tid) =>
             fetch(`${API}/api/market/amarr-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
@@ -2911,7 +2915,7 @@ function renderQuotaBar(q) {
 
         let total = 0;
         const unpriced = [];
-        for (const item of fitDetail.items) {
+        for (const item of pricingItems) {
           const p = item.typeId ? priceMap.get(item.typeId) : null;
           if (p != null) total += p * item.qty;
           else unpriced.push({ name: item.name, qty: item.qty });
@@ -2919,7 +2923,7 @@ function renderQuotaBar(q) {
 
         if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · full fit)';
         if (total > 0) {
-          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)} ISK)`;
+          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
@@ -2940,7 +2944,7 @@ function renderQuotaBar(q) {
           if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
         }
         if (data.min_sell != null) {
-          priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)} ISK)`;
+          priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
         } else {
           priceEl.textContent = 'no sell orders in Amarr';
