@@ -164,6 +164,30 @@ def fetch_all_ship_types(user_agent):
     return out
 
 
+def fetch_region_market_orders(region_id, type_id, user_agent, order_type='sell'):
+    """Fetch all sell orders for a type in a region. Public endpoint, no auth needed."""
+    url = f'{ESI_BASE}/markets/{int(region_id)}/orders/'
+    out = []
+    page = 1
+    while True:
+        resp = requests.get(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'order_type': order_type,
+                    'type_id': int(type_id), 'page': page},
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        out.extend(batch)
+        max_page = int(resp.headers.get('x-pages', page))
+        if page >= max_page:
+            break
+        page += 1
+    return out
+
+
 def fetch_structure_orders_paged(structure_id, access_token, user_agent):
     """Generator that fetches structure market orders one page at a time.
 

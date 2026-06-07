@@ -2891,9 +2891,44 @@ function renderQuotaBar(q) {
       <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
       <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
       <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
+      <span class="quota-expand-caret">▸</span>
     </div>
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
+    <div class="quota-expand-panel" hidden>
+      <div class="quota-expand-row">
+        <span class="quota-expand-label">Contract price (115% Amarr sell)</span>
+        <span class="quota-amarr-price muted">—</span>
+      </div>
+    </div>
   `;
+  let priceLoaded = false;
+  div.addEventListener('click', async () => {
+    const panel = div.querySelector('.quota-expand-panel');
+    const caret = div.querySelector('.quota-expand-caret');
+    const opening = panel.hidden;
+    panel.hidden = !opening;
+    caret.textContent = opening ? '▾' : '▸';
+    if (opening && !priceLoaded && q.ship_type_id) {
+      priceLoaded = true;
+      const priceEl = div.querySelector('.quota-amarr-price');
+      priceEl.textContent = 'loading…';
+      try {
+        const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}`);
+        const data = await res.json();
+        if (data.min_sell != null) {
+          const base = data.min_sell;
+          const marked = base * 1.15;
+          const fmt = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+          priceEl.textContent = `${fmt(marked)} ISK  (Amarr sell: ${fmt(base)} ISK)`;
+          priceEl.classList.remove('muted');
+        } else {
+          priceEl.textContent = 'no sell orders in Amarr';
+        }
+      } catch {
+        priceEl.textContent = 'error fetching price';
+      }
+    }
+  });
   return div;
 }
 

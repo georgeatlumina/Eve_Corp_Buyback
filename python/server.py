@@ -46,6 +46,7 @@ from esi import (
     fetch_corporation_info,
     fetch_incursions,
     fetch_region_info,
+    fetch_region_market_orders,
     fetch_sovereignty_campaigns,
     fetch_sovereignty_map,
     fetch_sovereignty_structures,
@@ -854,6 +855,36 @@ def stream_aa_market(structure_id: Optional[int] = None, refresh: bool = False):
     return StreamingResponse(
         _market_stream(structure_id, refresh), media_type='application/x-ndjson',
     )
+
+
+_AMARR_STATION_ID = 60008494
+_AMARR_REGION_ID = 10000043
+_amarr_price_cache: dict[int, dict] = {}
+_AMARR_PRICE_TTL = 300  # 5 min
+
+
+@app.get('/api/market/amarr-sell')
+def get_amarr_sell_price(type_id: int):
+    """Return the min sell price at Amarr station for a type. Cached 5 min. Public ESI endpoint."""
+    now = time.time()
+    cached = _amarr_price_cache.get(type_id)
+    if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
+        return cached['result']
+
+    try:
+        orders = fetch_region_market_orders(_AMARR_REGION_ID, type_id, get_user_agent())
+    except Exception as e:
+        raise HTTPException(502, f'ESI market fetch failed: {e}')
+
+    amarr_orders = [o for o in orders if not o.get('is_buy_order') and o.get('location_id') == _AMARR_STATION_ID]
+    min_price = min((float(o['price']) for o in amarr_orders), default=None)
+    result = {
+        'type_id': type_id,
+        'min_sell': min_price,
+        'order_count': len(amarr_orders),
+    }
+    _amarr_price_cache[type_id] = {'fetched_at': now, 'result': result}
+    return result
 
 
 # ----------------------- Contracts scan (alliance + public) -----------------------

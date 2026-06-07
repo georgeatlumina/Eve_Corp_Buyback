@@ -366,6 +366,12 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .quota-bar-fill { height: 100%; background: #4a8; transition: width 200ms ease; }
 .quota-bar.quota-partial .quota-bar-fill { background: #e8c84a; }
 .quota-bar.quota-empty .quota-bar-fill { background: #d44; }
+.quota-bar { cursor: pointer; }
+.quota-expand-caret { margin-left: 0.3em; font-size: 0.75em; color: #888; user-select: none; }
+.quota-expand-panel { margin-top: 0.6em; border-top: 1px solid #333; padding-top: 0.5em; display: flex; flex-direction: column; gap: 0.3em; }
+.quota-expand-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; font-size: 0.88em; }
+.quota-expand-label { color: #aaa; }
+.quota-amarr-price { font-variant-numeric: tabular-nums; color: #cde; }
 
 .contracts-list-wrap { margin-top: 1em; }
 .contracts-list-wrap > summary { cursor: pointer; color: #cde; padding: 0.4em 0; }
