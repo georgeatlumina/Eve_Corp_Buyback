@@ -2906,11 +2906,9 @@ function renderQuotaBar(q) {
         }
       }
 
-      if (fitDetail?.hullTypeId || fitDetail?.slotModules?.length) {
-        // Price hull + fitted slot modules only; excludes ammo, implants, and other consumables
-        const pricingItems = [];
-        if (fitDetail.hullTypeId) pricingItems.push({ typeId: fitDetail.hullTypeId, name: fitDetail.hullName || 'Hull', qty: 1 });
-        for (const m of (fitDetail.slotModules || [])) pricingItems.push({ typeId: m.typeId || null, name: m.name, qty: 1 });
+      if (fitDetail?.items?.length) {
+        // Price everything in the buy-all list: hull, modules, ammo, scripts, nanite paste
+        const pricingItems = fitDetail.items.map((i) => ({ typeId: i.typeId || null, name: i.name, qty: i.qty }));
 
         const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
         const priceResults = await Promise.all(
