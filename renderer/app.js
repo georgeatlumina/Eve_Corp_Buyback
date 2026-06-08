@@ -1062,7 +1062,11 @@ async function buildFitIndex() {
     if (!dr.ok) return;
     const detail = parseDoctrineDetail(dr.html);
     for (const fit of detail.fits) {
-      if (fit.id && fit.name) _fitIndex.set(fit.name.toLowerCase(), fit.id);
+      if (!fit.id || !fit.name) continue;
+      const nameLower = fit.name.toLowerCase();
+      if (!_fitIndex.has(nameLower)) _fitIndex.set(nameLower, new Map());
+      // Key by ship type so same-named fits on different hulls don't collide
+      _fitIndex.get(nameLower).set((fit.shipType || '').toLowerCase(), fit.id);
     }
   }));
 }
@@ -2891,7 +2895,11 @@ function renderQuotaBar(q) {
         priceEl.textContent = 'searching fits…';
         if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
         await _fitIndexBuilding;
-        const fitId = _fitIndex.get(q.name.toLowerCase());
+        // _fitIndex: fitName → Map(shipTypeName → fitId)
+        // Prefer exact ship-name match; fall back to first entry for that fit name
+        const shipMap = _fitIndex.get(q.name.toLowerCase());
+        const fitId = shipMap?.get((q.ship_name || '').toLowerCase())
+          ?? (shipMap ? [...shipMap.values()][0] : undefined);
         if (fitId) {
           priceEl.textContent = 'pricing fit…';
           fitDetail = await getFitDetail(fitId);
