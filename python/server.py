@@ -857,7 +857,7 @@ def stream_aa_market(structure_id: Optional[int] = None, refresh: bool = False):
     )
 
 
-_AMARR_STATION_ID = 60008494
+_AMARR_SYSTEM_ID = 30002187  # Amarr solar system — captures NPC station + public citadels
 _AMARR_REGION_ID = 10000043
 _amarr_price_cache: dict[int, dict] = {}
 _AMARR_PRICE_TTL = 300  # 5 min
@@ -865,7 +865,7 @@ _AMARR_PRICE_TTL = 300  # 5 min
 
 @app.get('/api/market/amarr-sell')
 def get_amarr_sell_price(type_id: int):
-    """Return the min sell price at Amarr station for a type. Cached 5 min. Public ESI endpoint."""
+    """Return the min sell price in the Amarr system for a type. Cached 5 min. Public ESI endpoint."""
     now = time.time()
     cached = _amarr_price_cache.get(type_id)
     if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
@@ -876,12 +876,12 @@ def get_amarr_sell_price(type_id: int):
     except Exception as e:
         raise HTTPException(502, f'ESI market fetch failed: {e}')
 
-    amarr_orders = [o for o in orders if not o.get('is_buy_order') and o.get('location_id') == _AMARR_STATION_ID]
+    amarr_orders = [o for o in orders if not o.get('is_buy_order') and int(o.get('system_id') or 0) == _AMARR_SYSTEM_ID]
     min_price = min((float(o['price']) for o in amarr_orders), default=None)
     result = {
         'type_id': type_id,
         'min_sell': min_price,
-        'order_count': len(amarr_orders),
+        'order_count': len(amarr_orders),  # orders in the Amarr system (NPC station + public structures)
     }
     _amarr_price_cache[type_id] = {'fetched_at': now, 'result': result}
     return result
@@ -1003,8 +1003,6 @@ def _scan_contracts_stream():
             if (c.get('status') or '').lower() != 'outstanding':
                 continue
             if int(c.get('start_location_id') or 0) != structure_id:
-                continue
-            if not c.get('for_corporation'):
                 continue
             if int(c.get('issuer_corporation_id') or 0) != corp_id:
                 continue
