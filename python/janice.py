@@ -125,6 +125,34 @@ def _normalize(code, data, source):
     }
 
 
+def fetch_type_sell_price(type_id: int, market_name: str = 'Amarr', api_key: str = None):
+    """Return the Janice immediate sell price (per unit) for type_id at market_name.
+
+    Requires a Janice API key. Returns None if no key is configured or the item
+    has no sell orders at the given market.
+    """
+    if not api_key:
+        return None
+    market_id = JANICE_MARKET_IDS.get(market_name)
+    if market_id is None:
+        raise ValueError(f'Unknown Janice market: {market_name!r}')
+    return _fetch_pricer_via_api(type_id, market_id, api_key)
+
+
+def _fetch_pricer_via_api(type_id: int, market_id: int, api_key: str):
+    resp = requests.get(
+        f'{JANICE_API_BASE}/pricer/{type_id}',
+        params={'market': market_id},
+        headers={'X-ApiKey': api_key, 'Accept': 'application/json'},
+        timeout=15,
+    )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    immediate = (resp.json().get('immediatePrices') or {})
+    return immediate.get('sellPrice')
+
+
 def create_appraisal(items, market_name, api_key=None):
     """Create a Janice appraisal from a list of {name, quantity} items.
 

@@ -2984,7 +2984,54 @@ function renderContractRow(c) {
     <div class="muted">Issuer: ${escapeHtml(c.issuer_name || '')} (${c.issuer_id ?? '?'}) · Price: ${price}</div>
     ${itemsErr}
     <ul class="contract-items">${itemList}${moreItems}</ul>
+    <div class="contract-value-row">
+      <button class="link-btn btn-contract-value">Look up Janice value</button>
+      <span class="contract-value-result muted"></span>
+    </div>
   `;
+
+  const includedItems = (c.items || []).filter((i) => i.is_included);
+  const btn = div.querySelector('.btn-contract-value');
+  const resultEl = div.querySelector('.contract-value-result');
+  let loaded = false;
+
+  btn.addEventListener('click', async () => {
+    if (loaded) return;
+    loaded = true;
+    btn.disabled = true;
+    resultEl.textContent = 'looking up…';
+    try {
+      const uniqueIds = [...new Set(includedItems.filter((i) => i.type_id).map((i) => i.type_id))];
+      const priceResults = await Promise.all(
+        uniqueIds.map((tid) =>
+          fetch(`${API}/api/market/amarr-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+        )
+      );
+      const priceMap = new Map();
+      priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
+
+      let total = 0;
+      const unpriced = [];
+      for (const item of includedItems) {
+        const p = item.type_id ? priceMap.get(item.type_id) : null;
+        if (p != null) total += p * item.quantity;
+        else unpriced.push(item);
+      }
+
+      if (total === 0) {
+        resultEl.textContent = 'no Amarr prices found';
+      } else {
+        const unpricedText = unpriced.length ? ` · ${unpriced.length} unpriced` : '';
+        resultEl.textContent = `Janice: ${fmtMillions(total)}${unpricedText}`;
+        resultEl.classList.remove('muted');
+      }
+    } catch {
+      loaded = false;
+      btn.disabled = false;
+      resultEl.textContent = 'error fetching prices';
+    }
+  });
+
   return div;
 }
 

@@ -116,7 +116,7 @@ function fmtIsk(n) {
 }
 
 function fmtMillions(n) {
-  return (Math.round(n / 100_000) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M';
+  return Math.round(n / 1_000_000).toLocaleString('en-US') + 'M';
 }
 
 if (typeof module !== 'undefined' && module.exports) {

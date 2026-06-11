@@ -59,7 +59,7 @@ from esi import (
     resolve_names,
     send_evemail,
 )
-from janice import create_appraisal, create_appraisal_from_text
+from janice import create_appraisal, create_appraisal_from_text, fetch_type_sell_price
 from mutamarket import appraise_abyssal_type, is_abyssal_item_name
 from pinned import (
     append_appraisal,
@@ -857,7 +857,7 @@ def stream_aa_market(structure_id: Optional[int] = None, refresh: bool = False):
     )
 
 
-_AMARR_SYSTEM_ID = 30002187  # Amarr solar system — captures NPC station + public citadels
+_AMARR_SYSTEM_ID = 30002187
 _AMARR_REGION_ID = 10000043
 _amarr_price_cache: dict[int, dict] = {}
 _AMARR_PRICE_TTL = 300  # 5 min
@@ -865,24 +865,30 @@ _AMARR_PRICE_TTL = 300  # 5 min
 
 @app.get('/api/market/amarr-sell')
 def get_amarr_sell_price(type_id: int):
-    """Return the min sell price in the Amarr system for a type. Cached 5 min. Public ESI endpoint."""
+    """Return the Amarr sell price for a type. Uses Janice when an API key is configured,
+    otherwise falls back to ESI market orders. Cached 5 min."""
     now = time.time()
     cached = _amarr_price_cache.get(type_id)
     if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
         return cached['result']
 
-    try:
-        orders = fetch_region_market_orders(_AMARR_REGION_ID, type_id, get_user_agent())
-    except Exception as e:
-        raise HTTPException(502, f'ESI market fetch failed: {e}')
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
 
-    amarr_orders = [o for o in orders if not o.get('is_buy_order') and int(o.get('system_id') or 0) == _AMARR_SYSTEM_ID]
-    min_price = min((float(o['price']) for o in amarr_orders), default=None)
-    result = {
-        'type_id': type_id,
-        'min_sell': min_price,
-        'order_count': len(amarr_orders),  # orders in the Amarr system (NPC station + public structures)
-    }
+    if api_key:
+        try:
+            min_sell = fetch_type_sell_price(type_id, 'Amarr', api_key=api_key)
+        except Exception as e:
+            raise HTTPException(502, f'Janice price lookup failed: {e}')
+    else:
+        try:
+            orders = fetch_region_market_orders(_AMARR_REGION_ID, type_id, get_user_agent())
+        except Exception as e:
+            raise HTTPException(502, f'ESI market fetch failed: {e}')
+        amarr_orders = [o for o in orders if not o.get('is_buy_order') and int(o.get('system_id') or 0) == _AMARR_SYSTEM_ID]
+        min_sell = min((float(o['price']) for o in amarr_orders), default=None)
+
+    result = {'type_id': type_id, 'min_sell': min_sell}
     _amarr_price_cache[type_id] = {'fetched_at': now, 'result': result}
     return result
 

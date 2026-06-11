@@ -1,4 +1,4 @@
-"""Unit tests for the Amarr sell-price endpoint and ESI market fetch."""
+"""Unit tests for the Amarr sell-price endpoint (Janice/ESI) and ESI market fetch."""
 import sys
 import os
 import time
@@ -51,20 +51,8 @@ class TestFetchRegionMarketOrders:
 
 # ── /api/market/amarr-sell endpoint ──────────────────────────────────────────
 
-SAMPLE_ORDERS = [
-    # Two sell orders at Amarr station — cheapest is 170M
-    {'is_buy_order': False, 'location_id': 60008494, 'price': 200_000_000.0},
-    {'is_buy_order': False, 'location_id': 60008494, 'price': 170_000_000.0},
-    # Sell order at a different station (Jita) — must be ignored
-    {'is_buy_order': False, 'location_id': 60003760, 'price': 150_000_000.0},
-    # Buy order at Amarr — must be ignored
-    {'is_buy_order': True,  'location_id': 60008494, 'price': 100_000_000.0},
-]
-
-
 @pytest.fixture(autouse=True)
 def clear_cache():
-    """Reset the Amarr price cache between tests."""
     import server
     server._amarr_price_cache.clear()
     yield
@@ -78,53 +66,80 @@ def client():
     return TestClient(server.app)
 
 
-class TestAmarrSellEndpoint:
-    def test_returns_min_sell_at_amarr_station(self, client):
-        with patch('server.fetch_region_market_orders', return_value=SAMPLE_ORDERS):
+SAMPLE_ORDERS = [
+    {'is_buy_order': False, 'system_id': 30002187, 'price': 200_000_000.0},
+    {'is_buy_order': False, 'system_id': 30002187, 'price': 170_000_000.0},
+    {'is_buy_order': False, 'system_id': 30000142, 'price': 150_000_000.0},  # Jita — ignored
+    {'is_buy_order': True,  'system_id': 30002187, 'price': 100_000_000.0},  # buy — ignored
+]
+
+
+class TestAmarrSellEndpointJanice:
+    """Tests for the Janice path (API key configured)."""
+
+    def test_returns_min_sell_from_janice(self, client):
+        with patch('server.fetch_type_sell_price', return_value=170_000_000.0), \
+             patch('server.load_config', return_value={'janice_api_key': 'key'}):
             resp = client.get('/api/market/amarr-sell?type_id=11993')
         assert resp.status_code == 200
         assert resp.json()['min_sell'] == 170_000_000.0
 
-    def test_ignores_buy_orders(self, client):
-        orders = [{'is_buy_order': True, 'location_id': 60008494, 'price': 50_000_000.0}]
-        with patch('server.fetch_region_market_orders', return_value=orders):
+    def test_returns_null_when_janice_returns_none(self, client):
+        with patch('server.fetch_type_sell_price', return_value=None), \
+             patch('server.load_config', return_value={'janice_api_key': 'key'}):
+            resp = client.get('/api/market/amarr-sell?type_id=11993')
+        assert resp.status_code == 200
+        assert resp.json()['min_sell'] is None
+
+    def test_502_on_janice_failure(self, client):
+        with patch('server.fetch_type_sell_price', side_effect=Exception('timeout')), \
+             patch('server.load_config', return_value={'janice_api_key': 'key'}):
+            resp = client.get('/api/market/amarr-sell?type_id=11993')
+        assert resp.status_code == 502
+
+    def test_passes_amarr_market_and_api_key(self, client):
+        with patch('server.fetch_type_sell_price', return_value=100.0) as mock_fetch, \
+             patch('server.load_config', return_value={'janice_api_key': 'test-key'}):
+            client.get('/api/market/amarr-sell?type_id=11993')
+        mock_fetch.assert_called_once_with(11993, 'Amarr', api_key='test-key')
+
+
+class TestAmarrSellEndpointESI:
+    """Tests for the ESI fallback path (no API key)."""
+
+    def test_returns_min_sell_order_in_amarr(self, client):
+        with patch('server.fetch_region_market_orders', return_value=SAMPLE_ORDERS), \
+             patch('server.load_config', return_value={'janice_api_key': ''}):
+            resp = client.get('/api/market/amarr-sell?type_id=11993')
+        assert resp.status_code == 200
+        assert resp.json()['min_sell'] == 170_000_000.0
+
+    def test_returns_null_when_no_orders(self, client):
+        with patch('server.fetch_region_market_orders', return_value=[]), \
+             patch('server.load_config', return_value={'janice_api_key': ''}):
             resp = client.get('/api/market/amarr-sell?type_id=11993')
         assert resp.json()['min_sell'] is None
 
-    def test_ignores_orders_at_other_stations(self, client):
-        orders = [{'is_buy_order': False, 'location_id': 60003760, 'price': 100_000_000.0}]
-        with patch('server.fetch_region_market_orders', return_value=orders):
+    def test_502_on_esi_failure(self, client):
+        with patch('server.fetch_region_market_orders', side_effect=Exception('timeout')), \
+             patch('server.load_config', return_value={'janice_api_key': ''}):
             resp = client.get('/api/market/amarr-sell?type_id=11993')
-        assert resp.json()['min_sell'] is None
+        assert resp.status_code == 502
 
-    def test_returns_null_min_sell_when_no_orders(self, client):
-        with patch('server.fetch_region_market_orders', return_value=[]):
-            resp = client.get('/api/market/amarr-sell?type_id=11993')
-        data = resp.json()
-        assert data['min_sell'] is None
-        assert data['order_count'] == 0
 
-    def test_returns_correct_order_count(self, client):
-        with patch('server.fetch_region_market_orders', return_value=SAMPLE_ORDERS):
-            resp = client.get('/api/market/amarr-sell?type_id=11993')
-        assert resp.json()['order_count'] == 2  # only Amarr sell orders
-
+class TestAmarrSellCache:
     def test_caches_result_on_second_call(self, client):
-        with patch('server.fetch_region_market_orders', return_value=SAMPLE_ORDERS) as mock_fetch:
+        with patch('server.fetch_type_sell_price', return_value=170_000_000.0) as mock_fetch, \
+             patch('server.load_config', return_value={'janice_api_key': 'key'}):
             client.get('/api/market/amarr-sell?type_id=11993')
             client.get('/api/market/amarr-sell?type_id=11993')
         assert mock_fetch.call_count == 1
 
     def test_cache_expires_after_ttl(self, client):
         import server
-        with patch('server.fetch_region_market_orders', return_value=SAMPLE_ORDERS) as mock_fetch:
+        with patch('server.fetch_type_sell_price', return_value=170_000_000.0) as mock_fetch, \
+             patch('server.load_config', return_value={'janice_api_key': 'key'}):
             client.get('/api/market/amarr-sell?type_id=11993')
-            # Manually expire the cache entry
             server._amarr_price_cache[11993]['fetched_at'] -= server._AMARR_PRICE_TTL + 1
             client.get('/api/market/amarr-sell?type_id=11993')
         assert mock_fetch.call_count == 2
-
-    def test_502_on_esi_failure(self, client):
-        with patch('server.fetch_region_market_orders', side_effect=Exception('timeout')):
-            resp = client.get('/api/market/amarr-sell?type_id=11993')
-        assert resp.status_code == 502
