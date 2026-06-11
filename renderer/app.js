@@ -2993,13 +2993,22 @@ function renderQuotaBar(q) {
         if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
         await _fitIndexBuilding;
         // _fitIndex: fitName → Map(shipTypeName → fitId)
-        // Prefer exact ship-name match; fall back to first entry for that fit name
+        // Prefer exact ship-name match; fall back to first entry for that fit name.
+        // Always verify the fit's actual hull matches before using it — a fallback
+        // to the wrong hull (e.g. Guardian when quota says Exequror) produces wildly
+        // inflated prices.
         const shipMap = _fitIndex.get(q.name.toLowerCase());
         const fitId = shipMap?.get((q.ship_name || '').toLowerCase())
           ?? (shipMap ? [...shipMap.values()][0] : undefined);
         if (fitId) {
           priceEl.textContent = 'pricing fit…';
-          fitDetail = await getFitDetail(fitId);
+          const candidate = await getFitDetail(fitId);
+          // Only use the fit if we can confirm the hull matches the quota's ship.
+          // When both type IDs are known and differ, the wrong fit was found (e.g. a
+          // Guardian fit returned for an Exequror quota slot).
+          const hullMismatch = q.ship_type_id && candidate?.hullTypeId
+            && candidate.hullTypeId !== q.ship_type_id;
+          if (candidate && !hullMismatch) fitDetail = candidate;
         }
       }
 
