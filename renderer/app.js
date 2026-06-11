@@ -139,6 +139,16 @@ async function loadConfig() {
   if ($('[name=alliance_quota_auto_sync]')) {
     $('[name=alliance_quota_auto_sync]').checked = !!cfg.alliance_quota_auto_sync;
   }
+  if ($('[name=alliance_quota_pat_read]')) {
+    $('[name=alliance_quota_pat_read]').value = cfg.alliance_quota_pat_read || '';
+  }
+  if ($('[name=alliance_quota_pat_write]')) {
+    $('[name=alliance_quota_pat_write]').value = cfg.alliance_quota_pat_write || '';
+  }
+  if ($('[name=alliance_quota_allow_push]')) {
+    $('[name=alliance_quota_allow_push]').checked = !!cfg.alliance_quota_allow_push;
+  }
+  updatePushButtonVisibility();
   renderQuotaSyncStatus(cfg);
   // Kick off the ship-types fetch in the background; the datalist becomes
   // available as soon as it resolves (cached to disk after the first call).
@@ -239,6 +249,9 @@ function collectConfigForm() {
     quotas: collectQuotas(),
     alliance_quota_url: (fd.get('alliance_quota_url') || '').toString().trim(),
     alliance_quota_auto_sync: $('[name=alliance_quota_auto_sync]')?.checked || false,
+    alliance_quota_pat_read: (fd.get('alliance_quota_pat_read') || '').toString().trim(),
+    alliance_quota_pat_write: (fd.get('alliance_quota_pat_write') || '').toString().trim(),
+    alliance_quota_allow_push: $('[name=alliance_quota_allow_push]')?.checked || false,
   };
 }
 
@@ -2513,11 +2526,18 @@ $('#quota-import-file')?.addEventListener('change', async (ev) => {
 
 // Keys that should never leave the user's machine in an export. Auth/ESI
 // tokens already live elsewhere; sync-state side data (last_synced/_status)
-// is per-machine and would be misleading if shared.
+// is per-machine and would be misleading if shared. The admin Write PAT and
+// the per-machine allow-push gate are also unconditionally stripped — an
+// exported config is a distribution kit, never an admin-credentials
+// handover. If you actually need to share write access with another
+// admin, do it out-of-band (1Password, GitHub PAT settings) rather than
+// stuffing the token into a downloadable JSON file.
 const CONFIG_EXPORT_NEVER = new Set([
   'scopes',
   'alliance_quota_last_synced',
   'alliance_quota_last_status',
+  'alliance_quota_pat_write',
+  'alliance_quota_allow_push',
 ]);
 
 function setConfigIoStatus(msg) {
@@ -2533,13 +2553,22 @@ $('#btn-export-config')?.addEventListener('click', async () => {
   // alliance quota URL, a toggled auto-sync checkbox, an edited quota row)
   // are captured. No need to Save first.
   const cfg = collectConfigForm();
-  // Strip keys that aren't useful to share. Strip api key unless user opts in.
+  // Two sensitive keys are still opt-in at export time — the Janice key and
+  // the alliance Read PAT. Both are reasonable to bundle in a distribution
+  // kit; both are also reasonable to keep private. The Write PAT and
+  // allow-push flag are NEVER exported (see CONFIG_EXPORT_NEVER above) so
+  // admin write capability can't leak via a stray exported config file.
   const includeKey = cfg.janice_api_key
     ? confirm('Include the Janice API key in the export?\n\nOK = include (file will contain your private key — fine for personal backup, NOT safe to share).\nCancel = leave it out (recipient will need to enter their own key after import).')
     : false;
+  const includeReadPat = cfg.alliance_quota_pat_read
+    ? confirm('Include the alliance Read PAT in the export?\n\nOK = include (recipient will be able to sync quotas immediately after import — typical for an alliance-distribution kit).\nCancel = leave it out.')
+    : false;
+
   const out = { ...cfg };
   for (const k of CONFIG_EXPORT_NEVER) delete out[k];
   if (!includeKey) delete out.janice_api_key;
+  if (!includeReadPat) delete out.alliance_quota_pat_read;
 
   // Stamp the export so future imports can recognise / migrate as needed.
   let appVersion = '';
@@ -2555,7 +2584,10 @@ $('#btn-export-config')?.addEventListener('click', async () => {
   const stamp = new Date().toISOString().slice(0, 10);
   downloadBlob(`eve-corp-buyback-config-${stamp}.json`, 'application/json',
     JSON.stringify(payload, null, 2));
-  setConfigIoStatus(`Exported ${Object.keys(out).length} settings${includeKey ? ' (incl. API key)' : ''}.`);
+  const inclTags = [];
+  if (includeKey) inclTags.push('Janice key');
+  if (includeReadPat) inclTags.push('Read PAT');
+  setConfigIoStatus(`Exported ${Object.keys(out).length} settings${inclTags.length ? ` (incl. ${inclTags.join(', ')})` : ''}.`);
 });
 
 $('#btn-import-config')?.addEventListener('click', () => {
@@ -2675,6 +2707,71 @@ async function runQuotaSync({ silent = false } = {}) {
 }
 
 $('#btn-quota-sync')?.addEventListener('click', () => runQuotaSync({ silent: false }));
+
+// Push button visibility tracks the "Allow push from this machine" checkbox
+// — separate from the existence of a write PAT, so a regular user pasting
+// the admin's config (which may contain the write PAT) doesn't get a Push
+// button by accident.
+function updatePushButtonVisibility() {
+  const btn = $('#btn-quota-push');
+  if (!btn) return;
+  const allow = !!$('[name=alliance_quota_allow_push]')?.checked;
+  if (allow) btn.removeAttribute('hidden');
+  else btn.setAttribute('hidden', '');
+}
+
+$('[name=alliance_quota_allow_push]')?.addEventListener('change', updatePushButtonVisibility);
+
+async function runQuotaPush() {
+  const btn = $('#btn-quota-push');
+  const status = $('#quota-sync-status');
+  // Push uses the current form's URL + the saved write PAT. We collect the
+  // form first to send any unsaved URL edit, but the PAT lives only in the
+  // saved config — saving the form first is the user's responsibility (the
+  // Sync flow has the same contract).
+  const url = ($('[name=alliance_quota_url]')?.value || '').trim();
+  if (!url) {
+    if (status) status.textContent = 'enter a repo URL first';
+    return;
+  }
+  if (!confirm(`Push the current local quotas list to:\n\n${url}\n\nThis overwrites the file in the repo.`)) return;
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'pushing…';
+  try {
+    const res = await fetch(`${API}/api/quotas/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        quotas: collectQuotas(),
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = text;
+      try { msg = JSON.parse(text).detail || text; } catch (_) {}
+      throw new Error(`HTTP ${res.status}: ${msg}`);
+    }
+    const data = await res.json();
+    const cfg = data.config || {};
+    renderQuotaSyncStatus(cfg);
+    if (status) {
+      const short = (data.commit_sha || '').slice(0, 7);
+      status.textContent = `pushed ${data.pushed_rows} row(s) — commit ${short || '?'}`;
+      if (data.commit_html_url) {
+        status.innerHTML = `pushed ${data.pushed_rows} row(s) — <a href="${data.commit_html_url}" target="_blank" rel="noopener">commit ${short || '?'}</a>`;
+      }
+      setTimeout(() => renderQuotaSyncStatus(cfg), 8000);
+    }
+  } catch (e) {
+    if (status) status.textContent = `push failed: ${e.message || e}`;
+    console.error('[quota-push]', e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+$('#btn-quota-push')?.addEventListener('click', runQuotaPush);
 
 async function maybeAutoSyncQuotas() {
   if (allianceQuotaAutoSyncDone) return;

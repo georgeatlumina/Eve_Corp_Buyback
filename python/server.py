@@ -129,6 +129,9 @@ class ConfigUpdate(BaseModel):
     quotas: Optional[list[dict]] = None
     alliance_quota_url: Optional[str] = None
     alliance_quota_auto_sync: Optional[bool] = None
+    alliance_quota_pat_read: Optional[str] = None
+    alliance_quota_pat_write: Optional[str] = None
+    alliance_quota_allow_push: Optional[bool] = None
 
 
 @app.post('/api/config')
@@ -419,20 +422,160 @@ def _resolve_gist_page_url(url, user_agent):
     return raw
 
 
+def _parse_github_blob_url(url):
+    """Detect a GitHub repo file URL and return (owner, repo, branch, path).
+
+    Accepted shapes:
+      - https://github.com/<owner>/<repo>/blob/<branch>/<path/to/file>
+      - https://github.com/<owner>/<repo>/raw/<branch>/<path/to/file>
+      - https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<path/to/file>
+      - https://api.github.com/repos/<owner>/<repo>/contents/<path>?ref=<branch>
+      - https://github.com/<owner>/<repo>(.git)?    → defaults branch=main,
+        path=quotas.json. Handles the "Clone with HTTPS" URL the user gets
+        from GitHub's Code button; pasting it directly is the obvious move.
+
+    Returns None if the URL is something else (gist, arbitrary public URL,
+    etc.) — callers fall back to plain HTTPS GET in that case.
+    """
+    import re
+    from urllib.parse import urlparse, parse_qs
+    m = re.match(
+        r'^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+?)/(?:blob|raw)/'
+        r'(?P<branch>[^/]+)/(?P<path>.+)$',
+        url,
+    )
+    if m:
+        return m.group('owner'), m.group('repo'), m.group('branch'), m.group('path')
+    m = re.match(
+        r'^https?://raw\.githubusercontent\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/'
+        r'(?P<branch>[^/]+)/(?P<path>.+)$',
+        url,
+    )
+    if m:
+        return m.group('owner'), m.group('repo'), m.group('branch'), m.group('path')
+    # Direct Contents API URL (e.g. someone pasted the API link).
+    m = re.match(
+        r'^https?://api\.github\.com/repos/(?P<owner>[^/]+)/(?P<repo>[^/]+)/contents/(?P<path>[^?#]+)',
+        url,
+    )
+    if m:
+        parsed = urlparse(url)
+        branch = (parse_qs(parsed.query).get('ref') or ['main'])[0]
+        return m.group('owner'), m.group('repo'), branch, m.group('path')
+    # Bare repo URL: github.com/<owner>/<repo> with or without trailing .git.
+    # Defaults to main/quotas.json — the alliance-quota-sync convention.
+    m = re.match(
+        r'^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?/?$',
+        url,
+    )
+    if m:
+        return m.group('owner'), m.group('repo'), 'main', 'quotas.json'
+    return None
+
+
+def _github_contents_get(owner, repo, branch, path, pat, user_agent):
+    """Read one file via the GitHub Contents API.
+
+    Returns ``(decoded_text, sha)`` so the caller can hand the sha back on
+    a future PUT (the API requires it for updates to detect conflicts).
+    Sends the PAT as a Bearer token when set; works without one for fully
+    public repos.
+    """
+    import base64
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if pat:
+        headers['Authorization'] = f'Bearer {pat}'
+    api = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+    resp = requests.get(api, headers=headers, params={'ref': branch}, timeout=15)
+    if resp.status_code == 401 or resp.status_code == 403:
+        raise PermissionError(
+            f'{resp.status_code} {resp.reason} — '
+            f'{"PAT was rejected (expired, wrong scope, or no access to this repo?)" if pat else "private repo — set a read PAT in Config"}'
+        )
+    if resp.status_code == 404:
+        raise FileNotFoundError(
+            f'404 — file not found: {owner}/{repo}@{branch}:{path} '
+            f'{"(does the PAT have access to this repo?)" if pat else "(or repo is private — set a read PAT)"}'
+        )
+    resp.raise_for_status()
+    body = resp.json()
+    if isinstance(body, list):
+        raise ValueError(f'{path} is a directory, not a file — give the URL of the JSON file inside it')
+    content_b64 = (body.get('content') or '').replace('\n', '')
+    if not content_b64:
+        raise ValueError(f'response had no content for {path!r}')
+    try:
+        text = base64.b64decode(content_b64).decode('utf-8')
+    except Exception as e:
+        raise ValueError(f'failed to decode file body: {e}')
+    return text, body.get('sha')
+
+
+def _github_contents_put(owner, repo, branch, path, text, sha, pat, user_agent, message):
+    """Write/replace one file via the GitHub Contents API.
+
+    ``sha`` is required when updating an existing file (we fetch it via
+    _github_contents_get first); pass None to create a new file. Returns
+    the new commit's sha + the file's new blob sha.
+    """
+    import base64
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Authorization': f'Bearer {pat}',
+    }
+    api = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+    body = {
+        'message': message,
+        'content': base64.b64encode(text.encode('utf-8')).decode('ascii'),
+        'branch': branch,
+    }
+    if sha:
+        body['sha'] = sha
+    resp = requests.put(api, headers=headers, json=body, timeout=20)
+    if resp.status_code == 401 or resp.status_code == 403:
+        raise PermissionError(
+            f'{resp.status_code} {resp.reason} — write PAT was rejected '
+            '(does it have `Contents: read+write` permission on this repo?)'
+        )
+    if resp.status_code == 409:
+        raise RuntimeError(
+            'Conflict (HTTP 409) — someone else pushed in between our read '
+            'and write. Pull / sync, then push again.'
+        )
+    if resp.status_code >= 400:
+        # Surface the GitHub error message verbatim — they're usually clear
+        # ("Invalid request", "branch does not exist", etc.).
+        try:
+            msg = resp.json().get('message') or resp.text
+        except Exception:
+            msg = resp.text
+        raise RuntimeError(f'{resp.status_code} {resp.reason} — {msg}')
+    out = resp.json() or {}
+    return {
+        'commit_sha': (out.get('commit') or {}).get('sha'),
+        'commit_html_url': (out.get('commit') or {}).get('html_url'),
+        'blob_sha': (out.get('content') or {}).get('sha'),
+    }
+
+
 def _sync_quotas_from_url(url, cfg, persist=True):
     """Fetch `url`, parse, validate, optionally write to config. Returns the
     new quota list and a short status string (used for last-sync metadata).
 
-    Unauthenticated fetch only — use a public URL or a "secret" (unlisted)
-    GitHub gist. Secret gists are reachable to anyone who has the raw URL
-    but don't show up in profile/search, which is the lowest-friction way
-    to share alliance quotas without setting up auth.
-
-    URL forms accepted:
-      - https://gist.github.com/<user>/<id>           (page URL — resolved via API)
-      - https://gist.githubusercontent.com/.../raw/...
-      - https://raw.githubusercontent.com/<org>/<repo>/<branch>/<path>
-      - any other https URL serving the JSON directly
+    URL routing:
+      - github.com/<owner>/<repo>/blob/<branch>/<path>     → Contents API + read PAT
+      - raw.githubusercontent.com/<owner>/<repo>/...        → same path (auth works
+        on raw too, but Contents API is consistent + returns sha for push)
+      - api.github.com/repos/<owner>/<repo>/contents/<path> → Contents API direct
+      - gist.github.com/<user>/<id> → resolved to a raw gist URL
+      - gist.githubusercontent.com/.../raw/...               → unauth GET
+      - any other URL → unauth GET, expects JSON body
     """
     if not url or not url.strip():
         raise ValueError('alliance_quota_url is not set')
@@ -440,19 +583,34 @@ def _sync_quotas_from_url(url, cfg, persist=True):
     if not (url.startswith('https://') or url.startswith('http://')):
         raise ValueError(f'alliance_quota_url must start with http(s):// (got {url!r})')
     ua = get_user_agent()
-    fetch_url = _resolve_gist_page_url(url, ua)
-    resp = requests.get(
-        fetch_url,
-        headers={'Accept': 'application/json', 'User-Agent': ua},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    try:
-        payload = resp.json()
-    except ValueError:
-        # Some hosts serve JSON as text/plain; resp.json() already handles
-        # encoding but invalid JSON content raises here.
-        raise ValueError('response was not valid JSON')
+    blob = _parse_github_blob_url(url)
+    if blob:
+        owner, repo, branch, path = blob
+        pat = (cfg.get('alliance_quota_pat_read') or cfg.get('alliance_quota_pat_write') or '').strip()
+        try:
+            text, _sha = _github_contents_get(owner, repo, branch, path, pat or None, ua)
+        except PermissionError as e:
+            raise ValueError(str(e))
+        except FileNotFoundError as e:
+            raise ValueError(str(e))
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            raise ValueError('repo file body was not valid JSON')
+    else:
+        fetch_url = _resolve_gist_page_url(url, ua)
+        resp = requests.get(
+            fetch_url,
+            headers={'Accept': 'application/json', 'User-Agent': ua},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        try:
+            payload = resp.json()
+        except ValueError:
+            # Some hosts serve JSON as text/plain; resp.json() already handles
+            # encoding but invalid JSON content raises here.
+            raise ValueError('response was not valid JSON')
     quotas = _extract_quotas_from_payload(payload)
     if persist:
         cfg['quotas'] = quotas
@@ -490,6 +648,81 @@ def sync_quotas(req: QuotaSyncRequest):
         save_config(cfg)
         raise HTTPException(400, f'Invalid quota file: {e}')
     return {'quotas': quotas, 'config': load_config()}
+
+
+class QuotaPushRequest(BaseModel):
+    url: Optional[str] = None              # falls back to cfg['alliance_quota_url']
+    quotas: Optional[list[dict]] = None    # falls back to cfg['quotas']
+    message: Optional[str] = None          # commit message; sensible default if blank
+
+
+@app.post('/api/quotas/push')
+def push_quotas(req: QuotaPushRequest):
+    """Write the current quotas back to the configured GitHub repo via the
+    Contents API, using the read+write PAT in config.
+
+    Refuses to run unless ``alliance_quota_allow_push`` is true in config —
+    the UI gates this behind a checkbox so a non-admin user who imported
+    the admin's exported config (with the write PAT) doesn't accidentally
+    push from their own machine. Only github.com / api.github.com URLs are
+    accepted as push targets; gist URLs are not supported (push to a gist
+    requires a different API).
+    """
+    cfg = load_config()
+    if not cfg.get('alliance_quota_allow_push'):
+        raise HTTPException(403, 'Push is disabled on this machine. Tick "Allow push from this machine" in Config to enable.')
+    url = (req.url or cfg.get('alliance_quota_url') or '').strip()
+    if not url:
+        raise HTTPException(400, 'alliance_quota_url is not set')
+    blob = _parse_github_blob_url(url)
+    if not blob:
+        raise HTTPException(400, 'Push is only supported for github.com repo file URLs. Gist push is not supported here — convert the gist to a private repo first.')
+    owner, repo, branch, path = blob
+    write_pat = (cfg.get('alliance_quota_pat_write') or '').strip()
+    if not write_pat:
+        raise HTTPException(400, 'alliance_quota_pat_write is not set — provide a PAT with Contents: read+write permission on this repo.')
+    quotas = req.quotas if req.quotas is not None else (cfg.get('quotas') or [])
+    if not isinstance(quotas, list):
+        raise HTTPException(400, 'quotas must be a list')
+    # Re-coerce so a manually-pushed list still gets the canonical shape.
+    quotas = [c for c in (_coerce_quota_row(r) for r in quotas) if c]
+    text = json.dumps(quotas, indent=2) + '\n'
+    ua = get_user_agent()
+    # We need the current blob sha to update an existing file. None means
+    # "create new" — _github_contents_get raises FileNotFoundError on 404
+    # so we catch that and pass sha=None to create.
+    sha: Optional[str] = None
+    try:
+        _existing_text, sha = _github_contents_get(owner, repo, branch, path, write_pat, ua)
+    except FileNotFoundError:
+        sha = None  # file doesn't exist yet; let PUT create it
+    except PermissionError as e:
+        raise HTTPException(403, f'Push failed at read step: {e}')
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(502, f'Push failed at read step: {e}')
+    message = (req.message or '').strip() or f'Update quotas — {len(quotas)} row(s)'
+    try:
+        result = _github_contents_put(
+            owner, repo, branch, path, text, sha, write_pat, ua, message,
+        )
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409 if 'Conflict' in str(e) else 502, str(e))
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(502, f'Push failed: {e}')
+
+    cfg['alliance_quota_last_synced'] = datetime.now(timezone.utc).isoformat()
+    cfg['alliance_quota_last_status'] = (
+        f'push ok — {len(quotas)} row(s), commit {result["commit_sha"][:7] if result.get("commit_sha") else "?"}'
+    )
+    save_config(cfg)
+    return {
+        'pushed_rows': len(quotas),
+        'commit_sha': result.get('commit_sha'),
+        'commit_html_url': result.get('commit_html_url'),
+        'config': load_config(),
+    }
 
 
 @app.get('/api/region/from-station')

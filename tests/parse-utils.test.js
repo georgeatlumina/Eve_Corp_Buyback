@@ -40,20 +40,24 @@ describe('fmtIsk', () => {
 // ── fmtMillions ───────────────────────────────────────────────────────────────
 
 describe('fmtMillions', () => {
-  test('rounds to nearest 100k and formats as X.X M', () => {
-    expect(fmtMillions(2981496)).toBe('3.0 M');   // 2,981,496 → 3,000,000 → 3.0
+  // fmtMillions rounds to the nearest 1M and emits a compact "<N>M" string
+  // (no decimal places, no space). Matches the runtime use on the Contracts
+  // tab where bar labels need to stay short. See PR #3 (commit 4cd049d).
+
+  test('rounds to nearest 1M', () => {
+    expect(fmtMillions(2981496)).toBe('3M');   // 2,981,496 → rounds up to 3M
   });
 
-  test('rounds down correctly', () => {
-    expect(fmtMillions(3140000)).toBe('3.1 M');
+  test('rounds down when below midpoint', () => {
+    expect(fmtMillions(3140000)).toBe('3M');   // 3.14M → 3M
   });
 
-  test('rounds up at midpoint', () => {
-    expect(fmtMillions(3150000)).toBe('3.2 M');
+  test('rounds up at the half-million mark', () => {
+    expect(fmtMillions(3500000)).toBe('4M');   // banker-agnostic — Math.round → 4
   });
 
-  test('always shows one decimal place', () => {
-    expect(fmtMillions(5000000)).toBe('5.0 M');
+  test('exact millions render with no decimal', () => {
+    expect(fmtMillions(5000000)).toBe('5M');
   });
 });
 

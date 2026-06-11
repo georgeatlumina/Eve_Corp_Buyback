@@ -565,3 +565,14 @@ table.readiness-table tr.disabled-row td { color: #777; }
 
 .appraise-effective { margin-top: 0.5em; }
 .appraise-effective > summary { cursor: pointer; color: #cde; padding: 0.3em 0; font-size: 0.9em; }
+
+/* ===== Alliance quota — repo / PAT layout ===== */
+.aq-modes { padding-left: 1.4em; margin: 0.3em 0 0.8em; line-height: 1.45; }
+.aq-modes li { margin-bottom: 0.3em; }
+.aq-pat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.6em 1em; margin: 0.4em 0; }
+.aq-pat-row label small { display: block; margin-bottom: 0.2em; font-size: 0.75em; }
+.aq-allow-push { display: inline-flex; gap: 0.4em; align-items: center; margin: 0.4em 0; font-size: 0.92em; color: #cde; }
+.aq-allow-push input { width: auto; margin: 0; }
+#btn-quota-push { background: #3a4a6a; color: #cde; border: 1px solid #557; }
+#btn-quota-push:hover:not(:disabled) { background: #4a5a7a; color: #fff; }
+#btn-quota-push:disabled { opacity: 0.6; cursor: progress; }

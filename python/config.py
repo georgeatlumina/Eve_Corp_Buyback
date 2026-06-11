@@ -63,6 +63,15 @@ DEFAULTS = {
     'alliance_quota_auto_sync': False,
     'alliance_quota_last_synced': '',   # ISO timestamp of last successful sync
     'alliance_quota_last_status': '',   # short human-readable last result
+    # Private-repo workflow (GitHub Contents API). Two PATs: a read-only one
+    # the alliance admin distributes to every member for sync, and a
+    # read+write one kept on the admin's machine for pushing changes back.
+    # The Push button in the UI is gated on `alliance_quota_allow_push` so a
+    # regular user pasting the admin's exported config doesn't unlock the
+    # button just by having the write PAT in their file.
+    'alliance_quota_pat_read': '',
+    'alliance_quota_pat_write': '',
+    'alliance_quota_allow_push': False,
 }
 
 _USER_KEYS = set(DEFAULTS)

@@ -91,13 +91,25 @@
           </div>
 
           <h4 class="quota-h4">Alliance quota sync</h4>
-          <p class="muted">Pull quotas from a single source of truth. The admin creates a <strong>secret gist</strong> at <a href="https://gist.github.com" target="_blank" rel="noopener">gist.github.com</a> (not "public" — pick "Create secret gist") containing the quota JSON, then copies the <strong>Raw</strong> URL. Secret gists are unlisted but the raw URL is fetchable to anyone who has it — share the URL via your usual alliance channel (Discord, AA). Users paste the URL below and click <em>Sync now</em>. Accepts a bare JSON array, <code>{quotas: [...]}</code>, or the full export envelope.</p>
+          <p class="muted">Pull quotas from a single source of truth — a <strong>private GitHub repo</strong> holding a <code>quotas.json</code> file. Paste the URL of the file (<code>https://github.com/&lt;owner&gt;/&lt;repo&gt;/blob/&lt;branch&gt;/quotas.json</code>). Every alliance member fills the <em>Read PAT</em> with a fine-grained token that has <code>Contents: read</code> on this repo. The admin additionally fills the <em>Write PAT</em> + ticks <em>Allow push</em> and uses the <strong>Push to repo</strong> button to commit changes. Sync also accepts the raw URL or the Contents API URL of the same file.</p>
+          <!--
+            Gist transport is still wired in the sidecar (see _resolve_gist_page_url
+            and the non-blob fallback in _sync_quotas_from_url) — only the UI hint
+            and the secondary <li> were removed. Restore them here if reverting.
+          -->
+
           <div class="aq-row">
-            <label class="aq-url-label">Alliance quota URL <input name="alliance_quota_url" type="url" placeholder="https://gist.githubusercontent.com/&hellip;/raw/quotas.json" /></label>
+            <label class="aq-url-label">Alliance quota URL <input name="alliance_quota_url" type="url" placeholder="https://github.com/&lt;owner&gt;/&lt;repo&gt;/blob/main/quotas.json" /></label>
             <label class="aq-auto-label"><input name="alliance_quota_auto_sync" type="checkbox" /> Auto-sync on app start</label>
           </div>
+          <div class="aq-pat-row">
+            <label>Read PAT <small class="muted">(every alliance member; <code>Contents: read</code>)</small> <input name="alliance_quota_pat_read" type="password" autocomplete="off" placeholder="github_pat_… or ghp_…" /></label>
+            <label>Write PAT <small class="muted">(admin only; <code>Contents: read+write</code>)</small> <input name="alliance_quota_pat_write" type="password" autocomplete="off" placeholder="leave blank if you only sync" /></label>
+          </div>
+          <label class="aq-allow-push"><input name="alliance_quota_allow_push" type="checkbox" /> Allow push from this machine <span class="muted">(admin-only — unhides the Push button)</span></label>
           <div class="actions">
             <button type="button" id="btn-quota-sync" class="secondary">Sync now</button>
+            <button type="button" id="btn-quota-push" class="secondary" hidden>Push to repo</button>
             <span id="quota-sync-status" class="muted"></span>
           </div>
         </fieldset>
