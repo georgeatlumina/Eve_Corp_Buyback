@@ -46,6 +46,7 @@ from esi import (
     fetch_corporation_info,
     fetch_incursions,
     fetch_region_info,
+    fetch_region_market_orders,
     fetch_sovereignty_campaigns,
     fetch_sovereignty_map,
     fetch_sovereignty_structures,
@@ -58,7 +59,7 @@ from esi import (
     resolve_names,
     send_evemail,
 )
-from janice import create_appraisal, create_appraisal_from_text
+from janice import create_appraisal, create_appraisal_from_text, fetch_type_sell_price
 from mutamarket import appraise_abyssal_type, is_abyssal_item_name
 from pinned import (
     append_appraisal,
@@ -856,6 +857,42 @@ def stream_aa_market(structure_id: Optional[int] = None, refresh: bool = False):
     )
 
 
+_AMARR_SYSTEM_ID = 30002187
+_AMARR_REGION_ID = 10000043
+_amarr_price_cache: dict[int, dict] = {}
+_AMARR_PRICE_TTL = 300  # 5 min
+
+
+@app.get('/api/market/amarr-sell')
+def get_amarr_sell_price(type_id: int):
+    """Return the Amarr sell price for a type. Uses Janice when an API key is configured,
+    otherwise falls back to ESI market orders. Cached 5 min."""
+    now = time.time()
+    cached = _amarr_price_cache.get(type_id)
+    if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
+        return cached['result']
+
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
+
+    if api_key:
+        try:
+            min_sell = fetch_type_sell_price(type_id, 'Amarr', api_key=api_key)
+        except Exception as e:
+            raise HTTPException(502, f'Janice price lookup failed: {e}')
+    else:
+        try:
+            orders = fetch_region_market_orders(_AMARR_REGION_ID, type_id, get_user_agent())
+        except Exception as e:
+            raise HTTPException(502, f'ESI market fetch failed: {e}')
+        amarr_orders = [o for o in orders if not o.get('is_buy_order') and int(o.get('system_id') or 0) == _AMARR_SYSTEM_ID]
+        min_sell = min((float(o['price']) for o in amarr_orders), default=None)
+
+    result = {'type_id': type_id, 'min_sell': min_sell}
+    _amarr_price_cache[type_id] = {'fetched_at': now, 'result': result}
+    return result
+
+
 # ----------------------- Contracts scan (alliance + public) -----------------------
 
 # Module-scope cache so repeat scans don't re-download the same items.
@@ -972,8 +1009,6 @@ def _scan_contracts_stream():
             if (c.get('status') or '').lower() != 'outstanding':
                 continue
             if int(c.get('start_location_id') or 0) != structure_id:
-                continue
-            if not c.get('for_corporation'):
                 continue
             if int(c.get('issuer_corporation_id') or 0) != corp_id:
                 continue
