@@ -2220,6 +2220,7 @@ function quotaRow(q) {
     <td><input type="text" list="ship-names-datalist" class="q-sname" value="${escapeAttr(q.ship_name || '')}" placeholder="e.g. Cerberus" /></td>
     <td><input type="number" class="q-req" min="0" value="${q.required ?? 0}" /></td>
     <td><input type="text" class="q-title" value="${escapeAttr(q.title_filter || '')}" placeholder="optional" /></td>
+    <td><input type="text" inputmode="numeric" class="q-fitid" value="${q.fit_id || ''}" placeholder="e.g. 94" title="Auth fit ID — overrides name lookup; use when the fit isn't in a doctrine" style="width:5em" /></td>
     <td><button type="button" class="q-remove secondary" title="Remove row">✕</button></td>
   `;
   tr.querySelector('.q-remove').addEventListener('click', () => tr.remove());
@@ -2329,6 +2330,7 @@ function collectQuotas() {
       ship_name: r.querySelector('.q-sname').value.trim(),
       required: parseInt(r.querySelector('.q-req').value) || 0,
       title_filter: r.querySelector('.q-title').value.trim(),
+      fit_id: parseInt(r.querySelector('.q-fitid').value) || 0,
     }))
     .filter((q) => q.ship_type_id || q.name);
 }
@@ -2369,11 +2371,12 @@ function rowFromCells(cells) {
     ship_name: cells[2] || '',
     required: parseInt(cells[3]) || 0,
     title_filter: cells[4] || '',
+    fit_id: parseInt(cells[5]) || 0,
   };
 }
 
 function fillQuotaRowFromCells(tr, cells, startInput) {
-  const fields = ['.q-name', '.q-tid', '.q-sname', '.q-req', '.q-title'];
+  const fields = ['.q-name', '.q-tid', '.q-sname', '.q-req', '.q-title', '.q-fitid'];
   // Find the index of the input the user pasted into.
   const startIdx = Math.max(0, fields.findIndex((sel) => tr.querySelector(sel) === startInput));
   for (let i = 0; i < cells.length; i++) {
@@ -2419,10 +2422,10 @@ function csvEscape(v) {
 }
 
 function quotasToCsv(quotas) {
-  const header = ['name', 'ship_type_id', 'ship_name', 'required', 'title_filter'];
+  const header = ['name', 'ship_type_id', 'ship_name', 'required', 'title_filter', 'fit_id'];
   const lines = [header.join(',')];
   for (const q of quotas) {
-    lines.push([q.name, q.ship_type_id, q.ship_name, q.required, q.title_filter].map(csvEscape).join(','));
+    lines.push([q.name, q.ship_type_id, q.ship_name, q.required, q.title_filter, q.fit_id || ''].map(csvEscape).join(','));
   }
   return lines.join('\n') + '\n';
 }
@@ -2988,21 +2991,24 @@ function renderQuotaBar(q) {
     const fmtM = fmtMillions;
     try {
       let fitDetail = null;
-      if (window.api?.aaFetchHtml && q.name) {
+      if (window.api?.aaFetchHtml && (q.fit_id || q.name)) {
         priceEl.textContent = 'searching fits…';
-        if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
-        await _fitIndexBuilding;
-        // _fitIndex: fitName → Map(shipTypeName → fitId)
-        // Prefer exact ship-name match; fall back to first entry for that fit name.
-        // Always verify the fit's actual hull matches before using it — a fallback
-        // to the wrong hull (e.g. Guardian when quota says Exequror) produces wildly
-        // inflated prices.
-        const shipMap = _fitIndex.get(q.name.toLowerCase());
-        const fitId = shipMap?.get((q.ship_name || '').toLowerCase())
-          ?? (shipMap ? [...shipMap.values()][0] : undefined);
-        if (fitId) {
+        let resolvedFitId = q.fit_id || 0;
+        if (!resolvedFitId) {
+          if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
+          await _fitIndexBuilding;
+          // _fitIndex: fitName → Map(shipTypeName → fitId)
+          // Prefer exact ship-name match; fall back to first entry for that fit name.
+          // Always verify the fit's actual hull matches before using it — a fallback
+          // to the wrong hull (e.g. Guardian when quota says Exequror) produces wildly
+          // inflated prices.
+          const shipMap = _fitIndex.get(q.name.toLowerCase());
+          resolvedFitId = shipMap?.get((q.ship_name || '').toLowerCase())
+            ?? (shipMap ? [...shipMap.values()][0] : undefined);
+        }
+        if (resolvedFitId) {
           priceEl.textContent = 'pricing fit…';
-          const candidate = await getFitDetail(fitId);
+          const candidate = await getFitDetail(resolvedFitId);
           // Only use the fit if we can confirm the hull matches the quota's ship.
           // When both type IDs are known and differ, the wrong fit was found (e.g. a
           // Guardian fit returned for an Exequror quota slot).
