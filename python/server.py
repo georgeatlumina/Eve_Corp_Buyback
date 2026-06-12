@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -1283,24 +1284,38 @@ def _scan_contracts_stream():
         })
         return
 
-    # ---- Fetch items per contract via the same corp+token that surfaced it ----
+    # ---- Fetch items per contract — cached hits are free, rest fetched in parallel ----
     items_by_id: dict[int, list] = {}
     items_errors: dict[int, str] = {}
     total = len(found)
-    for idx, (cid, rec) in enumerate(found.items(), 1):
-        cached = _contract_items_cache.get(cid)
-        if cached is not None:
-            items_by_id[cid] = cached
-            yield _emit('progress', step=f'Items {idx}/{total}: {cid} (cached)')
-            continue
-        try:
-            items = fetch_contract_items(rec['corp_id'], cid, rec['token'], ua)
-            items_by_id[cid] = items
-            _contract_items_cache[cid] = items
-        except Exception as e:
-            items_by_id[cid] = []
-            items_errors[cid] = str(e)
-        yield _emit('progress', step=f'Items {idx}/{total}: {cid}')
+
+    uncached = {cid: rec for cid, rec in found.items() if _contract_items_cache.get(cid) is None}
+    for cid in found:
+        if cid not in uncached:
+            items_by_id[cid] = _contract_items_cache[cid]
+
+    if uncached:
+        yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
+
+        def _fetch_items(cid_rec):
+            cid, rec = cid_rec
+            try:
+                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+            except Exception as e:
+                return cid, [], str(e)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
+            done = len(found) - len(uncached)
+            for future in as_completed(futures):
+                cid, items, err = future.result()
+                items_by_id[cid] = items
+                if err:
+                    items_errors[cid] = err
+                else:
+                    _contract_items_cache[cid] = items
+                done += 1
+                yield _emit('progress', step=f'Items: {done}/{total}')
 
     # ---- Resolve type and issuer names ----
     type_ids = sorted({int(i.get('type_id') or 0) for items in items_by_id.values() for i in items})
