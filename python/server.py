@@ -349,12 +349,17 @@ def _coerce_quota_row(row):
         required = int(row.get('required') or 0)
     except (TypeError, ValueError):
         required = 0
+    try:
+        fit_id = int(row.get('fit_id') or 0)
+    except (TypeError, ValueError):
+        fit_id = 0
     return {
         'name': str(row.get('name') or '').strip(),
         'ship_type_id': type_id,
         'ship_name': str(row.get('ship_name') or '').strip(),
         'required': required,
         'title_filter': str(row.get('title_filter') or '').strip(),
+        'fit_id': fit_id,
     }
 
 

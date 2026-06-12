@@ -1059,8 +1059,10 @@ const aaState = {
   marketError: null,
 };
 
-// Fit index: maps lowercased fit name → fitId, built lazily from AA doctrine pages.
+// Primary index: lowercased fit name → Map(shipTypeName → fitId)
+// Secondary index: lowercased ship type name → [{fitId, fitName}] for fallback matching
 const _fitIndex = new Map();
+const _fitIndexByType = new Map();
 const _fitDetailCache = new Map();
 let _fitIndexBuilding = null;
 
@@ -1077,9 +1079,14 @@ async function buildFitIndex() {
     for (const fit of detail.fits) {
       if (!fit.id || !fit.name) continue;
       const nameLower = fit.name.toLowerCase();
+      const typeLower = (fit.shipType || '').toLowerCase();
+      // Primary: fit name → ship type → fit ID
       if (!_fitIndex.has(nameLower)) _fitIndex.set(nameLower, new Map());
-      // Key by ship type so same-named fits on different hulls don't collide
-      _fitIndex.get(nameLower).set((fit.shipType || '').toLowerCase(), fit.id);
+      _fitIndex.get(nameLower).set(typeLower, fit.id);
+      // Secondary: ship type → [{fitId, fitName}]
+      if (!_fitIndexByType.has(typeLower)) _fitIndexByType.set(typeLower, []);
+      const bucket = _fitIndexByType.get(typeLower);
+      if (!bucket.some((e) => e.fitId === fit.id)) bucket.push({ fitId: fit.id, fitName: nameLower });
     }
   }));
 }
@@ -2991,20 +2998,29 @@ function renderQuotaBar(q) {
     const fmtM = fmtMillions;
     try {
       let fitDetail = null;
-      if (window.api?.aaFetchHtml && (q.fit_id || q.name)) {
+      if (window.api?.aaFetchHtml && (q.fit_id || q.ship_name || q.name)) {
         priceEl.textContent = 'searching fits…';
         let resolvedFitId = q.fit_id || 0;
         if (!resolvedFitId) {
           if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
           await _fitIndexBuilding;
-          // _fitIndex: fitName → Map(shipTypeName → fitId)
-          // Prefer exact ship-name match; fall back to first entry for that fit name.
-          // Always verify the fit's actual hull matches before using it — a fallback
-          // to the wrong hull (e.g. Guardian when quota says Exequror) produces wildly
-          // inflated prices.
-          const shipMap = _fitIndex.get(q.name.toLowerCase());
+          // 1. Try exact fit-name match (q.name = the Auth fit name).
+          const shipMap = _fitIndex.get((q.name || '').toLowerCase());
           resolvedFitId = shipMap?.get((q.ship_name || '').toLowerCase())
             ?? (shipMap ? [...shipMap.values()][0] : undefined);
+          // 2. Fall back: match by ship type, disambiguating with title_filter.
+          //    Handles the common case where q.name is a display label ("Navy Logi Mk2")
+          //    rather than the Auth fit name ("Exequror Mk2").
+          if (!resolvedFitId && q.ship_name) {
+            const bucket = _fitIndexByType.get(q.ship_name.toLowerCase()) || [];
+            if (bucket.length === 1) {
+              resolvedFitId = bucket[0].fitId;
+            } else if (bucket.length > 1 && q.title_filter) {
+              const filterLower = q.title_filter.toLowerCase();
+              const match = bucket.find((e) => e.fitName.includes(filterLower));
+              if (match) resolvedFitId = match.fitId;
+            }
+          }
         }
         if (resolvedFitId) {
           priceEl.textContent = 'pricing fit…';
@@ -3048,7 +3064,7 @@ function renderQuotaBar(q) {
           priceEl.textContent = 'no Amarr prices found for fit items';
         }
       } else {
-        const notInAuth = _fitIndex.size > 0; // index built but this ship isn't in any doctrine
+        const notInAuth = _fitIndexByType.size > 0; // index built but this ship isn't in any doctrine
         priceEl.textContent = 'loading…';
         const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}`);
         const data = await res.json();
