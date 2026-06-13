@@ -94,7 +94,34 @@ function parseFitDetail(html) {
   });
 
   const buyBtn = doc.querySelector('#buyAllButton');
-  const buyText = buyBtn?.getAttribute('data-clipboard-text') || '';
+  let buyText = buyBtn?.getAttribute('data-clipboard-text') || '';
+
+  const eftEl = doc.querySelector('#eft-fitting');
+  const eft = (eftEl?.value ?? eftEl?.textContent ?? '').trim();
+
+  // Fallback: if the buy-all button text is empty (JS-populated in browser, missed by
+  // static fetch), derive the equivalent buy list from the EFT textarea instead.
+  if (!buyText && eft) {
+    const eftLines = eft.split(/\r?\n/);
+    const hullMatch = /^\[([^\],]+)/.exec(eftLines[0] || '');
+    if (hullMatch) {
+      const counts = {};
+      for (let i = 1; i < eftLines.length; i++) {
+        const ln = eftLines[i].trim();
+        if (!ln) continue;
+        const withQty = /^(.+?)\s+x(\d+)\s*$/.exec(ln);
+        if (withQty) {
+          const n = withQty[1].trim();
+          counts[n] = (counts[n] || 0) + parseInt(withQty[2], 10);
+        } else {
+          counts[ln] = (counts[ln] || 0) + 1;
+        }
+      }
+      const hull = hullMatch[1].trim();
+      buyText = [`${hull} x1`, ...Object.entries(counts).map(([n, q]) => `${n} x${q}`)].join('\n');
+    }
+  }
+
   const items = [];
   buyText.split(/\r?\n/).forEach((line) => {
     const trimmed = line.trim();
@@ -103,9 +130,6 @@ function parseFitDetail(html) {
     if (!m) return;
     items.push({ name: m[1].trim(), qty: parseInt(m[2], 10), typeId: nameTypeId[m[1].trim()] || null });
   });
-
-  const eftEl = doc.querySelector('#eft-fitting');
-  const eft = (eftEl?.value ?? eftEl?.textContent ?? '').trim();
 
   return { name, hullName, hullTypeId, doctrines, slotModules, items, eft };
 }
