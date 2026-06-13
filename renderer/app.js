@@ -3055,6 +3055,7 @@ function renderQuotaBar(q) {
     const fmtM = fmtMillions;
     try {
       let fitDetail = null;
+      let fitFoundOnAuth = false;
       if (window.api?.aaFetchHtml && (q.fit_id || q.ship_name || q.name)) {
         priceEl.textContent = 'searching fits…';
         let resolvedFitId = q.fit_id || 0;
@@ -3087,7 +3088,7 @@ function renderQuotaBar(q) {
           // Guardian fit returned for an Exequror quota slot).
           const hullMismatch = q.ship_type_id && candidate?.hullTypeId
             && candidate.hullTypeId !== q.ship_type_id;
-          if (candidate && !hullMismatch) fitDetail = candidate;
+          if (candidate && !hullMismatch) { fitDetail = candidate; fitFoundOnAuth = true; }
         }
       }
 
@@ -3122,7 +3123,7 @@ function renderQuotaBar(q) {
           priceEl.textContent = 'no Amarr prices found for fit items';
         }
       } else {
-        const notInAuth = _fitIndexByType.size > 0; // index built but this ship isn't in any doctrine
+        const notInAuth = _fitIndexByType.size > 0 && !fitFoundOnAuth;
         priceEl.textContent = 'loading…';
         const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}${bustParam}`);
         const data = await res.json();
@@ -3132,6 +3133,8 @@ function renderQuotaBar(q) {
             labelEl.classList.add('quota-not-in-auth');
           }
           expandRow.classList.add('quota-row-warning');
+        } else if (fitFoundOnAuth) {
+          if (labelEl) labelEl.textContent = 'Alliance fit found — hull price only (no buy list on Auth)';
         } else {
           if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
         }
