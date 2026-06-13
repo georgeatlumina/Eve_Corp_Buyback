@@ -1300,12 +1300,17 @@ def _scan_contracts_stream():
 
         def _fetch_items(cid_rec):
             cid, rec = cid_rec
-            try:
-                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
-            except Exception as e:
-                return cid, [], str(e)
+            last_err = None
+            for attempt in range(3):
+                try:
+                    return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+                except Exception as e:
+                    last_err = e
+                    if attempt < 2:
+                        time.sleep(1.5 ** attempt)
+            return cid, [], str(last_err)
 
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=5) as pool:
             futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
             done = len(found) - len(uncached)
             for future in as_completed(futures):
