@@ -243,6 +243,11 @@
       <p class="muted">Scans every outstanding item-exchange contract posted at the configured home structure by <strong>any corp that a logged-in slot is a Contract Manager / Director of</strong>. Add more slots on the Auth tab to cover more corps — each one widens the visible set. <strong>ESI limitation:</strong> corps you don't have a director token for stay invisible, even if their contracts show in the in-game alliance tab.</p>
       <div class="actions">
         <button id="btn-contracts-scan" type="button">Scan contracts</button>
+        <select id="contracts-sort" class="secondary">
+          <option value="default">Sort by ship name</option>
+          <option value="under-quota">Sort by under quota</option>
+          <option value="value">Sort by value</option>
+        </select>
         <button id="btn-contracts-export-csv" type="button" class="secondary">Export gap CSV</button>
         <button id="btn-contracts-export-text" type="button" class="secondary">Copy shopping list</button>
       </div>

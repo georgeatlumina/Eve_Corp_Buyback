@@ -2900,6 +2900,7 @@ function renderContractsDashboard(payload) {
     for (const q of quotas) {
       root.appendChild(renderQuotaBar(q));
     }
+    sortQuotaDashboard();
   }
 
   const list = payload.contracts || [];
@@ -2953,6 +2954,28 @@ function renderUnpricedToggle(priceEl, unpriced) {
   });
 }
 
+function sortQuotaDashboard() {
+  const root = $('#contracts-quota-dashboard');
+  if (!root) return;
+  const order = ($('#contracts-sort')?.value) || 'default';
+  const bars = [...root.querySelectorAll('.quota-bar')];
+  bars.sort((a, b) => {
+    if (order === 'under-quota') {
+      return Number(b.dataset.missing) - Number(a.dataset.missing);
+    }
+    if (order === 'value') {
+      const av = a.dataset.price !== '' ? Number(a.dataset.price) : -1;
+      const bv = b.dataset.price !== '' ? Number(b.dataset.price) : -1;
+      return bv - av;
+    }
+    // default: ship name
+    return (a.dataset.shipName || '').localeCompare(b.dataset.shipName || '');
+  });
+  bars.forEach((el) => root.appendChild(el));
+}
+
+$('#contracts-sort')?.addEventListener('change', sortQuotaDashboard);
+
 function renderQuotaBar(q) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
@@ -2961,6 +2984,9 @@ function renderQuotaBar(q) {
   const state = required === 0 ? 'unset' : available >= required ? 'ok' : available > 0 ? 'partial' : 'empty';
   const div = document.createElement('div');
   div.className = `quota-bar quota-${state}`;
+  div.dataset.shipName = (q.ship_name || q.name || '').toLowerCase();
+  div.dataset.missing = missing;
+  div.dataset.price = '';
   div.innerHTML = `
     <div class="quota-bar-head">
       <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
@@ -3059,6 +3085,7 @@ function renderQuotaBar(q) {
 
         if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · full fit)';
         if (total > 0) {
+          div.dataset.price = total * 1.15;
           priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
@@ -3080,6 +3107,7 @@ function renderQuotaBar(q) {
           if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
         }
         if (data.min_sell != null) {
+          div.dataset.price = data.min_sell * 1.15;
           priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
         } else {
@@ -3090,6 +3118,7 @@ function renderQuotaBar(q) {
       priceEl.textContent = 'error fetching price';
     }
     refreshBtn.hidden = false;
+    if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
   }
 
   expandRow.addEventListener('click', async (e) => {
