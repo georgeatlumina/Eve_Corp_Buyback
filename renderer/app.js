@@ -1070,24 +1070,30 @@ async function buildFitIndex() {
   if (!window.api?.aaFetchHtml) return;
   const res = await window.api.aaFetchHtml('/fittings/');
   if (!res.ok || /\/account\/login\//.test(res.finalUrl)) return;
+
+  const _indexFits = (fits) => {
+    for (const fit of fits) {
+      if (!fit.id || !fit.name) continue;
+      const nameLower = fit.name.toLowerCase();
+      const typeLower = (fit.shipType || '').toLowerCase();
+      if (!_fitIndex.has(nameLower)) _fitIndex.set(nameLower, new Map());
+      _fitIndex.get(nameLower).set(typeLower, fit.id);
+      if (!_fitIndexByType.has(typeLower)) _fitIndexByType.set(typeLower, []);
+      const bucket = _fitIndexByType.get(typeLower);
+      if (!bucket.some((e) => e.fitId === fit.id)) bucket.push({ fitId: fit.id, fitName: nameLower });
+    }
+  };
+
+  // Index all fits from the main fittings list (catches fits not assigned to any doctrine)
+  _indexFits(parseDoctrineDetail(res.html).fits);
+
+  // Also index fits per doctrine (same data, but ensures doctrine-only fits are covered)
   const doctrines = parseDoctrinesHtml(res.html);
   await Promise.all(doctrines.map(async (d) => {
     if (!d.id) return;
     const dr = await window.api.aaFetchHtml(`/fittings/doctrine/${d.id}/`);
     if (!dr.ok) return;
-    const detail = parseDoctrineDetail(dr.html);
-    for (const fit of detail.fits) {
-      if (!fit.id || !fit.name) continue;
-      const nameLower = fit.name.toLowerCase();
-      const typeLower = (fit.shipType || '').toLowerCase();
-      // Primary: fit name → ship type → fit ID
-      if (!_fitIndex.has(nameLower)) _fitIndex.set(nameLower, new Map());
-      _fitIndex.get(nameLower).set(typeLower, fit.id);
-      // Secondary: ship type → [{fitId, fitName}]
-      if (!_fitIndexByType.has(typeLower)) _fitIndexByType.set(typeLower, []);
-      const bucket = _fitIndexByType.get(typeLower);
-      if (!bucket.some((e) => e.fitId === fit.id)) bucket.push({ fitId: fit.id, fitName: nameLower });
-    }
+    _indexFits(parseDoctrineDetail(dr.html).fits);
   }));
 }
 
