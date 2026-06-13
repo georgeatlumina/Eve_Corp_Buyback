@@ -1103,13 +1103,14 @@ _AMARR_PRICE_TTL = 300  # 5 min
 
 
 @app.get('/api/market/amarr-sell')
-def get_amarr_sell_price(type_id: int):
+def get_amarr_sell_price(type_id: int, bust: bool = False):
     """Return the Amarr sell price for a type. Uses Janice when an API key is configured,
-    otherwise falls back to ESI market orders. Cached 5 min."""
+    otherwise falls back to ESI market orders. Cached 5 min; bust=1 forces a fresh fetch."""
     now = time.time()
-    cached = _amarr_price_cache.get(type_id)
-    if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
-        return cached['result']
+    if not bust:
+        cached = _amarr_price_cache.get(type_id)
+        if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
+            return cached['result']
 
     cfg = load_config()
     api_key = cfg.get('janice_api_key') or None

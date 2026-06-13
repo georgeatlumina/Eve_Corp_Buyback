@@ -2973,6 +2973,7 @@ function renderQuotaBar(q) {
       <div class="quota-expand-row">
         <span class="quota-expand-label">Contract price (115% Amarr sell)</span>
         <span class="quota-amarr-price muted">—</span>
+        <button type="button" class="quota-price-refresh" title="Refresh price" hidden>↻</button>
       </div>
     </div>
   `;
@@ -2986,14 +2987,15 @@ function renderQuotaBar(q) {
   });
 
   const expandRow = div.querySelector('.quota-expand-row');
+  const refreshBtn = div.querySelector('.quota-price-refresh');
   let priceLoaded = false;
-  expandRow.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (priceLoaded) return;
-    priceLoaded = true;
+
+  async function loadQuotaPrice(bust = false) {
     const priceEl = div.querySelector('.quota-amarr-price');
     const labelEl = div.querySelector('.quota-expand-label');
+    const bustParam = bust ? '&bust=1' : '';
     expandRow.style.cursor = 'default';
+    refreshBtn.hidden = true;
     const fmt = fmtIsk;
     const fmtM = fmtMillions;
     try {
@@ -3041,7 +3043,7 @@ function renderQuotaBar(q) {
         const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
         const priceResults = await Promise.all(
           uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/amarr-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+            fetch(`${API}/api/market/amarr-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
           )
         );
         const priceMap = new Map();
@@ -3066,7 +3068,7 @@ function renderQuotaBar(q) {
       } else {
         const notInAuth = _fitIndexByType.size > 0; // index built but this ship isn't in any doctrine
         priceEl.textContent = 'loading…';
-        const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}`);
+        const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}${bustParam}`);
         const data = await res.json();
         if (notInAuth) {
           if (labelEl) {
@@ -3087,7 +3089,22 @@ function renderQuotaBar(q) {
     } catch {
       priceEl.textContent = 'error fetching price';
     }
+    refreshBtn.hidden = false;
+  }
+
+  expandRow.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (e.target === refreshBtn) return; // handled by its own listener
+    if (priceLoaded) return;
+    priceLoaded = true;
+    await loadQuotaPrice(false);
   });
+
+  refreshBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await loadQuotaPrice(true);
+  });
+
   return div;
 }
 
