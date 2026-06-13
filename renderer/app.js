@@ -2864,6 +2864,7 @@ async function runContractsScan() {
       step.textContent = 'done';
       fill.style.width = '100%';
       setTimeout(() => { progress.hidden = true; }, 600);
+      prefetchHullPrices(evt.payload.quotas || []);
     }
   });
 }
@@ -2952,6 +2953,28 @@ function renderUnpricedToggle(priceEl, unpriced) {
     e.stopPropagation();
     if (window.api?.openExternal) window.api.openExternal(janiceUrl);
   });
+}
+
+async function prefetchHullPrices(quotas) {
+  const root = $('#contracts-quota-dashboard');
+  if (!root) return;
+  const bars = [...root.querySelectorAll('.quota-bar')];
+  // Map ship_type_id → bar element (take first match per type)
+  const typeToBar = new Map();
+  quotas.forEach((q, i) => {
+    if (q.ship_type_id && bars[i]) typeToBar.set(q.ship_type_id, { bar: bars[i], q });
+  });
+  await Promise.all([...typeToBar.entries()].map(async ([typeId, { bar, q }]) => {
+    if (bar.dataset.price !== '') return; // already priced from an expanded bar
+    try {
+      const res = await fetch(`${API}/api/market/amarr-sell?type_id=${typeId}`);
+      const data = await res.json();
+      if (data.min_sell != null && bar.dataset.price === '') {
+        bar.dataset.price = data.min_sell * 1.15;
+        if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
+      }
+    } catch (_) {}
+  }));
 }
 
 function sortQuotaDashboard() {
