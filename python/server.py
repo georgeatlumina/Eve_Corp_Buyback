@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -349,12 +350,17 @@ def _coerce_quota_row(row):
         required = int(row.get('required') or 0)
     except (TypeError, ValueError):
         required = 0
+    try:
+        fit_id = int(row.get('fit_id') or 0)
+    except (TypeError, ValueError):
+        fit_id = 0
     return {
         'name': str(row.get('name') or '').strip(),
         'ship_type_id': type_id,
         'ship_name': str(row.get('ship_name') or '').strip(),
         'required': required,
         'title_filter': str(row.get('title_filter') or '').strip(),
+        'fit_id': fit_id,
     }
 
 
@@ -1097,13 +1103,14 @@ _AMARR_PRICE_TTL = 300  # 5 min
 
 
 @app.get('/api/market/amarr-sell')
-def get_amarr_sell_price(type_id: int):
+def get_amarr_sell_price(type_id: int, bust: bool = False):
     """Return the Amarr sell price for a type. Uses Janice when an API key is configured,
-    otherwise falls back to ESI market orders. Cached 5 min."""
+    otherwise falls back to ESI market orders. Cached 5 min; bust=1 forces a fresh fetch."""
     now = time.time()
-    cached = _amarr_price_cache.get(type_id)
-    if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
-        return cached['result']
+    if not bust:
+        cached = _amarr_price_cache.get(type_id)
+        if cached and (now - cached['fetched_at']) < _AMARR_PRICE_TTL:
+            return cached['result']
 
     cfg = load_config()
     api_key = cfg.get('janice_api_key') or None
@@ -1278,24 +1285,43 @@ def _scan_contracts_stream():
         })
         return
 
-    # ---- Fetch items per contract via the same corp+token that surfaced it ----
+    # ---- Fetch items per contract — cached hits are free, rest fetched in parallel ----
     items_by_id: dict[int, list] = {}
     items_errors: dict[int, str] = {}
     total = len(found)
-    for idx, (cid, rec) in enumerate(found.items(), 1):
-        cached = _contract_items_cache.get(cid)
-        if cached is not None:
-            items_by_id[cid] = cached
-            yield _emit('progress', step=f'Items {idx}/{total}: {cid} (cached)')
-            continue
-        try:
-            items = fetch_contract_items(rec['corp_id'], cid, rec['token'], ua)
-            items_by_id[cid] = items
-            _contract_items_cache[cid] = items
-        except Exception as e:
-            items_by_id[cid] = []
-            items_errors[cid] = str(e)
-        yield _emit('progress', step=f'Items {idx}/{total}: {cid}')
+
+    uncached = {cid: rec for cid, rec in found.items() if _contract_items_cache.get(cid) is None}
+    for cid in found:
+        if cid not in uncached:
+            items_by_id[cid] = _contract_items_cache[cid]
+
+    if uncached:
+        yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
+
+        def _fetch_items(cid_rec):
+            cid, rec = cid_rec
+            last_err = None
+            for attempt in range(3):
+                try:
+                    return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+                except Exception as e:
+                    last_err = e
+                    if attempt < 2:
+                        time.sleep(1.5 ** attempt)
+            return cid, [], str(last_err)
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
+            done = len(found) - len(uncached)
+            for future in as_completed(futures):
+                cid, items, err = future.result()
+                items_by_id[cid] = items
+                if err:
+                    items_errors[cid] = err
+                else:
+                    _contract_items_cache[cid] = items
+                done += 1
+                yield _emit('progress', step=f'Items: {done}/{total}')
 
     # ---- Resolve type and issuer names ----
     type_ids = sorted({int(i.get('type_id') or 0) for items in items_by_id.values() for i in items})

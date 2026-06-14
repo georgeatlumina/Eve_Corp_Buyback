@@ -1059,8 +1059,10 @@ const aaState = {
   marketError: null,
 };
 
-// Fit index: maps lowercased fit name → fitId, built lazily from AA doctrine pages.
+// Primary index: lowercased fit name → Map(shipTypeName → fitId)
+// Secondary index: lowercased ship type name → [{fitId, fitName}] for fallback matching
 const _fitIndex = new Map();
+const _fitIndexByType = new Map();
 const _fitDetailCache = new Map();
 let _fitIndexBuilding = null;
 
@@ -1068,19 +1070,30 @@ async function buildFitIndex() {
   if (!window.api?.aaFetchHtml) return;
   const res = await window.api.aaFetchHtml('/fittings/');
   if (!res.ok || /\/account\/login\//.test(res.finalUrl)) return;
+
+  const _indexFits = (fits) => {
+    for (const fit of fits) {
+      if (!fit.id || !fit.name) continue;
+      const nameLower = fit.name.toLowerCase();
+      const typeLower = (fit.shipType || '').toLowerCase();
+      if (!_fitIndex.has(nameLower)) _fitIndex.set(nameLower, new Map());
+      _fitIndex.get(nameLower).set(typeLower, fit.id);
+      if (!_fitIndexByType.has(typeLower)) _fitIndexByType.set(typeLower, []);
+      const bucket = _fitIndexByType.get(typeLower);
+      if (!bucket.some((e) => e.fitId === fit.id)) bucket.push({ fitId: fit.id, fitName: nameLower });
+    }
+  };
+
+  // Index all fits from the main fittings list (catches fits not assigned to any doctrine)
+  _indexFits(parseDoctrineDetail(res.html).fits);
+
+  // Also index fits per doctrine (same data, but ensures doctrine-only fits are covered)
   const doctrines = parseDoctrinesHtml(res.html);
   await Promise.all(doctrines.map(async (d) => {
     if (!d.id) return;
     const dr = await window.api.aaFetchHtml(`/fittings/doctrine/${d.id}/`);
     if (!dr.ok) return;
-    const detail = parseDoctrineDetail(dr.html);
-    for (const fit of detail.fits) {
-      if (!fit.id || !fit.name) continue;
-      const nameLower = fit.name.toLowerCase();
-      if (!_fitIndex.has(nameLower)) _fitIndex.set(nameLower, new Map());
-      // Key by ship type so same-named fits on different hulls don't collide
-      _fitIndex.get(nameLower).set((fit.shipType || '').toLowerCase(), fit.id);
-    }
+    _indexFits(parseDoctrineDetail(dr.html).fits);
   }));
 }
 
@@ -2220,6 +2233,7 @@ function quotaRow(q) {
     <td><input type="text" list="ship-names-datalist" class="q-sname" value="${escapeAttr(q.ship_name || '')}" placeholder="e.g. Cerberus" /></td>
     <td><input type="number" class="q-req" min="0" value="${q.required ?? 0}" /></td>
     <td><input type="text" class="q-title" value="${escapeAttr(q.title_filter || '')}" placeholder="optional" /></td>
+    <td><input type="text" inputmode="numeric" class="q-fitid" value="${q.fit_id || ''}" placeholder="e.g. 94" title="Auth fit ID — overrides name lookup; use when the fit isn't in a doctrine" style="width:5em" /></td>
     <td><button type="button" class="q-remove secondary" title="Remove row">✕</button></td>
   `;
   tr.querySelector('.q-remove').addEventListener('click', () => tr.remove());
@@ -2329,6 +2343,7 @@ function collectQuotas() {
       ship_name: r.querySelector('.q-sname').value.trim(),
       required: parseInt(r.querySelector('.q-req').value) || 0,
       title_filter: r.querySelector('.q-title').value.trim(),
+      fit_id: parseInt(r.querySelector('.q-fitid').value) || 0,
     }))
     .filter((q) => q.ship_type_id || q.name);
 }
@@ -2369,11 +2384,12 @@ function rowFromCells(cells) {
     ship_name: cells[2] || '',
     required: parseInt(cells[3]) || 0,
     title_filter: cells[4] || '',
+    fit_id: parseInt(cells[5]) || 0,
   };
 }
 
 function fillQuotaRowFromCells(tr, cells, startInput) {
-  const fields = ['.q-name', '.q-tid', '.q-sname', '.q-req', '.q-title'];
+  const fields = ['.q-name', '.q-tid', '.q-sname', '.q-req', '.q-title', '.q-fitid'];
   // Find the index of the input the user pasted into.
   const startIdx = Math.max(0, fields.findIndex((sel) => tr.querySelector(sel) === startInput));
   for (let i = 0; i < cells.length; i++) {
@@ -2419,10 +2435,10 @@ function csvEscape(v) {
 }
 
 function quotasToCsv(quotas) {
-  const header = ['name', 'ship_type_id', 'ship_name', 'required', 'title_filter'];
+  const header = ['name', 'ship_type_id', 'ship_name', 'required', 'title_filter', 'fit_id'];
   const lines = [header.join(',')];
   for (const q of quotas) {
-    lines.push([q.name, q.ship_type_id, q.ship_name, q.required, q.title_filter].map(csvEscape).join(','));
+    lines.push([q.name, q.ship_type_id, q.ship_name, q.required, q.title_filter, q.fit_id || ''].map(csvEscape).join(','));
   }
   return lines.join('\n') + '\n';
 }
@@ -2854,6 +2870,7 @@ async function runContractsScan() {
       step.textContent = 'done';
       fill.style.width = '100%';
       setTimeout(() => { progress.hidden = true; }, 600);
+      prefetchHullPrices(evt.payload.quotas || []);
     }
   });
 }
@@ -2890,6 +2907,7 @@ function renderContractsDashboard(payload) {
     for (const q of quotas) {
       root.appendChild(renderQuotaBar(q));
     }
+    sortQuotaDashboard();
   }
 
   const list = payload.contracts || [];
@@ -2943,6 +2961,50 @@ function renderUnpricedToggle(priceEl, unpriced) {
   });
 }
 
+async function prefetchHullPrices(quotas) {
+  const root = $('#contracts-quota-dashboard');
+  if (!root) return;
+  const bars = [...root.querySelectorAll('.quota-bar')];
+  // Map ship_type_id → bar element (take first match per type)
+  const typeToBar = new Map();
+  quotas.forEach((q, i) => {
+    if (q.ship_type_id && bars[i]) typeToBar.set(q.ship_type_id, { bar: bars[i], q });
+  });
+  await Promise.all([...typeToBar.entries()].map(async ([typeId, { bar, q }]) => {
+    if (bar.dataset.price !== '') return; // already priced from an expanded bar
+    try {
+      const res = await fetch(`${API}/api/market/amarr-sell?type_id=${typeId}`);
+      const data = await res.json();
+      if (data.min_sell != null && bar.dataset.price === '') {
+        bar.dataset.price = data.min_sell * 1.15;
+        if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
+      }
+    } catch (_) {}
+  }));
+}
+
+function sortQuotaDashboard() {
+  const root = $('#contracts-quota-dashboard');
+  if (!root) return;
+  const order = ($('#contracts-sort')?.value) || 'default';
+  const bars = [...root.querySelectorAll('.quota-bar')];
+  bars.sort((a, b) => {
+    if (order === 'under-quota') {
+      return Number(b.dataset.missing) - Number(a.dataset.missing);
+    }
+    if (order === 'value') {
+      const av = a.dataset.price !== '' ? Number(a.dataset.price) : -1;
+      const bv = b.dataset.price !== '' ? Number(b.dataset.price) : -1;
+      return bv - av;
+    }
+    // default: ship name
+    return (a.dataset.shipName || '').localeCompare(b.dataset.shipName || '');
+  });
+  bars.forEach((el) => root.appendChild(el));
+}
+
+$('#contracts-sort')?.addEventListener('change', sortQuotaDashboard);
+
 function renderQuotaBar(q) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
@@ -2951,6 +3013,9 @@ function renderQuotaBar(q) {
   const state = required === 0 ? 'unset' : available >= required ? 'ok' : available > 0 ? 'partial' : 'empty';
   const div = document.createElement('div');
   div.className = `quota-bar quota-${state}`;
+  div.dataset.shipName = (q.ship_name || q.name || '').toLowerCase();
+  div.dataset.missing = missing;
+  div.dataset.price = '';
   div.innerHTML = `
     <div class="quota-bar-head">
       <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
@@ -2963,6 +3028,7 @@ function renderQuotaBar(q) {
       <div class="quota-expand-row">
         <span class="quota-expand-label">Contract price (115% Amarr sell)</span>
         <span class="quota-amarr-price muted">—</span>
+        <button type="button" class="quota-price-refresh" title="Refresh price" hidden>↻</button>
       </div>
     </div>
   `;
@@ -2976,30 +3042,53 @@ function renderQuotaBar(q) {
   });
 
   const expandRow = div.querySelector('.quota-expand-row');
+  const refreshBtn = div.querySelector('.quota-price-refresh');
   let priceLoaded = false;
-  expandRow.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (priceLoaded) return;
-    priceLoaded = true;
+
+  async function loadQuotaPrice(bust = false) {
     const priceEl = div.querySelector('.quota-amarr-price');
     const labelEl = div.querySelector('.quota-expand-label');
+    const bustParam = bust ? '&bust=1' : '';
     expandRow.style.cursor = 'default';
+    refreshBtn.hidden = true;
     const fmt = fmtIsk;
     const fmtM = fmtMillions;
     try {
       let fitDetail = null;
-      if (window.api?.aaFetchHtml && q.name) {
+      let fitFoundOnAuth = false;
+      if (window.api?.aaFetchHtml && (q.fit_id || q.ship_name || q.name)) {
         priceEl.textContent = 'searching fits…';
-        if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
-        await _fitIndexBuilding;
-        // _fitIndex: fitName → Map(shipTypeName → fitId)
-        // Prefer exact ship-name match; fall back to first entry for that fit name
-        const shipMap = _fitIndex.get(q.name.toLowerCase());
-        const fitId = shipMap?.get((q.ship_name || '').toLowerCase())
-          ?? (shipMap ? [...shipMap.values()][0] : undefined);
-        if (fitId) {
+        let resolvedFitId = q.fit_id || 0;
+        if (!resolvedFitId) {
+          if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
+          await _fitIndexBuilding;
+          // 1. Try exact fit-name match (q.name = the Auth fit name).
+          const shipMap = _fitIndex.get((q.name || '').toLowerCase());
+          resolvedFitId = shipMap?.get((q.ship_name || '').toLowerCase())
+            ?? (shipMap ? [...shipMap.values()][0] : undefined);
+          // 2. Fall back: match by ship type, disambiguating with title_filter.
+          //    Handles the common case where q.name is a display label ("Navy Logi Mk2")
+          //    rather than the Auth fit name ("Exequror Mk2").
+          if (!resolvedFitId && q.ship_name) {
+            const bucket = _fitIndexByType.get(q.ship_name.toLowerCase()) || [];
+            if (bucket.length === 1) {
+              resolvedFitId = bucket[0].fitId;
+            } else if (bucket.length > 1 && q.title_filter) {
+              const filterLower = q.title_filter.toLowerCase();
+              const match = bucket.find((e) => e.fitName.includes(filterLower));
+              if (match) resolvedFitId = match.fitId;
+            }
+          }
+        }
+        if (resolvedFitId) {
           priceEl.textContent = 'pricing fit…';
-          fitDetail = await getFitDetail(fitId);
+          const candidate = await getFitDetail(resolvedFitId);
+          // Only use the fit if we can confirm the hull matches the quota's ship.
+          // When both type IDs are known and differ, the wrong fit was found (e.g. a
+          // Guardian fit returned for an Exequror quota slot).
+          const hullMismatch = q.ship_type_id && candidate?.hullTypeId
+            && candidate.hullTypeId !== q.ship_type_id;
+          if (candidate && !hullMismatch) { fitDetail = candidate; fitFoundOnAuth = true; }
         }
       }
 
@@ -3010,7 +3099,7 @@ function renderQuotaBar(q) {
         const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
         const priceResults = await Promise.all(
           uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/amarr-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+            fetch(`${API}/api/market/amarr-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
           )
         );
         const priceMap = new Map();
@@ -3026,6 +3115,7 @@ function renderQuotaBar(q) {
 
         if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · full fit)';
         if (total > 0) {
+          div.dataset.price = total * 1.15;
           priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
@@ -3033,9 +3123,9 @@ function renderQuotaBar(q) {
           priceEl.textContent = 'no Amarr prices found for fit items';
         }
       } else {
-        const notInAuth = _fitIndex.size > 0; // index built but this ship isn't in any doctrine
+        const notInAuth = _fitIndexByType.size > 0 && !fitFoundOnAuth;
         priceEl.textContent = 'loading…';
-        const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}`);
+        const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}${bustParam}`);
         const data = await res.json();
         if (notInAuth) {
           if (labelEl) {
@@ -3043,10 +3133,13 @@ function renderQuotaBar(q) {
             labelEl.classList.add('quota-not-in-auth');
           }
           expandRow.classList.add('quota-row-warning');
+        } else if (fitFoundOnAuth) {
+          if (labelEl) labelEl.textContent = 'Alliance fit found — hull price only (no buy list on Auth)';
         } else {
           if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
         }
         if (data.min_sell != null) {
+          div.dataset.price = data.min_sell * 1.15;
           priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
         } else {
@@ -3056,7 +3149,23 @@ function renderQuotaBar(q) {
     } catch {
       priceEl.textContent = 'error fetching price';
     }
+    refreshBtn.hidden = false;
+    if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
+  }
+
+  expandRow.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (e.target === refreshBtn) return; // handled by its own listener
+    if (priceLoaded) return;
+    priceLoaded = true;
+    await loadQuotaPrice(false);
   });
+
+  refreshBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await loadQuotaPrice(true);
+  });
+
   return div;
 }
 
