@@ -11,9 +11,30 @@ header h1 { margin: 0 0 0.6em; font-size: 1.4em; }
 .check-update-btn:disabled { opacity: 0.6; cursor: progress; }
 .check-update-btn.spinning { animation: spin 0.9s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-nav { display: flex; gap: 0.5em; flex-wrap: wrap; }
+nav { display: flex; gap: 0.75em; flex-wrap: wrap; align-items: center; }
 .tab-btn { background: #333; color: #eee; border: 0; padding: 0.5em 1em; cursor: pointer; border-radius: 4px; font-size: 0.95em; }
 .tab-btn.active { background: #4a8; color: #111; font-weight: 600; }
+
+/* Top bar: view-mode toggle (left) + Settings tabs (right), above the main nav */
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; margin: 0 0 0.5em; }
+
+/* Grouped nav (General / Operations) + Settings cluster */
+.nav-group { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; }
+/* Fixed-width labels so the first button of each row lines up vertically
+   (View / General share the left edge; equal label width keeps them aligned). */
+.nav-group-label,
+.view-mode-label { display: inline-block; min-width: 6em; margin-right: 0.5em; font-size: 0.66em; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700; }
+.nav-group-label { color: #6fae90; }
+.nav-group + .nav-group { border-left: 1px solid #3a3a3a; padding-left: 0.85em; }
+body.view-member .nav-group[data-group="operations"] { display: none; }
+
+/* View-mode toggle (Member / Admin) */
+.view-mode { display: inline-flex; align-items: center; gap: 0.25em; }
+.view-mode-label { color: #888; }
+.view-mode-btn { background: #2a2a2a; color: #bbb; border: 1px solid #444; padding: 0.3em 0.85em; cursor: pointer; font-size: 0.85em; }
+.view-mode-btn:first-of-type { border-radius: 4px 0 0 4px; }
+.view-mode-btn:last-of-type { border-radius: 0 4px 4px 0; border-left: 0; }
+.view-mode-btn.active { background: #4a8; color: #111; font-weight: 600; border-color: #4a8; }
 main { padding: 2em; max-width: 1400px; width: 100%; }
 .tab { display: none; }
 .tab.active { display: block; }
@@ -520,7 +541,7 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .btn-pin-unpin { padding: 0.35em 0.8em; font-size: 0.85em; background: #3a2a2a; color: #f88; border: 1px solid #5a3a3a; }
 .btn-pin-unpin:hover { background: #4a2a2a; }
 
-/* ===== Appraisal tab (Janice + Mutamarket) ===== */
+/* ===== Appraisal tab (Janice) ===== */
 .appraise-row { display: flex; gap: 1.2em; align-items: flex-end; flex-wrap: wrap; margin: 0.6em 0; }
 .appraise-row label { margin: 0; }
 .appraise-persist-label { display: inline-flex; gap: 0.4em; align-items: center; font-size: 0.9em; padding-bottom: 0.3em; }
@@ -530,24 +551,16 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .appraise-block { background: #262626; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.8em 1em; margin: 0.6em 0; }
 .appraise-block h3 { margin: 0 0 0.5em; font-size: 1.05em; color: #cde; }
 .appraise-block.appraise-janice { border-left: 4px solid #4a8; }
-.appraise-block.appraise-abyssal { border-left: 4px solid #b67ee8; }
-.appraise-block.appraise-abyssal-empty { border-left: 4px solid #555; }
-.appraise-block.appraise-grand { border-left: 4px solid #e8c84a; }
 .appraise-warn { background: #4a3a1a; border-left: 3px solid #d8a72a; padding: 0.35em 0.6em; margin-bottom: 0.4em; color: #ffe19a; border-radius: 3px; font-size: 0.85em; }
 .appraise-line { padding: 0.15em 0; font-variant-numeric: tabular-nums; }
 .appraise-line-total { font-size: 1.15em; margin-top: 0.3em; padding-top: 0.4em; border-top: 1px solid #333; }
 
-.appraise-table { width: 100%; border-collapse: collapse; font-size: 0.88em; margin-top: 0.3em; }
-.appraise-table th, .appraise-table td { padding: 0.45em 0.6em; border-bottom: 1px solid #333; text-align: left; vertical-align: top; }
-.appraise-table th { color: #aaa; font-weight: 500; background: #222; }
-.appraise-table td.num, .appraise-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.appraise-table .muted { display: block; font-size: 0.82em; margin-top: 0.15em; }
-
-.appraise-grand-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6em 1.2em; margin-top: 0.3em; }
-.appraise-grand-grid > div { padding: 0.5em 0.7em; background: #1f1f1f; border: 1px solid #333; border-radius: 4px; }
-.appraise-grand-grid > div strong { display: block; font-size: 1.1em; margin-top: 0.15em; font-variant-numeric: tabular-nums; }
-.appraise-grand-grid > div.appraise-grand-sum { background: #1a3a2a; border-color: #2d5a44; }
-.appraise-grand-grid > div.appraise-grand-sum strong { color: #4a8; font-size: 1.25em; }
+/* Copyable Janice link row */
+.appraise-linkrow { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; margin: 0.2em 0 0.7em; }
+.appraise-url { flex: 1 1 280px; min-width: 0; background: #18241d; border: 1px solid #2d5a44; color: #bfe8d2; padding: 0.4em 0.6em; border-radius: 4px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.85em; cursor: pointer; user-select: all; overflow-wrap: anywhere; }
+.appraise-url:hover { border-color: #4a8; }
+.appraise-url-copy { padding: 0.4em 0.9em; cursor: pointer; flex: 0 0 auto; }
+.appraise-url-open { color: #6fae90; font-size: 0.88em; white-space: nowrap; flex: 0 0 auto; }
 
 #appraise-result .copyable { cursor: pointer; padding: 0 0.15em; border-radius: 3px; transition: background 0.12s ease; }
 #appraise-result .copyable:hover { background: #2a5a44; }
@@ -591,3 +604,133 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .payout-total-amount .payout-copy.payout-copied { background: #4a8; color: #0d1f17; }
 .payout-total-isk { color: #cde; font-size: 0.7em; margin-left: 0.2em; font-weight: 500; }
 .payout-total-meta { margin-left: auto; }
+
+/* ===================== SRP tab ===================== */
+#srp-total { background: #1a3a2a; border: 1px solid #2d5a44; border-radius: 4px; padding: 0.6em 1em; margin: 0.6em 0; font-size: 1.05em; }
+#srp-total strong { color: #cfe; }
+.srp-fleet-head { display: flex; align-items: center; gap: 0.8em; margin: 0.4em 0; }
+.srp-fleet-head h3 { margin: 0; font-size: 1.05em; color: #cde; }
+.srp-table { width: 100%; }
+.srp-table .text-end, .srp-table th.text-end { text-align: right; }
+.srp-table td, .srp-table th { vertical-align: middle; }
+.srp-table tr.srp-dec-accept { background: rgba(74, 170, 136, 0.12); }
+.srp-table tr.srp-dec-reject { background: rgba(212, 68, 68, 0.12); }
+.srp-info { font-size: 0.8em; margin-top: 0.15em; }
+.srp-cat { background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.25em 0.4em; font-size: 0.85em; cursor: pointer; }
+.srp-cat:disabled { opacity: 0.5; cursor: default; }
+.srp-payout { color: #6fdca0; }
+.srp-open-fleet { color: #88c; }
+.srp-danger { background: #d44; color: #1f0d0d; border: 0; padding: 0.45em 0.9em; cursor: pointer; border-radius: 4px; font-size: 0.9em; font-weight: 600; margin-left: 0.4em; }
+.srp-danger:hover { background: #e55; }
+/* accept / reject toggle */
+.srp-toggle { display: inline-flex; }
+.srp-tog { background: #2a2a2a; color: #bbb; border: 1px solid #444; padding: 0.25em 0.7em; cursor: pointer; font-size: 0.82em; font-weight: 500; }
+.srp-tog:first-child { border-radius: 4px 0 0 4px; }
+.srp-tog:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+.srp-tog:disabled { opacity: 0.4; cursor: default; }
+.srp-tog-accept.active { background: #4a8; color: #0d1f17; border-color: #4a8; }
+.srp-tog-reject.active { background: #d44; color: #1f0d0d; border-color: #d44; }
+.srp-reason { display: block; margin-top: 0.3em; width: 100%; max-width: 240px; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.25em 0.4em; font-size: 0.82em; }
+/* click-to-copy affordance for SRP figures */
+
+/* ===== Market analytics tab ===== */
+.market-tiles { display: flex; flex-wrap: wrap; gap: 0.75em; margin: 1em 0; }
+.market-tile { background: #2a2a2a; border: 1px solid #3a3a3a; border-left: 4px solid #4a8; border-radius: 6px; padding: 0.7em 1.1em; min-width: 150px; }
+.market-tile-val { font-size: 1.25em; font-weight: 700; color: #cfd; }
+.market-tile-label { font-size: 0.78em; color: #999; margin-top: 0.2em; text-transform: uppercase; letter-spacing: 0.4px; }
+
+.market-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; margin: 0.8em 0; }
+.market-filters input[type="search"] { width: 240px; padding: 0.45em 0.6em; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 0.9em; }
+.market-filters select { padding: 0.45em 0.6em; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 0.9em; }
+.market-filter-num { font-size: 0.85em; color: #bbb; display: flex; align-items: center; gap: 0.4em; }
+.market-filter-num input { width: 130px; padding: 0.4em 0.5em; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 0.9em; }
+.market-chk { font-size: 0.85em; color: #bbb; display: flex; align-items: center; gap: 0.35em; cursor: pointer; }
+.market-chk input { cursor: pointer; }
+
+.market-table-wrap { overflow-x: auto; border: 1px solid #333; border-radius: 6px; max-height: 70vh; overflow-y: auto; }
+.market-table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+.market-table thead th { position: sticky; top: 0; background: #222; color: #cfd; text-align: left; padding: 0.55em 0.8em; border-bottom: 1px solid #3a3a3a; cursor: pointer; user-select: none; white-space: nowrap; z-index: 1; }
+.market-table thead th:hover { background: #2a2a2a; }
+.market-table thead th.num { text-align: right; }
+.market-table thead th.sort-asc::after { content: " ▲"; color: #4a8; font-size: 0.8em; }
+.market-table thead th.sort-desc::after { content: " ▼"; color: #4a8; font-size: 0.8em; }
+.market-table tbody td { padding: 0.45em 0.8em; border-bottom: 1px solid #2a2a2a; white-space: nowrap; }
+.market-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.market-table tbody tr:hover { background: #262626; }
+.market-table .market-name { color: #eee; }
+.market-table .market-empty { text-align: center; padding: 18px; }
+/* scoped: [hidden] must beat the flex display on filter items */
+#tab-market [hidden] { display: none !important; }
+.market-lens-toggle { font-weight: 600; color: #cfd; }
+.market-short { color: #f0a84a; font-weight: 600; }
+.market-status-pill { display: inline-block; padding: 0.1em 0.55em; border-radius: 999px; font-size: 0.82em; font-weight: 600; text-transform: capitalize; }
+.market-status-pill.missing { background: #4a1d1d; color: #f88; }
+.market-status-pill.short { background: #4a3a1a; color: #ffd27a; }
+.market-status-pill.stocked { background: #1a3a2a; color: #7fdca8; }
+#srp-content .copyable { cursor: pointer; padding: 0 0.15em; border-radius: 3px; transition: background 0.12s ease; }
+#srp-content .copyable:hover { background: #2a5a44; }
+#srp-content .copyable.payout-copied { background: #4a8; color: #0d1f17; }
+
+/* ===================== In-app link viewer (side panel) ===================== */
+.link-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 46vw; min-width: 380px; z-index: 500; display: flex; flex-direction: column; background: #1a1a1a; border-left: 1px solid #3a3a3a; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45); }
+.link-panel[hidden] { display: none; }
+.link-panel-head { display: flex; align-items: center; gap: 0.5em; padding: 0.4em 0.6em; background: #111; border-bottom: 1px solid #333; }
+.link-panel-url { flex: 1 1 auto; min-width: 0; color: #9cd6b4; font-size: 0.8em; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-panel-btn { background: #333; color: #eee; border: 0; padding: 0.35em 0.7em; cursor: pointer; border-radius: 4px; font-size: 0.82em; font-weight: 600; }
+.link-panel-btn:hover { background: #444; }
+.link-panel-view { flex: 1 1 auto; width: 100%; border: 0; background: #fff; }
+body.link-panel-open main { margin-right: 46vw; }
+
+/* ===================== Buybacks tab (General / Ore sub-toggle) ===================== */
+.bb-subtoggle { display: inline-flex; margin: 0 0 1em; }
+.bb-sub-btn { background: #2a2a2a; color: #bbb; border: 1px solid #444; padding: 0.5em 1.1em; cursor: pointer; font-size: 0.95em; font-weight: 600; }
+.bb-sub-btn:first-child { border-radius: 4px 0 0 4px; }
+.bb-sub-btn:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+.bb-sub-btn.active { background: #4a8; color: #111; border-color: #4a8; }
+.bb-pane[hidden] { display: none; }
+/* compact (17.1B / 12M) value beside the outstanding-total headline */
+.payout-total-short { color: #9cd6b4; font-size: 0.8em; margin-left: 0.4em; font-weight: 600; vertical-align: middle; }
+
+/* ===== Hooks & Hubs tab ===== */
+.good-text { color: #6c6; font-weight: 600; }
+.hh-sub { margin: 1.1em 0 0.4em; font-size: 1.02em; color: #cde; }
+
+/* Fuel tables — left-border urgency band on each row. */
+.hh-fuel-table tr.hh-fuel-crit td:first-child { border-left: 4px solid #d44; }
+.hh-fuel-table tr.hh-fuel-warn td:first-child { border-left: 4px solid #d8a72a; }
+.hh-fuel-table tr.hh-fuel-ok td:first-child { border-left: 4px solid #4a8; }
+.hh-fuel-table tr.hh-fuel-none td:first-child { border-left: 4px solid #555; }
+.hh-fuel-table tr.hh-fuel-crit .hh-remaining { color: #f88; font-weight: 700; }
+.hh-fuel-table tr.hh-fuel-warn .hh-remaining { color: #ffd27a; font-weight: 600; }
+.hh-fuel-table tr.hh-fuel-ok .hh-remaining { color: #8d8; }
+
+.hh-auth-errors, .hh-other, .hh-catalog { margin: 0.6em 0; }
+.hh-auth-errors ul { margin: 0.3em 0 0; padding-left: 1.2em; }
+
+/* Planner tables */
+.hh-plan-table input.hh-num, .hh-trans-table input.hh-num, .hh-cat-table input.hh-num { max-width: 120px; }
+.hh-plan-table td, .hh-trans-table td, .hh-cat-table td { vertical-align: top; }
+.hh-plan-table input, .hh-trans-table input, .hh-trans-table select, .hh-cat-table input { margin: 0; }
+.hh-readout { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hh-row-bad td { background: #2c1c1c; }
+.hh-tile-bad { background: #3a1f1f; border-color: #d44; }
+
+/* Upgrade chips inside a system row */
+.hh-upg-cell { min-width: 220px; }
+.hh-chip { display: inline-flex; align-items: center; gap: 0.2em; background: #2a3a4a; color: #cde; border: 1px solid #3a5a7a; border-radius: 999px; padding: 0.1em 0.5em; font-size: 0.8em; margin: 0 0.2em 0.2em 0; }
+.hh-chip-x { background: none; border: 0; color: #9ab; cursor: pointer; font-size: 1em; padding: 0 0.1em; font-weight: 700; }
+.hh-chip-x:hover { color: #f88; }
+.hh-add-upg { font-size: 0.8em; padding: 0.2em 0.4em; margin-top: 0.2em; }
+.hh-sm { padding: 0.25em 0.6em; font-size: 0.85em; }
+
+/* ===== Market turnover (net on-book change) ===== */
+.market-turnover { margin: 0.4em 0 1em; }
+.market-turnover-head { margin-bottom: 0.5em; }
+.turnover-cards { display: flex; flex-wrap: wrap; gap: 0.6em; }
+.turnover-card { background: #2a2a2a; border: 1px solid #3a3a3a; border-left: 4px solid #4a6a8a; border-radius: 6px; padding: 0.6em 0.9em; min-width: 150px; }
+.turnover-card.insufficient { border-left-color: #555; opacity: 0.8; }
+.turnover-win { font-weight: 700; color: #cde; margin-bottom: 0.3em; }
+.turnover-row { display: flex; align-items: baseline; gap: 0.4em; font-variant-numeric: tabular-nums; }
+.turnover-delta { font-weight: 600; }
+.turnover-delta.pos { color: #6c6; }
+.turnover-delta.neg { color: #f88; }

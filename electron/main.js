@@ -11,6 +11,21 @@ const APP_META = { version: pkg.version || '', author: pkg.author || '' };
 
 ipcMain.handle('app:meta', () => APP_META);
 ipcMain.handle('open-external', (_event, url) => shell.openExternal(url));
+// Open an external URL in its own in-app window (the "new window" link mode and
+// the side panel's pop-out target). Own session partition so logins persist.
+ipcMain.handle('open-link-window', (_event, url) => {
+  if (!/^https?:\/\//i.test(url || '')) return;
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 850,
+    title: 'Link viewer',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+    autoHideMenuBar: true,
+    backgroundColor: '#1e1e1e',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, partition: 'persist:linkview' },
+  });
+  win.loadURL(url);
+});
 ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
 let pythonProcess = null;
 let mainWindow = null;
@@ -224,6 +239,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true, // in-app side-panel link viewer (<webview> in renderer)
     },
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -307,6 +323,32 @@ ipcMain.handle('aa:fetch-html', async (_event, urlPath) => {
   const url = new URL(urlPath || '/', AA_BASE_URL).toString();
   try {
     const res = await aaSession.fetch(url, { redirect: 'follow' });
+    const html = await res.text();
+    return { ok: res.ok, status: res.status, finalUrl: res.url || url, html };
+  } catch (err) {
+    return { ok: false, status: 0, finalUrl: url, html: '', error: String(err && err.message || err) };
+  }
+});
+
+// Form-encoded POST through the same authed AA session (Django needs the
+// csrfmiddlewaretoken field + csrftoken cookie [sent automatically with the
+// session] + a Referer header for HTTPS POSTs). Used by the SRP tab to
+// approve / reject / set-value / remove requests.
+ipcMain.handle('aa:post-form', async (_event, { path, fields, referer } = {}) => {
+  const aaSession = session.fromPartition(AA_SESSION_PARTITION);
+  const url = new URL(path || '/', AA_BASE_URL).toString();
+  const refUrl = new URL(referer || path || '/', AA_BASE_URL).toString();
+  const body = new URLSearchParams(fields || {}).toString();
+  try {
+    const res = await aaSession.fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: refUrl,
+      },
+      body,
+      redirect: 'follow',
+    });
     const html = await res.text();
     return { ok: res.ok, status: res.status, finalUrl: res.url || url, html };
   } catch (err) {

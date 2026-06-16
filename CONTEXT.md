@@ -43,21 +43,29 @@ contract's snapshot-derived blended payout fraction, and surfaces a copy-to-
 clipboard final payout. Pins survive Moon-tab re-fetches, renderer refreshes,
 and app close+reopen.
 
-An **Appraisal** tab is a one-shot Janice appraisal pad with first-class
-support for **abyssal modules** via Mutamarket. Paste any EVE-format
-inventory dump; the app routes pricable items to Janice, detects abyssal
-rolls (name prefix + the Janice-reports-zero-market-volume signal), fans out
-to Mutamarket for marketplace + AI-estimator medians on each abyssal type,
-and reports the two prices separately so the spread typical of thin abyssal
-markets stays visible. Click-to-copy percentage chips (80 / 90 / 100 / 110 /
-120 %) sit next to every headline so the operator can grab "90 % of Jita
-buy" for a buyback contract in one click.
+An **Appraisal** tab is a one-shot Janice appraisal pad. Paste any
+EVE-format inventory dump; the app prices it through Janice and reports
+Buy / Split / Sell totals. Click-to-copy percentage chips (80 / 90 / 100 /
+110 / 120 %) sit next to every headline so the operator can grab "90 % of
+Jita buy" for a buyback contract in one click.
 
 A secondary feature scans corp doctrines from Alliance Auth (`auth.navaldefence.org`)
 and cross-references each fit against the corp market for stocking gaps. A
 **Sov** tab gives an at-a-glance read on alliance sovereignty (IHUBs, system
 jumps/kills, incursions) — built on top of public ESI endpoints, no auth
 required.
+
+A **Hooks & Hubs** (admin) tab tracks Orbital Skyhook + Sovereignty Hub
+**fuel** live from `/corporations/{id}/structures/` (`fuel_expires` → days/hours
+remaining, per-type overviews). This is the one feature needing the
+`esi-corporations.read_structures.v1` scope on a **Director** character, so it
+gets a dedicated **slot 4** on the Auth tab (kept separate from the slot-1
+wallet/contracts toon). The Equinox **power/workforce/upgrade** layer and the
+skyhook collection reservoir are **not exposed by ESI at all**, so the tab's
+upgrade/workforce planner is fed by a manual, locally-persisted table
+([workforce_plan.py](python/workforce_plan.py)); scenario math (power is local
+& non-transferable, workforce transfers between systems) is a pure client-side
+function ([hooks-hubs-utils.js](renderer/hooks-hubs-utils.js) `computePlan`).
 
 ## Stakeholders & users
 
@@ -77,9 +85,10 @@ PyInstaller-built `sidecar` binary bundled under `Resources/python-sidecar/`.
 The sidecar is a FastAPI app on `localhost:8765`. The renderer talks to it
 directly with `fetch()`; Electron only mediates a few side-channels (calculator
 popout, Alliance Auth session). All EVE network IO happens server-side in
-Python: ESI (auth, contracts, wallets, mail, structure markets), Janice
-(appraisals), and Fuzzwork (refining material yields + market aggregates for
-mineral pricing).
+Python: ESI (auth, contracts, wallets, mail, structure markets) and Janice
+(appraisals **and refined-mineral pricing**). Reprocessing yields ship as a
+bundled, cerlestes-verified static CSV ([python/data/mineable_type_materials.csv](python/data/mineable_type_materials.csv));
+Fuzzwork is no longer used (its CSV dumps were removed upstream).
 
 ```
 ┌──────────────────┐    fetch()     ┌─────────────────────┐
@@ -90,8 +99,8 @@ mineral pricing).
          ▼                                     ▼
 ┌──────────────────┐               ┌──────────────────────┐
 │ electron/main.js │               │ ESI · Janice ·       │
-│ (windowing,      │               │ Fuzzwork · Mutamarket│
-│ AA session,      │               │ · GitHub Contents API│
+│ (windowing,      │               │ GitHub Contents API  │
+│ AA session,      │               │                      │
 │ auto-update)     │               └──────────────────────┘
 └──────────────────┘
 ```
@@ -273,30 +282,17 @@ into the in-game wallet.
 
 ### Appraisal tab (`POST /api/appraise`)
 
-One-shot Janice appraisal with first-class abyssal support. The renderer
-sends `{paste_text, market_name, persist}` to `/api/appraise`. The sidecar:
+One-shot Janice appraisal. The renderer sends `{paste_text, market_name,
+persist}` to `/api/appraise`. The sidecar:
 
 1. `create_appraisal_from_text` against Janice. Returns per-item rows.
-2. Walks the rows and flags abyssals via two signals AND-ed together: name
-   starts with "Abyssal " AND Janice reports zero buy AND zero sell volume.
-   Abyssals never trade on the regional market, so the pair is conclusive.
-   Detection lives in [python/mutamarket.py](python/mutamarket.py)'s
-   `is_abyssal_item_name`.
-3. Per unique abyssal type_id, fans out to `mutamarket.fetch_listings(...)`
-   (cached 5 min in-process keyed by type_id — a single popular type can
-   return 14 MB).
-4. `summarize_listings` boils each type's listings into two parallel price
-   tracks: **marketplace** (median of `contract.price` for actively-asking
-   sellers) and **estimator** (median of Mutamarket's AI fair-value field).
-   Min / max / mean / count returned for both.
+2. Surfaces the immediate and effective Buy / Split / Sell totals from the
+   Janice response, plus a shareable `code` when `persist` is set.
 
-Renderer combines into a single dashboard: three side-by-side price columns
-for the Janice block (Buy / Split / Sell), a percentage chip row
-(80/90/100/110/120%) under each headline with click-to-copy values, and a
-per-abyssal-type table with marketplace median vs estimator median plus
-roll-ups. Five summary tiles at the bottom: Janice / Marketplace /
-Estimator / Grand-Janice-plus-marketplace / Grand-Janice-plus-estimator.
-Every figure copyable.
+Renderer shows three side-by-side price columns for the Janice block
+(Buy / Split / Sell), a percentage chip row (80/90/100/110/120%) under each
+headline with click-to-copy values, an effective-prices drawer when those
+differ from the immediate book, and a copyable shareable Janice link.
 
 ### Outstanding-payout totals (Buyback + Moon tabs)
 
@@ -321,6 +317,56 @@ appraisal block is present. Moon per-row value =
 `.payout-copy` so a single click copies just the integer for in-game
 paste.
 
+### Market analytics tab (`GET /api/market/analytics/stream`, `POST /api/market/history/archive`)
+
+A general-tab dashboard over the **first configured structure's** live order
+book. NDJSON-streamed from `_analytics_stream` (reuses the same paginated
+`fetch_structure_orders_paged` + 5-minute `_market_cache` as the AA market
+view); `_analyze_orders` folds the full buy+sell book into per-type rows
+(best sell/buy, order counts, units, ISK depth, spread) plus market-wide
+totals (incl. **total sell value** and **total buy value on book**). The
+market is seeded mostly with sell orders, so the UI leads with sell-side
+liquidity. Item names + market categories come from
+[python/market.py](python/market.py), which resolves each `type_id` via ESI
+(`fetch_type_info`→group→category) and caches the result to `type_meta.json`
+— the Fuzzwork CSV dumps that previously served this were removed upstream, so
+the loader is ESI-only. **Snapshot only**: ESI exposes no per-structure
+history.
+
+The renderer lives in its own [renderer/market.js](renderer/market.js) (loaded
+after `app.js`, reuses its globals) — kept out of `app.js` deliberately. It
+does all sort / search / category + numeric filtering client-side over the one
+cached payload, with a **doctrine lens** toggle that swaps the table to
+doctrine-required items only (read straight from the Readiness scan in
+localStorage — `aa.scan.v1` / `aa.toggles.v1`, reusing the `fitIsEnabled`
+rule) and computes **quantity-aware shortfall** (required Σ across enabled
+fits vs units on market → missing / short / stocked).
+
+**Daily history archive.** Because ESI has no structure history, the app
+builds its own: `POST /api/market/history/archive` gzips the full-depth
+snapshot (`{date, structure_id, fetched_at, order_count, summary, orders}`)
+and PUTs it to `market-history/<structure_id>/<YYYY-MM-DD>.json.gz` in a
+**dedicated** private GitHub repo via the Contents API (binary helpers
+`_github_put_bytes` / `_github_path_sha`). `market.js` fires it
+opportunistically after each load; the server gates it (configured? <24h
+since last push from this machine? today's file already present?) and is
+idempotent — a 409 race with another client counts as success. Every client
+archives (no admin gate). ~18 KB/day gzipped (~6 MB/yr). The per-type `summary`
+block keeps the read-back path cheap.
+
+**Turnover read-back.** `GET /api/market/history/turnover` reads the archive
+back (Read PAT) and reports **net on-book change** over 24h / 72h / weekly /
+monthly. It lists `market-history/<sid>/` (`_github_list_dir`), fetches only the
+latest snapshot plus each window's baseline (`_github_get_bytes` raw media type
++ gunzip, cached per date since files are immutable), and folds them with the
+pure `_select_baselines` + `_compute_turnover`. **These are order-book
+snapshots, not trades** — "turnover" here is the delta in *listed* sell/buy
+value between a window's endpoints, not measured trade volume (the deliberate
+product choice: honest and unambiguous over a noisy sold-vs-cancelled estimate).
+A window degrades to `coverage: partial` (not enough days yet, baseline = oldest
+snapshot) or `insufficient` (<2 snapshots), so the Market-tab cards fill in as
+daily archives accumulate.
+
 ## Data & persistence
 
 Everything user-specific lives under `EVE_BUYBACK_DATA_DIR`:
@@ -335,7 +381,11 @@ Files in that directory:
   silently dropped). Includes the alliance-quota-sync triplet
   (`alliance_quota_url`, `alliance_quota_pat_read`, `alliance_quota_pat_write`,
   `alliance_quota_allow_push`) and the per-machine sync metadata
-  (`alliance_quota_last_synced`, `alliance_quota_last_status`).
+  (`alliance_quota_last_synced`, `alliance_quota_last_status`). Also the
+  market-history archive keys (`market_history_repo_url`,
+  `market_history_pat_read`, `market_history_pat_write`, and the per-machine
+  `market_history_last_archived`). Unlike the alliance-quota Write PAT (never
+  exported), the market-history PATs are opt-in at export time.
 - `tokens.json` — chmod 600. ESI tokens, dict keyed by slot
   (`slot1`/`slot2`/`slot3`); see Authentication flow above.
 - `ship_types.json` — flat list of every published EVE ship hull
@@ -344,7 +394,12 @@ Files in that directory:
   `/api/universe/ships?refresh=true` (e.g. after an EVE expansion).
 - `pinned_contracts.json` — chmod 600. Array of pinned moon-result
   snapshots driving the Working tab. Schema in [python/pinned.py](python/pinned.py).
-- `invTypeMaterials.csv` — Fuzzwork material dump, refreshed lazily.
+- `type_meta.json` — chmod 600. `type_id → {name, group_id, group_name,
+  category_id, category_name}` cache backing the Market tab, filled lazily from
+  ESI on first sight of a type (see [python/market.py](python/market.py)).
+- `invTypeMaterials.csv` — Fuzzwork material dump, refreshed lazily. **Note:**
+  Fuzzwork removed these CSV dumps upstream, so this download now 404s for any
+  user without the file already cached — a latent bug in `refining.py`.
 - `sidecar.log` — last sidecar run's stdout/stderr (truncated each startup).
 
 Readiness scan + selection toggles also persist, but in **renderer

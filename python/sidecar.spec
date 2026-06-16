@@ -38,9 +38,11 @@ hidden_imports = [
     'config',
     'esi',
     'janice',
+    'market',
     'pinned',
     'refining',
     'validate',
+    'workforce_plan',
 ]
 
 # uvloop is a Unix-only event loop; pulling it in on Windows causes import
@@ -53,7 +55,9 @@ a = Analysis(
     ['server.py'],
     pathex=[os.path.dirname(os.path.abspath(SPEC))],
     binaries=[],
-    datas=[],
+    # Bundled reprocessing-yields CSV for moon-contract refining (loaded by
+    # refining.py via sys._MEIPASS/data/ in the frozen build).
+    datas=[(os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'data', 'mineable_type_materials.csv'), 'data')],
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

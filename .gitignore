@@ -11,3 +11,6 @@ build/
 dist/
 .vscode/
 TODO.md
+# Throwaway SRP page-capture scratch files (local exploration only)
+.srp-*
+srp-chrome-profile/

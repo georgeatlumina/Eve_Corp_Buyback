@@ -16,7 +16,10 @@ CLIENT_ID = '66c3890613d54d4aad99f88633e59951'
 SECRET_KEY = 'dBGY7C2EZCcrVxCyW1VMXGEZ9XQOe7PdcxEvTvx5'
 
 DEFAULT_SLOT = 'slot1'
-VALID_SLOTS = ('slot1', 'slot2', 'slot3')
+# slot4 is dedicated to Hooks & Hubs structure-fuel reads (Director role +
+# esi-corporations.read_structures.v1). Kept separate from slots 1-3 so the
+# main wallet/contracts character needn't also be a Director.
+VALID_SLOTS = ('slot1', 'slot2', 'slot3', 'slot4')
 
 
 def get_app_credentials():

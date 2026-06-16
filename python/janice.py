@@ -1,5 +1,6 @@
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -139,7 +140,8 @@ def fetch_type_sell_price(type_id: int, market_name: str = 'Amarr', api_key: str
     return _fetch_pricer_via_api(type_id, market_id, api_key)
 
 
-def _fetch_pricer_via_api(type_id: int, market_id: int, api_key: str):
+def _pricer_immediate(type_id: int, market_id: int, api_key: str):
+    """Return Janice's `immediatePrices` block for one type, or None on 404."""
     resp = requests.get(
         f'{JANICE_API_BASE}/pricer/{type_id}',
         params={'market': market_id},
@@ -149,8 +151,43 @@ def _fetch_pricer_via_api(type_id: int, market_id: int, api_key: str):
     if resp.status_code == 404:
         return None
     resp.raise_for_status()
-    immediate = (resp.json().get('immediatePrices') or {})
-    return immediate.get('sellPrice')
+    return resp.json().get('immediatePrices') or {}
+
+
+def _fetch_pricer_via_api(type_id: int, market_id: int, api_key: str):
+    immediate = _pricer_immediate(type_id, market_id, api_key)
+    return immediate.get('sellPrice') if immediate else None
+
+
+def fetch_buy_prices(type_ids, market_name='Jita 4-4', api_key=None, user_agent=None):
+    """Return ``{type_id: immediate per-unit buy price}`` at ``market_name`` via
+    the Janice pricer. The pricer endpoint is authenticated, so an API key is
+    required (raises ValueError if missing). Types with no orders (404) are
+    omitted. Lookups run concurrently. ``user_agent`` is unused (the X-ApiKey
+    header authenticates) but kept for call-site symmetry with the old source.
+    """
+    if not api_key:
+        raise ValueError('Janice API key required for market pricing — set one in Config.')
+    market_id = JANICE_MARKET_IDS.get(market_name)
+    if market_id is None:
+        raise ValueError(f'Unknown Janice market: {market_name!r}')
+    ids = sorted({int(t) for t in type_ids if t})
+    if not ids:
+        return {}
+
+    def one(tid):
+        try:
+            immediate = _pricer_immediate(tid, market_id, api_key)
+            return tid, (immediate or {}).get('buyPrice')
+        except Exception:
+            return tid, None
+
+    out = {}
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for tid, price in ex.map(one, ids):
+            if price is not None:
+                out[tid] = float(price)
+    return out
 
 
 def create_appraisal(items, market_name, api_key=None):

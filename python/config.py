@@ -39,6 +39,7 @@ DEFAULTS = {
         'esi-contracts.read_corporation_contracts.v1',
         'esi-contracts.read_character_contracts.v1',
         'esi-mail.send_mail.v1',
+        'esi-corporations.read_structures.v1',
     ],
     'structures': DEFAULT_STRUCTURES,
     'janice_market': 'Jita 4-4',
@@ -50,6 +51,19 @@ DEFAULTS = {
     'moon_payout_fraction': 0.80,
     'non_moon_payout_fraction': 0.90,
     'mail_presets': DEFAULT_MAIL_PRESETS,
+    # SRP rejection mail template (sent from the SRP tab on reject). Variables:
+    # {pilot} {ship} {fleet} {fc} {kill_link} {loss_value} {reason} {date}
+    'srp_reject_subject': 'SRP request rejected — {ship}',
+    'srp_reject_body': (
+        'Hi {pilot},\n\n'
+        'Your SRP request for your {ship} ({kill_link}) from fleet "{fleet}" '
+        'was not approved.\n\n'
+        'If you believe this was in error, reach out on Discord.\n\no7'
+    ),
+    # How in-app external links (zKillboard, Janice, etc.) open:
+    #   'panel'  -> dockable side panel with a pop-out button (same window)
+    #   'window' -> straight into its own window
+    'link_open_mode': 'panel',
     # Contracts page settings.
     'home_structure_id': 0,
     'home_region_id': 0,
@@ -72,6 +86,16 @@ DEFAULTS = {
     'alliance_quota_pat_read': '',
     'alliance_quota_pat_write': '',
     'alliance_quota_allow_push': False,
+    # Market-history archive: a dedicated private GitHub repo accumulates one
+    # gzipped full-depth market snapshot per day (ESI exposes no history for
+    # player structures, so we build our own). Read PAT for future analytics
+    # reads, Write PAT for the daily push. Every client archives — the push is
+    # idempotent (one file per day, skipped if it already exists). The repo URL
+    # is the bare clone/blob URL; the per-day path is generated server-side.
+    'market_history_repo_url': '',
+    'market_history_pat_read': '',
+    'market_history_pat_write': '',
+    'market_history_last_archived': '',  # ISO timestamp of last push (per-machine)
 }
 
 _USER_KEYS = set(DEFAULTS)

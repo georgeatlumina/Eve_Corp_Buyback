@@ -134,6 +134,78 @@ function parseFitDetail(html) {
   return { name, hullName, hullTypeId, doctrines, slotModules, items, eft };
 }
 
+// --- SRP (Ship Replacement) scrapers ---
+// Both target Alliance Auth's server-rendered SRP templates (no JS run): the
+// management list (/srp/) and a fleet's request list (/srp/<id>/view/).
+
+function parseSrpFleets(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const table = doc.querySelector('table.table') || doc.querySelector('table');
+  const out = [];
+  if (!table) return out;
+  table.querySelectorAll('tr').forEach((tr) => {
+    const tds = tr.querySelectorAll(':scope > td');
+    if (tds.length < 10) return; // skip the header row (uses <th>)
+    const codeA = tds[5].querySelector('a');
+    const viewA = tds[9].querySelector('a[href*="/view/"]');
+    const viewHref = viewA ? (viewA.getAttribute('href') || '') : '';
+    const m = /\/srp\/(\d+)\/view\//.exec(viewHref);
+    out.push({
+      id: m ? parseInt(m[1], 10) : null,
+      name: (tds[0].textContent || '').trim().replace(/\s+/g, ' '),
+      time: (tds[1].textContent || '').trim(),
+      doctrine: (tds[2].textContent || '').trim().replace(/\s+/g, ' '),
+      fc: (tds[3].textContent || '').trim().replace(/\s+/g, ' '),
+      code: codeA ? codeA.textContent.trim() : '',
+      iskCost: (tds[6].textContent || '').trim(),
+      status: (tds[7].textContent || '').trim().replace(/\s+/g, ' '),
+      pending: parseInt((tds[8].textContent || '').replace(/[^\d]/g, ''), 10) || 0,
+      viewHref,
+    });
+  });
+  return out;
+}
+
+function parseSrpRequests(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const table = doc.querySelector('table.srplist') || doc.querySelector('table');
+  const out = [];
+  if (!table) return out;
+  table.querySelectorAll('tr').forEach((tr) => {
+    const tds = tr.querySelectorAll(':scope > td');
+    if (tds.length < 8) return; // skip header rows
+    const copyEl = tds[0].querySelector('[data-clipboard-text]');
+    const pilot = copyEl
+      ? (copyEl.getAttribute('data-clipboard-text') || '').trim()
+      : (tds[0].textContent || '').trim().replace(/\s+/g, ' ');
+    const zkillA = tds[1].querySelector('a[href*="zkillboard.com/kill/"]');
+    const zkillUrl = zkillA ? (zkillA.getAttribute('href') || '') : '';
+    const km = /\/kill\/(\d+)\//.exec(zkillUrl);
+    const srpTd = tds[5];
+    const pk = srpTd.getAttribute('data-pk') || null;
+    const lossSort = tds[4].getAttribute('data-sort');
+    const lossAmt = (lossSort != null && lossSort !== '')
+      ? Number(lossSort)
+      : Number((tds[4].textContent || '').replace(/[^\d]/g, '')) || 0;
+    out.push({
+      pk,
+      pilot,
+      pilotFull: (tds[0].textContent || '').trim().replace(/\s+/g, ' '),
+      zkillUrl,
+      killId: km ? km[1] : '',
+      info: (tds[2].textContent || '').trim().replace(/\s+/g, ' '),
+      ship: (tds[3].textContent || '').trim(),
+      lossAmt,
+      srpCost: (srpTd.textContent || '').trim(),
+      srpCostNum: Number((srpTd.textContent || '').replace(/[^\d]/g, '')) || 0,
+      updateUrl: srpTd.getAttribute('data-url') || (pk ? `/srp/request/${pk}/update/` : ''),
+      postTime: (tds[6].textContent || '').trim(),
+      status: (tds[7].textContent || '').trim().replace(/\s+/g, ' '),
+    });
+  });
+  return out;
+}
+
 // ISK price formatters — 'en-US' locale for deterministic output across systems.
 function fmtIsk(n) {
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -144,5 +216,5 @@ function fmtMillions(n) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { extractTypeId, parseDoctrinesHtml, parseDoctrineDetail, parseFitDetail, fmtIsk, fmtMillions };
+  module.exports = { extractTypeId, parseDoctrinesHtml, parseDoctrineDetail, parseFitDetail, parseSrpFleets, parseSrpRequests, fmtIsk, fmtMillions };
 }

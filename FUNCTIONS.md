@@ -40,7 +40,10 @@ and a one-line description.
 | `GET /api/aa/market` | `get_aa_market` | [1005](python/server.py#L1005) | One-shot structure market snapshot (cached 5 min). |
 | `GET /api/aa/market/stream` | `stream_aa_market` | [1100](python/server.py#L1100) | NDJSON-streamed page-by-page market fetch. |
 | `GET /api/market/amarr-sell` | `amarr_sell_price` | [1117](python/server.py#L1117) | Min Amarr sell price for a single `type_id`. Prefers Janice's pricer endpoint when an API key is configured, falls back to a paged ESI regional-market scan filtered to the Amarr system. 5-minute in-process cache. Added by PR #3 for per-fit Amarr pricing on the Contracts dashboard. |
-| `POST /api/appraise` | `appraise_paste` | [1427](python/server.py#L1427) | Run a Janice appraisal against pasted EVE-format text + fan out to Mutamarket for any abyssal modules in the same paste. Returns a unified payload with the Janice block, per-abyssal Mutamarket summaries (marketplace + estimator medians), and grand totals. |
+| `GET /api/market/analytics/stream` | `stream_market_analytics` | — | NDJSON market-analytics stream for the Market tab. `progress` per page, then `done` with `{structure_id, fetched_at, totals, rows}` from `_analyze_orders`. Reuses the AA market cache; enriches names+categories via `market.enrich`. Snapshot only. |
+| `POST /api/market/history/archive` | `archive_market_history` | — | Opportunistic + idempotent daily archive: gzips the full-depth snapshot and PUTs `market-history/<sid>/<date>.json.gz` to the configured history repo. No-ops when unconfigured / <24h since last / today's file already present / 409 race. Never raises on the no-op paths. |
+| `GET /api/market/history/turnover` | `market_history_turnover` | — | **Net on-book change** over 24h/72h/weekly/monthly. Reads back the daily archive (Read PAT), lists `market-history/<sid>/`, fetches only the latest + per-window baseline summaries (cached per date), and returns signed Δ sell/buy value + % per window via pure `_select_baselines` + `_compute_turnover`. Order-book snapshots, not trades — degrades to `coverage: insufficient/partial` until enough days accrue. Returns `{configured, snapshots, windows[]}`. |
+| `POST /api/appraise` | `appraise_paste` | [1427](python/server.py#L1427) | Run a Janice appraisal against pasted EVE-format text. Returns the Janice block with buy/split/sell totals (immediate + effective) and a shareable code when `persist` is set. |
 | `GET /api/pinned` | `get_pinned` | [1573](python/server.py#L1573) | Working-tab: return the persisted pin list. |
 | `POST /api/pinned` | `post_pinned` | [1579](python/server.py#L1579) | Working-tab: upsert a pinned moon-result snapshot. Derives `blended_fraction` once at pin time. |
 | `DELETE /api/pinned/{contract_id}` | `delete_pinned` | [1593](python/server.py#L1593) | Working-tab: remove a pin. |
@@ -48,6 +51,9 @@ and a one-line description.
 | `POST /api/pinned/{contract_id}/appraise` | `appraise_pinned` | [1608](python/server.py#L1608) | Working-tab: run a Janice appraisal against the admin's pasted refined-minerals text, apply the pin's saved blended fraction, append to the pin's appraisal-history ring. Returns the new pin + the appraisal record. |
 | `GET /api/contracts/scan` | `scan_contracts` | [1664](python/server.py#L1664) | NDJSON-streamed Contracts-dashboard scan: walks each authed slot's corp, filters to outstanding corp-posted item-exchanges at the home structure, fetches items, tallies against configured quotas. |
 | `GET /api/sov/overview` | `sov_overview` | [1867](python/server.py#L1867) | Sov-tab aggregator: sovereignty structures + map + campaigns + system jumps/kills + incursions, all enriched with names. |
+| `GET /api/structures/fuel` | `structures_fuel` | [server.py](python/server.py) | Hooks & Hubs fuel: enumerates authenticated slots' corps (slot 4 = Director), fetches `/corporations/{id}/structures/`, dedupes, classifies skyhook/hub/other by resolved type name, returns per-structure `seconds_remaining` + per-type summaries. Per-slot/corp failures (missing scope/role) surface in `auth_errors`. |
+| `GET /api/workforce-plan` | `get_workforce_plan` | [server.py](python/server.py) | Return the manual Hooks & Hubs planner document (`workforce_plan.load_plan`). |
+| `PUT /api/workforce-plan` | `put_workforce_plan` | [server.py](python/server.py) | Replace the whole planner document (`workforce_plan.save_plan`). |
 
 ### Helpers / internals
 
@@ -70,6 +76,10 @@ and a one-line description.
 - `_summarize_orders(structure_id, orders, fetched_at)` — fold raw structure orders → `{type_id: {min_price, total_volume, order_count}}`.
 - `_resolve_market_structure_id(cfg, structure_id)` — falls back to first configured structure when caller doesn't pass an explicit id.
 - `_market_stream(structure_id, refresh)` — generator for `stream_aa_market`; reuses the in-memory cache when fresh.
+- `_analyze_orders(structure_id, orders, fetched_at, type_meta)` — fold the full buy+sell book into per-type analytics rows (best sell/buy, order counts, units, ISK depth, spread) + market-wide totals incl. total sell/buy value. Sibling of `_summarize_orders` (left untouched — Readiness depends on its shape).
+- `_analytics_stream(structure_id, refresh)` — generator behind `/api/market/analytics/stream`; pages the order book (shared `_market_cache`), resolves names/categories via `market.enrich`, emits `done` with the analyzed payload.
+- `_market_history_summary(orders)` — compact per-type fold (no names/ESI) stored in each daily archive so phase-2 history reads needn't re-parse the full depth.
+- `_github_path_sha(...)` / `_github_put_bytes(...)` — Contents-API helpers for the binary (gzip) archive: existence check (sha or None on 404) and base64-of-raw-bytes PUT. Siblings of the text-oriented `_github_contents_get/put`.
 - `_amarr_price_cache` — process-scope `{type_id: {price, fetched_at}}` with 5-minute TTL, backs the `/api/market/amarr-sell` endpoint.
 - `_matches_quota(quota, items_named, contract)` — [1153](python/server.py#L1153) — returns how many times a contract counts toward a quota row (ship `type_id` required, optional `title_filter` substring).
 - `_scan_contracts_stream()` — [1175](python/server.py#L1175) — **Contracts dashboard pipeline.** Iterates `list_authenticated_slots()`, resolves each toon's corp via `fetch_character_info`, calls `fetch_corp_contracts` with that slot's token (dedupes corps), filters per-slot, fetches items via `fetch_contract_items`, bulk-resolves type+issuer names, tallies against configured quotas, emits one `done` with `{structure_id, corps_scanned[], contracts[], quotas[]}`.
@@ -107,10 +117,10 @@ and a one-line description.
 
 ### Data + pricing
 
-- `_load_materials()` — [95](python/refining.py#L95) — lazy + thread-safe load of Fuzzwork `invTypeMaterials.csv` into a `type_id → [(material_type_id, qty), ...]` map. Downloaded once into `AUTH_DIR`.
-- `is_refinable(type_id)` — [120](python/refining.py#L120) — has at least one material row in the Fuzzwork dump.
+- `_load_materials()` — lazy + thread-safe load of the **bundled** `data/mineable_type_materials.csv` (cerlestes-verified ore/moon/ice yields) into a `type_id → [(material_type_id, qty), ...]` map. No network — replaces the dead Fuzzwork dump download. Regenerate via `gen_mineable_materials.py`.
+- `is_refinable(type_id)` — [120](python/refining.py#L120) — has at least one material row in the bundled yields CSV.
 - `yields_for(type_id, quantity, user_agent)` — [125](python/refining.py#L125) — multiplies materials by `portion_size`-aligned batches; returns `(yields, leftover_qty)`.
-- `fetch_buy_prices(station_id, type_ids, user_agent)` — [141](python/refining.py#L141) — Fuzzwork market aggregates → `{type_id: max_buy_price}`.
+- Refined minerals are priced via **Janice** (`janice.fetch_buy_prices(type_ids, market_name, api_key, user_agent)` → `{type_id: immediate buy price}`, concurrent pricer calls; requires a Janice API key). The old Fuzzwork-aggregates `fetch_buy_prices` was removed.
 
 ### Payout
 
@@ -137,6 +147,7 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 | `fetch_structure_orders_paged(structure_id, access_token, user_agent)` | [167](python/esi.py#L167) | **Generator** yielding `(page, max_pages, batch)`. Used for SSE progress. |
 | `fetch_structure_orders(structure_id, access_token, user_agent)` | [196](python/esi.py#L196) | Convenience wrapper that consumes the generator. |
 | `fetch_corp_contracts(corp_id, access_token, user_agent)` | [204](python/esi.py#L204) | Paginated corp contracts. Used by Buyback validation, Moon processing, and the Contracts scan. |
+| `fetch_corp_structures(corp_id, access_token, user_agent)` | [esi.py](python/esi.py) | Paginated corp-owned structures (skyhooks, sov hubs, citadels) with `fuel_expires` / `services` / `state`. Needs `esi-corporations.read_structures.v1` + Director. Drives the Hooks & Hubs fuel dashboard. |
 | `fetch_public_contracts_paged(region_id, user_agent)` | [229](python/esi.py#L229) | Generator over public contracts in a region. (Available for future region-wide use; not currently called.) |
 | `fetch_public_contract_items(contract_id, user_agent)` | [257](python/esi.py#L257) | Items for a public contract. |
 | `fetch_character_contracts(character_id, access_token, user_agent)` | [282](python/esi.py#L282) | Contracts where the character is issuer/acceptor/assignee. (Available; the active Contracts scan uses the corp endpoint instead per the ESI-limitation notes in [CONTEXT.md](CONTEXT.md).) |
@@ -179,29 +190,20 @@ Constants: `BUYBACK_PERCENTAGE = 0.90`, `JANICE_MARKET_IDS = {Jita 4-4: 2, Amarr
 
 ---
 
-## `python/mutamarket.py` — Mutamarket abyssal pricing (~168 LOC)
+## `python/market.py` — Market-tab item metadata (~150 LOC)
 
-[python/mutamarket.py](python/mutamarket.py)
+[python/market.py](python/market.py)
 
-Public-API client for [Mutamarket](https://mutamarket.com) — the closest thing
-to a canonical pricing source for abyssal modules. Drives the Appraisal tab's
-addendum table where each abyssal type's marketplace median and AI-estimator
-median are reported separately so the wide spread typical of thin abyssal
-markets stays visible.
+Resolves `type_id → {name, group_id, group_name, category_id, category_name}`
+from ESI and caches it on disk (`type_meta.json`), the way `ship_types.json`
+works. Replaces the dead Fuzzwork CSV path.
 
 | Function | Purpose |
 |---|---|
-| `is_abyssal_item_name(name)` | True iff the Janice-resolved name starts with `Abyssal ` (CCP's canonical prefix). Verified against ESI; that rule covers the entire category. |
-| `fetch_listings(type_id, user_agent)` | GET `/api/modules/type/<type_id>` from Mutamarket. 5-minute in-process cache keyed by `type_id` — a single popular type can return ~14 MB of listings so caching matters. |
-| `summarize_listings(listings)` | Boil a type's listings into two parallel price tracks: **marketplace** (median of `contract.price` across active sellers) and **estimator** (median of Mutamarket's AI fair-value field). `min` / `max` / `mean` / `count` returned for both. Returns `None` when the type has no listings. |
-
-The `/api/appraise` endpoint in [server.py](python/server.py) walks Janice's
-per-item array, AND-s `is_abyssal_item_name(item.name)` with the "Janice
-reports zero buy AND zero sell volume" signal (abyssals never trade on the
-regional market, so the pair is conclusive), then fans out per unique type
-to `fetch_listings` + `summarize_listings`. Handles both Janice response
-shapes — REST (nested `item.itemType.eid` / `.name`) and RPC anonymous
-(flat `itemType_eid`).
+| `enrich(type_ids, user_agent=None, on_progress=None)` | Return `{type_id: meta}` for the ids; resolves+caches any missing ones first when a `user_agent` is given (else returns only what's cached). |
+| `resolve(type_ids, user_agent, on_progress=None)` | Fetch + cache metadata for any uncached ids, concurrently (`ThreadPoolExecutor`), deduping group/category lookups across the batch. No-op when all cached. |
+| `missing_ids(type_ids)` | De-duplicated subset of ids not yet on disk. |
+| `_resolve_one`, `_load_cache`, `_save_cache_locked` | Per-type lookup + cache load/persist (chmod 600) internals. |
 
 ---
 
@@ -378,7 +380,7 @@ The renderer grew several new feature blocks across v1.1.0–v1.1.6:
 
 - **Outstanding-payout totals** (Buyback + Moon header). `_rowAcceptValue(kind, r)` returns the row's payout when `classifyResult(r) === 'approve'`, zero otherwise. `renderPayoutTotal(kind)` sums across `lastResults[kind]` and writes to `#buyback-payout-total` / `#moon-payout-total`. Hooked into `renderBuyback()`, `renderMoonTab()`, `appendResultIfMatch()`, and the `runValidateStream()` reset path so the panel updates live during a streaming fetch and on every filter pill click.
 - **Working tab** (pinned moon contracts). `loadPinnedContracts()`, `pinMoonContract(id)`, `unpinContract(id)`, `patchPin(id, patch)`, `runPinAppraisal(id, pasteText)`, `renderWorkingTab()`, `buildPinCard(pin)`, `renderPinDetail(pin)`, `togglePinExpanded(id)`, `initWorkingTab()`. Mounts a second calculator instance into `#working-calc-mount`. Delegated click handler on `#working-list` routes appraise / prefill / unpin / expand / status-change / notes-blur all from one listener.
-- **Appraisal tab.** `runAppraise()` posts the paste + market + persist flag to `/api/appraise`, renders the result block (three price columns for Janice Buy / Split / Sell with percentage chip rows, abyssal addendum table per type, five summary tiles at the bottom). Ctrl/Cmd-Enter in the textarea fires the appraise.
+- **Appraisal tab.** `runAppraise()` posts the paste + market + persist flag to `/api/appraise`, renders the result block (three price columns for Janice Buy / Split / Sell with percentage chip rows, plus an optional effective-prices drawer). Ctrl/Cmd-Enter in the textarea fires the appraise.
 - **Alliance quota sync + push.** `runQuotaSync({silent})`, `runQuotaPush()`, `updatePushButtonVisibility()`, `renderQuotaSyncStatus(cfg)`, `maybeAutoSyncQuotas()`. The auto-sync chain runs once per app launch after `loadConfig()` resolves when both `alliance_quota_url` and `alliance_quota_auto_sync` are set; failures stay in the last-sync chip rather than yanking the user with a dialog. Push is gated behind the `alliance_quota_allow_push` checkbox so importing the admin's config doesn't auto-unlock writes.
 - **Whole-config export / import.** `collectConfigForm()` (shared by Save + Export so unsaved edits flow into the file). `setConfigIoStatus(msg)`, `downloadBlob(name, mime, content)`. `CONFIG_EXPORT_NEVER` set: `scopes` / `alliance_quota_last_synced` / `alliance_quota_last_status` / `alliance_quota_pat_write` / `alliance_quota_allow_push`. Read PAT + Janice key are opt-in via a confirm() prompt.
 - **Update-check button.** Module-bottom IIFE wires the ⟳ header button to `window.api.checkForUpdate()`, with a `.spinning` class applied while in-flight.
@@ -531,6 +533,27 @@ bottom of `app.js`:
 - `renderSovCampaigns(camps)` — [2889](renderer/app.js#L2889) — active sov campaigns.
 - `renderSovIncursions(incs)` — [2914](renderer/app.js#L2914) — active incursions.
 - `sovSystemRowHtml(s, includeRegionCol)` — [2932](renderer/app.js#L2932) — per-system row.
+
+---
+
+## `renderer/market.js` — Market analytics tab (~320 LOC)
+
+[renderer/market.js](renderer/market.js)
+
+Self-contained IIFE loaded after `app.js` (reuses its `$`/`$$`/`API`/
+`formatIsk`/`escapeHtml`/`readNdjson` globals). All sort/search/filter is
+client-side over one cached payload.
+
+| Function | Purpose |
+|---|---|
+| `initMarketTab()` | Lazy first load on tab open. |
+| `loadMarketAnalytics(refresh)` | Consume `/api/market/analytics/stream`, store payload, render tiles + table, then fire `maybeArchiveMarket`. |
+| `maybeArchiveMarket()` | Fire-and-forget `POST /api/market/history/archive`; surfaces only the archived result or actionable errors to `#market-history-status`. |
+| `buildLensRows()` / `rebuildLens()` | Build doctrine-lens rows from the Readiness scan + toggles in localStorage (`aa.scan.v1`/`aa.toggles.v1`), with quantity-aware shortfall vs the market. `null` when no scan. |
+| `fitEnabled(fit, toggles)` | Mirror of app.js `fitIsEnabled`. |
+| `filteredSortedRows()` / `renderThead()` / `renderMarketTable()` | Column-driven render for the active mode (`MARKET_COLS` vs `LENS_COLS`); filters by search/category + mode-specific (numeric vs status); nulls always sort last. |
+| `marketSortBy(key)` / `setLens(on)` | Header-click sort toggle; lens on/off (swaps columns, default sort, and which filters show). |
+| `populateMarketCategories()` / `renderMarketTiles()` | Category dropdown + totals tiles. |
 
 ---
 

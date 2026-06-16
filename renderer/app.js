@@ -31,10 +31,10 @@ const DIVISION_LABELS = {
   1: 'Master',
   2: 'Contracts',
   3: 'Buyback',
-  4: 'Division 4',
+  4: 'SRP',
   5: 'Manufacturing',
   6: 'Moon mining',
-  7: 'Division 7',
+  7: 'Command',
 };
 const BUYBACK_DIVISION = 3;
 const MOON_DIVISION = 6;
@@ -47,6 +47,10 @@ let mailPresets = [
   { label: '', subject: '', body: '' },
   { label: '', subject: '', body: '' },
 ];
+// SRP rejection mail template (Mail tab); hydrated from config in loadConfig().
+let srpRejectTemplate = { subject: '', body: '' };
+// How external links open: 'panel' (side panel) or 'window' (own window).
+let linkOpenMode = 'panel';
 
 // Flags that mark a contract for attention but DON'T flip it out of the
 // Approve bucket — these are accepted, just with a visual banded marker
@@ -93,6 +97,17 @@ function _rowAcceptValue(kind, r) {
   return r.payout?.refined?.recommended_payout || 0;
 }
 
+// Compact ISK for at-a-glance reading: 17.1B, 12M, 950K (trailing .0 stripped).
+function fmtIskShort(n) {
+  if (n == null || isNaN(n)) return '';
+  const abs = Math.abs(n);
+  const strip = (x) => x.toFixed(1).replace(/\.0$/, '');
+  if (abs >= 1e9) return strip(n / 1e9) + 'B';
+  if (abs >= 1e6) return strip(n / 1e6) + 'M';
+  if (abs >= 1e3) return strip(n / 1e3) + 'K';
+  return String(Math.round(n));
+}
+
 function renderPayoutTotal(kind) {
   const el = $(kind === 'buyback' ? '#buyback-payout-total' : '#moon-payout-total');
   if (!el) return;
@@ -110,6 +125,7 @@ function renderPayoutTotal(kind) {
     <div class="payout-total-amount">
       <span class="payout-copy" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(total)}">${Math.round(total).toLocaleString()}</span>
       <span class="payout-total-isk">ISK</span>
+      <span class="payout-total-short">(${fmtIskShort(total)})</span>
     </div>
     <div class="payout-total-meta muted">${count} approve row${count === 1 ? '' : 's'}</div>
   `;
@@ -129,15 +145,66 @@ $$('.filter-bar').forEach((bar) => {
 });
 
 // Tab switching
+function activateTab(name) {
+  const btn = $(`.tab-btn[data-tab="${name}"]`);
+  const section = $(`#tab-${name}`);
+  if (!btn || !section) return;
+  $$('.tab-btn').forEach((b) => b.classList.remove('active'));
+  $$('.tab').forEach((t) => t.classList.remove('active'));
+  btn.classList.add('active');
+  section.classList.add('active');
+  if (name === 'buybacks') refreshWallets();
+}
+
 $$('.tab-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    $$('.tab-btn').forEach((b) => b.classList.remove('active'));
-    $$('.tab').forEach((t) => t.classList.remove('active'));
-    btn.classList.add('active');
-    $(`#tab-${btn.dataset.tab}`).classList.add('active');
-    if (btn.dataset.tab === 'buyback' || btn.dataset.tab === 'moon') refreshWallets();
-  });
+  btn.addEventListener('click', () => activateTab(btn.dataset.tab));
 });
+
+// View mode (Member / Admin). This is a clutter filter for non-admin users,
+// NOT a security boundary — it's a single-user desktop app and all data still
+// lives in EVE/ESI. Member view shows only the General tab group; Admin shows
+// everything. The choice persists in localStorage.
+const VIEW_MODE_KEY = 'viewMode';
+// Tabs hidden in Member view (the Operations group). The General group and the
+// Settings cluster (top bar) stay visible in both modes.
+const ADMIN_ONLY_TABS = ['buybacks', 'working', 'contracts', 'srp', 'hooks-hubs'];
+
+function getViewMode() {
+  return localStorage.getItem(VIEW_MODE_KEY) === 'admin' ? 'admin' : 'member';
+}
+
+function applyViewMode(mode) {
+  const isMember = mode === 'member';
+  document.body.classList.toggle('view-member', isMember);
+  localStorage.setItem(VIEW_MODE_KEY, mode);
+  $$('.view-mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  // If the currently-active tab is hidden in this mode, fall back to a visible one.
+  const active = $('.tab-btn.active');
+  if (isMember && active && ADMIN_ONLY_TABS.includes(active.dataset.tab)) {
+    activateTab('appraisal');
+  }
+}
+
+$$('.view-mode-btn').forEach((btn) => {
+  btn.addEventListener('click', () => applyViewMode(btn.dataset.mode));
+});
+
+applyViewMode(getViewMode());
+
+// Buybacks sub-toggle: switch the single Buybacks tab between the General
+// buyback pane and the Ore (moon) buyback pane. Choice persists.
+const BB_PANE_KEY = 'buybacksPane';
+function setBuybacksPane(pane) {
+  const p = pane === 'ore' ? 'ore' : 'general';
+  const gen = $('#bb-pane-general');
+  const ore = $('#bb-pane-ore');
+  if (gen) gen.hidden = p !== 'general';
+  if (ore) ore.hidden = p !== 'ore';
+  $$('.bb-sub-btn').forEach((b) => b.classList.toggle('active', b.dataset.pane === p));
+  localStorage.setItem(BB_PANE_KEY, p);
+}
+$$('.bb-sub-btn').forEach((b) => b.addEventListener('click', () => setBuybacksPane(b.dataset.pane)));
+setBuybacksPane(localStorage.getItem(BB_PANE_KEY) || 'general');
 
 async function loadConfig() {
   // Fetch config and markets independently — one shouldn't take down the other.
@@ -194,6 +261,15 @@ async function loadConfig() {
   if ($('[name=alliance_quota_allow_push]')) {
     $('[name=alliance_quota_allow_push]').checked = !!cfg.alliance_quota_allow_push;
   }
+  if ($('[name=market_history_repo_url]')) {
+    $('[name=market_history_repo_url]').value = cfg.market_history_repo_url || '';
+  }
+  if ($('[name=market_history_pat_read]')) {
+    $('[name=market_history_pat_read]').value = cfg.market_history_pat_read || '';
+  }
+  if ($('[name=market_history_pat_write]')) {
+    $('[name=market_history_pat_write]').value = cfg.market_history_pat_write || '';
+  }
   updatePushButtonVisibility();
   renderQuotaSyncStatus(cfg);
   // Kick off the ship-types fetch in the background; the datalist becomes
@@ -214,6 +290,16 @@ async function loadConfig() {
     while (mailPresets.length < 4) mailPresets.push({ label: '', subject: '', body: '' });
   }
   renderMailPresetEditors();
+  // SRP rejection template (Mail tab).
+  srpRejectTemplate = {
+    subject: cfg.srp_reject_subject || '',
+    body: cfg.srp_reject_body || '',
+  };
+  if ($('#srp-reject-subject')) $('#srp-reject-subject').value = srpRejectTemplate.subject;
+  if ($('#srp-reject-body')) $('#srp-reject-body').value = srpRejectTemplate.body;
+  // Link-open mode (Config tab).
+  linkOpenMode = cfg.link_open_mode === 'window' ? 'window' : 'panel';
+  if ($('#link-open-mode')) $('#link-open-mode').value = linkOpenMode;
   // Re-render any visible results so button labels reflect the latest presets
   renderBuyback();
   renderMoonTab();
@@ -284,6 +370,7 @@ function collectConfigForm() {
     structures: collectStructures(),
     janice_market: $('#janice-market').value,
     janice_api_key: fd.get('janice_api_key'),
+    link_open_mode: $('#link-open-mode')?.value || 'panel',
     moon_market: $('#moon-market').value,
     moon_ore_refining_efficiency: parseFloat(fd.get('moon_ore_refining_efficiency')) || 0.78,
     non_moon_ore_refining_efficiency: parseFloat(fd.get('non_moon_ore_refining_efficiency')) || 0.78,
@@ -298,6 +385,9 @@ function collectConfigForm() {
     alliance_quota_pat_read: (fd.get('alliance_quota_pat_read') || '').toString().trim(),
     alliance_quota_pat_write: (fd.get('alliance_quota_pat_write') || '').toString().trim(),
     alliance_quota_allow_push: $('[name=alliance_quota_allow_push]')?.checked || false,
+    market_history_repo_url: (fd.get('market_history_repo_url') || '').toString().trim(),
+    market_history_pat_read: (fd.get('market_history_pat_read') || '').toString().trim(),
+    market_history_pat_write: (fd.get('market_history_pat_write') || '').toString().trim(),
   };
 }
 
@@ -488,8 +578,9 @@ const AUTH_SLOT_LABELS = {
   slot1: 'Slot 1 (primary — wallets, corp contracts, mail)',
   slot2: 'Slot 2 (optional — extra contract visibility)',
   slot3: 'Slot 3 (optional — extra contract visibility)',
+  slot4: 'Slot 4 (Hooks & Hubs — structure fuel; needs Director role)',
 };
-const AUTH_SLOTS = ['slot1', 'slot2', 'slot3'];
+const AUTH_SLOTS = ['slot1', 'slot2', 'slot3', 'slot4'];
 
 function renderAuthSlot(slot, info) {
   const wrapper = document.createElement('div');
@@ -1083,7 +1174,11 @@ function initMoonCalculator() {
 const btnAaOpen = $('#btn-aa-open');
 if (btnAaOpen) {
   btnAaOpen.addEventListener('click', () => {
-    if (window.api && typeof window.api.aaOpen === 'function') window.api.aaOpen();
+    if (window.api && typeof window.api.aaOpen === 'function') {
+      window.api.aaOpen();
+      const status = $('#aa-auth-status');
+      if (status) status.textContent = 'Opened the Alliance Auth sign-in window — once signed in, use the Doctrines tab to refresh.';
+    }
   });
 }
 const btnAaLogout = $('#btn-aa-logout');
@@ -1091,7 +1186,7 @@ if (btnAaLogout) {
   btnAaLogout.addEventListener('click', async () => {
     if (window.api && typeof window.api.aaLogout === 'function') {
       await window.api.aaLogout();
-      const status = $('#aa-status');
+      const status = $('#aa-auth-status');
       if (status) status.textContent = 'Signed out.';
       const list = $('#doctrines-list');
       if (list) list.innerHTML = '';
@@ -2613,6 +2708,10 @@ const CONFIG_EXPORT_NEVER = new Set([
   'alliance_quota_last_status',
   'alliance_quota_pat_write',
   'alliance_quota_allow_push',
+  // Per-machine archive timestamp — sharing it would mislead the recipient.
+  // (The market-history PATs are NOT here: they're opt-in at export time below,
+  // per the choice to let a kit carry archive access.)
+  'market_history_last_archived',
 ]);
 
 function setConfigIoStatus(msg) {
@@ -2639,11 +2738,23 @@ $('#btn-export-config')?.addEventListener('click', async () => {
   const includeReadPat = cfg.alliance_quota_pat_read
     ? confirm('Include the alliance Read PAT in the export?\n\nOK = include (recipient will be able to sync quotas immediately after import — typical for an alliance-distribution kit).\nCancel = leave it out.')
     : false;
+  // Market-history PATs ride along only if you say so. Unlike the alliance
+  // quota Write PAT (never exported), the history Write PAT is exportable by
+  // design so a kit can let recipients archive — but it also grants overwrite,
+  // so it's a deliberate opt-in.
+  const includeMktReadPat = cfg.market_history_pat_read
+    ? confirm('Include the market-history Read PAT in the export?\n\nOK = include (recipient can read the history repo after import).\nCancel = leave it out.')
+    : false;
+  const includeMktWritePat = cfg.market_history_pat_write
+    ? confirm('Include the market-history WRITE PAT in the export?\n\nOK = include — anyone you give this kit can archive AND overwrite/delete snapshots in the history repo.\nCancel = leave it out (recommended unless this kit is for a co-admin).')
+    : false;
 
   const out = { ...cfg };
   for (const k of CONFIG_EXPORT_NEVER) delete out[k];
   if (!includeKey) delete out.janice_api_key;
   if (!includeReadPat) delete out.alliance_quota_pat_read;
+  if (!includeMktReadPat) delete out.market_history_pat_read;
+  if (!includeMktWritePat) delete out.market_history_pat_write;
 
   // Stamp the export so future imports can recognise / migrate as needed.
   let appVersion = '';
@@ -2662,6 +2773,8 @@ $('#btn-export-config')?.addEventListener('click', async () => {
   const inclTags = [];
   if (includeKey) inclTags.push('Janice key');
   if (includeReadPat) inclTags.push('Read PAT');
+  if (includeMktReadPat) inclTags.push('Mkt Read PAT');
+  if (includeMktWritePat) inclTags.push('Mkt Write PAT');
   setConfigIoStatus(`Exported ${Object.keys(out).length} settings${inclTags.length ? ` (incl. ${inclTags.join(', ')})` : ''}.`);
 });
 
@@ -4082,9 +4195,8 @@ loadPinnedContracts();
 
 // ====================== Appraisal tab ======================
 // Paste box -> POST /api/appraise -> renders the Janice block (full
-// Janice-style detail) followed by a Mutamarket addendum that lists each
-// abyssal type in the paste with its marketplace-median and AI-estimator
-// median prices.
+// Janice-style detail: Buy / Split / Sell totals with percentage-modifier
+// chips on every figure).
 
 function fmtIsk(n) {
   if (n == null || isNaN(n)) return '—';
@@ -4098,9 +4210,15 @@ function renderAppraiseResult(data) {
 
   const j = data.janice || {};
   const mkt = data.market_name || '?';
-  const codeLink = j.code
-    ? ` (<a href="https://janice.e-351.com/a/${escapeHtml(j.code)}" target="_blank" rel="noopener">view on Janice</a>)`
-    : '';
+  const janiceUrl = j.code ? `https://janice.e-351.com/a/${escapeHtml(j.code)}` : '';
+  const linkBlock = janiceUrl
+    ? `<div class="appraise-linkrow">
+        <span class="muted">Janice link:</span>
+        <code class="appraise-url copyable" role="button" tabindex="0" title="Click to copy" data-copy="${janiceUrl}">${janiceUrl}</code>
+        <button type="button" class="appraise-url-copy copyable secondary" data-copy="${janiceUrl}">Copy</button>
+        <a href="${janiceUrl}" target="_blank" rel="noopener" class="appraise-url-open">Open ↗</a>
+      </div>`
+    : `<div class="appraise-linkrow muted">No shareable link generated — tick "Save a shareable Janice link" above and re-run to get a copyable URL.</div>`;
   const fallback = j.api_fallback_reason
     ? `<div class="appraise-warn">⚠ Janice REST API failed — used RPC fallback: ${escapeHtml(j.api_fallback_reason)}</div>`
     : '';
@@ -4131,8 +4249,9 @@ function renderAppraiseResult(data) {
 
   const janiceBlock = `
     <div class="appraise-block appraise-janice">
-      <h3>Janice — non-abyssal items</h3>
+      <h3>Janice appraisal</h3>
       ${fallback}
+      ${linkBlock}
       <div class="appraise-line">
         <span class="muted">Items priced:</span>
         <strong>${j.item_count || 0}</strong>
@@ -4140,7 +4259,6 @@ function renderAppraiseResult(data) {
         <strong>${escapeHtml(mkt)}</strong>
         <span class="muted"> · Source:</span>
         <strong>${escapeHtml(j.source || '?')}</strong>
-        ${codeLink ? `<span class="muted">${codeLink}</span>` : ''}
       </div>
       <h4 class="appraise-price-section-h">Immediate prices <span class="muted">(current orders on the book)</span></h4>
       <div class="appraise-prices">
@@ -4161,94 +4279,7 @@ function renderAppraiseResult(data) {
     </div>
   `;
 
-  const ab = data.abyssals || [];
-  let abyssalBlock;
-  if (!ab.length) {
-    abyssalBlock = `
-      <div class="appraise-block appraise-abyssal-empty">
-        <h3>Mutamarket — abyssal addendum</h3>
-        <p class="muted">No abyssal items detected in this paste. (Names beginning with <code>Abyssal …</code> are auto-routed through Mutamarket.)</p>
-      </div>
-    `;
-  } else {
-    const rows = ab.map((r) => {
-      const m = r.marketplace, e = r.estimator;
-      const mMed = m?.median;
-      const eMed = e?.median;
-      const mkTot = r.marketplace_total_median;
-      const eTot = r.estimator_total_median;
-      const err = r.error ? `<div class="muted">error: ${escapeHtml(r.error)}</div>` : '';
-      return `
-        <tr>
-          <td><strong>${escapeHtml(r.name || `type ${r.type_id}`)}</strong>
-            <div class="muted">type ${r.type_id} · ${r.total_listings} listing${r.total_listings === 1 ? '' : 's'}${err}</div>
-          </td>
-          <td class="num">${r.quantity}</td>
-          <td class="num">
-            ${mMed != null
-              ? `${fmtIsk(mMed)}<div class="muted">${m.count} active sale${m.count === 1 ? '' : 's'} · min ${fmtIsk(m.min)} · max ${fmtIsk(m.max)}</div>`
-              : '<span class="muted">no active listings</span>'}
-          </td>
-          <td class="num">
-            ${eMed != null
-              ? `${fmtIsk(eMed)}<div class="muted">${e.count} sample${e.count === 1 ? '' : 's'} · μ ${fmtIsk(e.mean)}</div>`
-              : '<span class="muted">no estimator data</span>'}
-          </td>
-          <td class="num">${mkTot != null ? `<strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(mkTot)}">${fmtIsk(mkTot)}</strong>` : '—'}</td>
-          <td class="num">${eTot != null ? `<strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(eTot)}">${fmtIsk(eTot)}</strong>` : '—'}</td>
-        </tr>
-      `;
-    }).join('');
-    abyssalBlock = `
-      <div class="appraise-block appraise-abyssal">
-        <h3>Mutamarket — abyssal addendum</h3>
-        <table class="appraise-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th class="num">Qty</th>
-              <th class="num">Marketplace median<br><span class="muted">live seller asks</span></th>
-              <th class="num">Estimator median<br><span class="muted">Mutamarket AI</span></th>
-              <th class="num">× qty (market)</th>
-              <th class="num">× qty (estimator)</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    `;
-  }
-
-  const t = data.totals || {};
-  const grandBlock = `
-    <div class="appraise-block appraise-grand">
-      <h3>Combined totals</h3>
-      <div class="appraise-grand-grid">
-        <div>
-          <div class="muted">Janice (non-abyssal)</div>
-          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.janice_total_buy || 0)}">${fmtIsk(t.janice_total_buy)}</strong>
-        </div>
-        <div>
-          <div class="muted">Mutamarket — marketplace</div>
-          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.abyssal_marketplace_median_total || 0)}">${fmtIsk(t.abyssal_marketplace_median_total)}</strong>
-        </div>
-        <div>
-          <div class="muted">Mutamarket — estimator</div>
-          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.abyssal_estimator_median_total || 0)}">${fmtIsk(t.abyssal_estimator_median_total)}</strong>
-        </div>
-        <div class="appraise-grand-sum">
-          <div class="muted">Grand (Janice + market)</div>
-          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.grand_marketplace_median || 0)}">${fmtIsk(t.grand_marketplace_median)}</strong>
-        </div>
-        <div class="appraise-grand-sum">
-          <div class="muted">Grand (Janice + estimator)</div>
-          <strong class="copyable" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(t.grand_estimator_median || 0)}">${fmtIsk(t.grand_estimator_median)}</strong>
-        </div>
-      </div>
-    </div>
-  `;
-
-  root.innerHTML = janiceBlock + abyssalBlock + grandBlock;
+  root.innerHTML = janiceBlock;
 }
 
 // Delegated click-to-copy for any .copyable span in the appraisal result.
@@ -4298,10 +4329,7 @@ async function runAppraise() {
     const data = await res.json();
     renderAppraiseResult(data);
     if (status) {
-      const ab = (data.abyssals || []).length;
-      status.textContent = ab
-        ? `done · ${data.janice?.item_count || 0} items via Janice · ${ab} abyssal type${ab === 1 ? '' : 's'} via Mutamarket`
-        : `done · ${data.janice?.item_count || 0} items via Janice (no abyssals detected)`;
+      status.textContent = `done · ${data.janice?.item_count || 0} items via Janice`;
     }
   } catch (e) {
     if (status) status.textContent = `failed: ${e.message || e}`;
@@ -4323,3 +4351,540 @@ $('#appraise-paste')?.addEventListener('keydown', (e) => {
     runAppraise();
   }
 });
+
+// ===================== SRP (Ship Replacement Program) =====================
+// Scrapes outstanding SRP requests from Alliance Auth (/srp/ -> each fleet's
+// /srp/<id>/view/) via the same authed session the Doctrines tab uses, then
+// computes a recommended payout per the navy wiki scheme:
+//   payout = rate x killboard-loss-value, with an optional per-category cap.
+// Read + compute only for now; write actions (set value / approve / delete)
+// land once srp_management permissions are granted.
+
+const SRP_CATS = {
+  standard:    { label: 'Standard 75%',             rate: 0.75, cap: 0 },
+  logistics:   { label: 'Logistics 100%',           rate: 1.00, cap: 0 },
+  links:       { label: 'Links 100%',               rate: 1.00, cap: 0 },
+  interdictor: { label: 'Interdictor 100%',         rate: 1.00, cap: 0 },
+  fightclub:   { label: 'Fight Club 100% (cap 10M)', rate: 1.00, cap: 10_000_000 },
+  hisecnpc:    { label: 'Hisec NPC 100% (cap 5M)',   rate: 1.00, cap: 5_000_000 },
+};
+const SRP_CAT_ORDER = ['standard', 'logistics', 'links', 'interdictor', 'fightclub', 'hisecnpc'];
+// Hulls we can classify unambiguously by EVE group. Links/Fight Club/Hisec-NPC
+// are context-dependent (a hull alone can't tell), so they stay manual.
+const SRP_LOGI_GROUPS = new Set(['logistics', 'logistics frigate']);
+const SRP_DICTOR_GROUPS = new Set(['interdictor']);
+
+let srpState = { fleets: [], rows: [], view: 'list', fleetId: null, csrf: null, wallet: null, scanned: false };
+
+function srpAutoCategory(shipName) {
+  const g = (shipTypesByNameMap?.get((shipName || '').toLowerCase())?.group_name || '').toLowerCase();
+  if (SRP_LOGI_GROUPS.has(g)) return 'logistics';
+  if (SRP_DICTOR_GROUPS.has(g)) return 'interdictor';
+  return 'standard';
+}
+
+function srpPayout(category, lossAmt) {
+  const c = SRP_CATS[category] || SRP_CATS.standard;
+  let p = Math.round((lossAmt || 0) * c.rate);
+  if (c.cap > 0) p = Math.min(p, c.cap);
+  return p;
+}
+
+function srpSetProgress(pct, step) {
+  const area = $('#srp-progress'), fill = $('#srp-progress-fill'), st = $('#srp-progress-step');
+  if (area) area.style.display = (pct == null) ? 'none' : '';
+  if (fill && pct != null) fill.style.width = `${Math.round(pct)}%`;
+  if (st) st.textContent = step || '';
+}
+
+function srpCsrfFromHtml(html) {
+  const m = /name="csrfmiddlewaretoken"\s+value="([^"]+)"/.exec(html || '');
+  return m ? m[1] : null;
+}
+
+function srpIsPending(r) {
+  return /pending/i.test(r.status || '');
+}
+
+async function srpLoadWallet() {
+  try {
+    const res = await fetch(`${API}/api/wallets`);
+    srpState.wallet = res.ok ? await res.json() : null;
+  } catch (_) {
+    srpState.wallet = null;
+  }
+}
+
+function srpRecomputeFleetMeta(f) {
+  const fr = (srpState.rows || []).filter((r) => r.fleetId === f.id);
+  f.reqCount = fr.length;
+  f.pendingCount = fr.filter(srpIsPending).length;
+  f.recommendedTotal = fr.filter(srpIsPending).reduce((s, r) => s + srpPayout(r.category, r.lossAmt), 0);
+}
+
+async function runSrpScan() {
+  const status = $('#srp-status');
+  const btn = $('#btn-srp-scan');
+  if (!window.api || typeof window.api.aaFetchHtml !== 'function') {
+    if (status) status.textContent = 'Alliance Auth bridge unavailable.';
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    if (status) status.textContent = 'Fetching SRP fleet list…';
+    srpSetProgress(5, 'Loading /srp/ …');
+    const listRes = await window.api.aaFetchHtml('/srp/');
+    if (!listRes.ok) {
+      if (status) status.textContent = `Fetch failed (status ${listRes.status || 'network error'}${listRes.error ? `: ${listRes.error}` : ''}).`;
+      srpSetProgress(null);
+      return;
+    }
+    if (/\/account\/login\//.test(listRes.finalUrl) || /Login with Eve SSO/i.test(listRes.html)) {
+      if (status) status.textContent = 'Not signed in to Alliance Auth — sign in on the Auth/Doctrines tab first.';
+      srpSetProgress(null);
+      return;
+    }
+    const fleets = parseSrpFleets(listRes.html).filter((f) => f.id != null);
+    srpState.csrf = srpCsrfFromHtml(listRes.html);
+    await ensureShipTypes(); // hull -> group classification
+
+    const rows = [];
+    for (let i = 0; i < fleets.length; i++) {
+      const f = fleets[i];
+      srpSetProgress(10 + (i / Math.max(1, fleets.length)) * 80, `Fleet ${i + 1}/${fleets.length}: ${f.name}`);
+      if (status) status.textContent = `Loading fleet ${i + 1}/${fleets.length}: ${f.name}…`;
+      const vr = await window.api.aaFetchHtml(`/srp/${f.id}/view/`);
+      if (!vr.ok) continue;
+      if (!srpState.csrf) srpState.csrf = srpCsrfFromHtml(vr.html);
+      parseSrpRequests(vr.html).forEach((r) => {
+        r.fleetId = f.id;
+        r.category = srpAutoCategory(r.ship);
+        r.decision = null; // 'accept' | 'reject' | null
+        r.reason = '';
+        rows.push(r);
+      });
+    }
+    srpState.fleets = fleets;
+    srpState.rows = rows;
+    fleets.forEach(srpRecomputeFleetMeta);
+    srpState.scanned = true;
+
+    srpSetProgress(92, 'Loading wallets…');
+    await srpLoadWallet();
+
+    srpSetProgress(100, 'Done');
+    setTimeout(() => srpSetProgress(null), 500);
+    const pending = rows.filter(srpIsPending).length;
+    if (status) status.textContent = `${rows.length} requests · ${fleets.length} fleets · ${pending} pending — ${new Date().toLocaleTimeString()}`;
+    renderSrp();
+  } catch (e) {
+    if (status) status.textContent = `Scan error: ${e.message || e}`;
+    srpSetProgress(null);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+const srpCatOptions = (sel) => SRP_CAT_ORDER
+  .map((k) => `<option value="${k}"${k === sel ? ' selected' : ''}>${SRP_CATS[k].label}</option>`)
+  .join('');
+
+// Dispatch between the fleet-list view and a single-fleet detail view.
+function renderSrp() {
+  const root = $('#srp-content');
+  if (!root) return;
+  if (!srpState.scanned) {
+    root.innerHTML = '<p class="muted">Click <strong>Scan SRP</strong> to load outstanding requests.</p>';
+    return;
+  }
+  if (srpState.view === 'fleet' && srpState.fleetId != null) renderSrpFleet(root);
+  else renderSrpList(root);
+}
+
+function renderSrpList(root) {
+  const fleets = srpState.fleets || [];
+  const rows = srpState.rows || [];
+  const pending = rows.filter(srpIsPending);
+  const outstanding = pending.reduce((s, r) => s + srpPayout(r.category, r.lossAmt), 0);
+
+  let walletHtml = '';
+  if (srpState.wallet) {
+    const w = srpState.wallet;
+    const tiles = [`<div class="wallet-tile total"><div class="label">Corp wallet (all divisions)</div><div class="amount">${Math.round(w.total).toLocaleString()} ISK</div></div>`]
+      .concat((w.wallets || []).map((d) => `<div class="wallet-tile"><div class="label">${escapeHtml(DIVISION_LABELS[d.division] || ('Division ' + d.division))}</div><div class="amount">${Math.round(d.balance).toLocaleString()} ISK</div></div>`));
+    walletHtml = `<div class="wallet-summary">${tiles.join('')}</div>`;
+  }
+
+  const fleetRows = fleets.map((f) => `
+    <tr>
+      <td><a href="#" class="srp-open-fleet" data-fleet="${f.id}">${escapeHtml(f.name || ('Fleet ' + f.id))}</a></td>
+      <td>${escapeHtml(f.doctrine || '')}</td>
+      <td>${escapeHtml(f.fc || '')}</td>
+      <td class="text-end">${f.pendingCount || 0}${(f.reqCount && f.reqCount !== f.pendingCount) ? ` / ${f.reqCount}` : ''}</td>
+      <td class="text-end">${fmtIsk(f.recommendedTotal || 0)}</td>
+      <td>
+        <button type="button" class="secondary srp-open-fleet" data-fleet="${f.id}">Open</button>
+        ${(f.pendingCount || 0) === 0 ? `<button type="button" class="srp-danger srp-del-fleet" data-fleet="${f.id}" title="All requests processed — delete this fleet">Delete</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  root.innerHTML = `
+    ${walletHtml}
+    <div id="srp-total">Total SRP outstanding (pending, recommended): <strong class="copyable" data-copy="${outstanding}" title="Click to copy">${fmtIsk(outstanding)}</strong> <span class="muted">· ${pending.length} pending across ${fleets.length} fleets</span></div>
+    <table class="items-table srp-table">
+      <thead><tr><th>Fleet</th><th>Doctrine</th><th>FC</th><th class="text-end">Pending</th><th class="text-end">Recommended</th><th></th></tr></thead>
+      <tbody>${fleetRows || '<tr><td colspan="6" class="muted">No fleets.</td></tr>'}</tbody>
+    </table>`;
+}
+
+function renderSrpFleet(root) {
+  const fid = srpState.fleetId;
+  const f = (srpState.fleets || []).find((x) => x.id === fid) || {};
+  const freqs = (srpState.rows || []).filter((r) => r.fleetId === fid);
+
+  let acceptTotal = 0, pendingTotal = 0, nAccept = 0, nReject = 0;
+  const body = freqs.map((r) => {
+    const payout = srpPayout(r.category, r.lossAmt);
+    const pending = srpIsPending(r);
+    if (pending) pendingTotal += payout;
+    if (r.decision === 'accept') { acceptTotal += payout; nAccept++; }
+    if (r.decision === 'reject') nReject++;
+    const disabled = pending ? '' : ' disabled';
+    return `
+      <tr class="srp-req${r.decision ? ` srp-dec-${r.decision}` : ''}" data-pk="${escapeHtml(r.pk || '')}">
+        <td>${escapeHtml(r.pilot)}</td>
+        <td>${escapeHtml(r.ship)}${r.info ? `<div class="muted srp-info">${escapeHtml(r.info)}</div>` : ''}</td>
+        <td class="text-end">${fmtIsk(r.lossAmt)}</td>
+        <td><select class="srp-cat" data-pk="${escapeHtml(r.pk || '')}"${disabled}>${srpCatOptions(r.category)}</select></td>
+        <td class="text-end"><strong class="srp-payout copyable" data-copy="${payout}" title="Click to copy">${fmtIsk(payout)}</strong></td>
+        <td>
+          <div class="srp-toggle">
+            <button type="button" class="srp-tog srp-tog-accept${r.decision === 'accept' ? ' active' : ''}" data-pk="${escapeHtml(r.pk || '')}" data-dec="accept"${disabled}>Accept</button>
+            <button type="button" class="srp-tog srp-tog-reject${r.decision === 'reject' ? ' active' : ''}" data-pk="${escapeHtml(r.pk || '')}" data-dec="reject"${disabled}>Reject</button>
+          </div>
+          ${r.decision === 'reject' ? `<input type="text" class="srp-reason" data-pk="${escapeHtml(r.pk || '')}" placeholder="Reason (optional)" value="${escapeAttr(r.reason || '')}" />` : ''}
+        </td>
+        <td>${r.zkillUrl ? `<a href="${escapeHtml(r.zkillUrl)}" target="_blank" rel="noopener">zKill ↗</a>` : ''}</td>
+        <td>${escapeHtml(r.status)}</td>
+      </tr>`;
+  }).join('');
+
+  const nPending = freqs.filter(srpIsPending).length;
+  const nDecided = nAccept + nReject;
+  root.innerHTML = `
+    <div class="srp-fleet-head">
+      <button type="button" class="secondary" id="srp-back">← All fleets</button>
+      <h3>${escapeHtml(f.name || ('Fleet ' + fid))} <span class="muted">· ${escapeHtml(f.doctrine || '')} · FC ${escapeHtml(f.fc || '?')}</span></h3>
+    </div>
+    <div id="srp-total">
+      Pending recommended total: <strong class="copyable" data-copy="${pendingTotal}" title="Click to copy">${fmtIsk(pendingTotal)}</strong>
+      <span class="muted"> · selected to pay: </span><strong class="copyable" data-copy="${acceptTotal}" title="Click to copy">${fmtIsk(acceptTotal)}</strong>
+      <span class="muted"> · ${nAccept} accept / ${nReject} reject of ${nPending} pending</span>
+    </div>
+    <div class="actions">
+      <button type="button" id="srp-accept-all" class="secondary">Accept all pending</button>
+      <button type="button" id="srp-process"${nDecided ? '' : ' disabled'}>Process ${nDecided || ''} request${nDecided === 1 ? '' : 's'}</button>
+      ${nPending === 0 ? `<button type="button" id="srp-delete-fleet" class="srp-danger" title="All requests processed — delete this fleet from Alliance Auth">Delete fleet</button>` : ''}
+      <span id="srp-process-status" class="muted"></span>
+    </div>
+    <table class="items-table srp-table">
+      <thead><tr>
+        <th>Pilot</th><th>Ship</th><th class="text-end">KB Loss</th><th>Category</th>
+        <th class="text-end">Recommended</th><th>Decision</th><th>Kill</th><th>Status</th>
+      </tr></thead>
+      <tbody>${body || '<tr><td colspan="8" class="muted">No requests.</td></tr>'}</tbody>
+    </table>`;
+}
+
+function openSrpFleet(fid) { srpState.view = 'fleet'; srpState.fleetId = fid; renderSrp(); }
+function srpBackToList() { srpState.view = 'list'; srpState.fleetId = null; renderSrp(); }
+
+// Delete an entire fleet from Alliance Auth (GET /srp/<id>/remove/). Only
+// offered once a fleet has no pending requests left — guarded again here.
+async function deleteSrpFleet(fid) {
+  const f = (srpState.fleets || []).find((x) => x.id === fid) || {};
+  const reqs = (srpState.rows || []).filter((r) => r.fleetId === fid);
+  const pendingLeft = reqs.filter(srpIsPending).length;
+  if (pendingLeft) { alert(`Fleet "${f.name}" still has ${pendingLeft} pending request(s). Process them before deleting.`); return; }
+  if (!confirm(`Delete fleet "${f.name}" and its ${reqs.length} processed request(s) from Alliance Auth?\n\nThis cannot be undone.`)) return;
+  const status = $('#srp-status');
+  if (status) status.textContent = `Deleting fleet "${f.name}"…`;
+  try {
+    const res = await window.api.aaFetchHtml(`/srp/${fid}/remove/`);
+    if (!res.ok) { if (status) status.textContent = `Delete failed (HTTP ${res.status || 'network error'}).`; return; }
+    srpState.fleets = (srpState.fleets || []).filter((x) => x.id !== fid);
+    srpState.rows = (srpState.rows || []).filter((r) => r.fleetId !== fid);
+    if (srpState.fleetId === fid) srpBackToList(); else renderSrp();
+    if (status) status.textContent = `Deleted fleet "${f.name}".`;
+  } catch (e) {
+    if (status) status.textContent = `Delete error: ${e.message || e}`;
+  }
+}
+
+// Fill the SRP rejection template's {variables} for one request.
+function srpRenderTemplate(text, r, f) {
+  const map = {
+    pilot: r.pilot || '',
+    ship: r.ship || '',
+    fleet: (f && f.name) || '',
+    fc: (f && f.fc) || '',
+    kill_link: r.zkillUrl || '',
+    loss_value: fmtIsk(r.lossAmt),
+    reason: (r.reason && r.reason.trim()) || 'Does not meet SRP policy',
+    date: new Date().toISOString().slice(0, 10),
+  };
+  return (text || '').replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
+}
+
+async function sendSrpRejectMail(r, f) {
+  const subject = srpRenderTemplate(srpRejectTemplate.subject || 'SRP request rejected', r, f);
+  const body = srpRenderTemplate(srpRejectTemplate.body || 'Your SRP request was rejected.', r, f);
+  const res = await fetch(`${API}/api/mail/send-by-name`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient_name: r.pilot, subject, body }),
+  });
+  return res.ok ? { ok: true } : { ok: false, error: await res.text() };
+}
+
+async function srpRefreshFleet(fid) {
+  const vr = await window.api.aaFetchHtml(`/srp/${fid}/view/`);
+  if (!vr.ok) return;
+  srpState.csrf = srpCsrfFromHtml(vr.html) || srpState.csrf;
+  const fresh = parseSrpRequests(vr.html).map((r) => {
+    r.fleetId = fid;
+    r.category = srpAutoCategory(r.ship);
+    r.decision = null;
+    r.reason = '';
+    return r;
+  });
+  srpState.rows = (srpState.rows || []).filter((r) => r.fleetId !== fid).concat(fresh);
+  const f = (srpState.fleets || []).find((x) => x.id === fid);
+  if (f) srpRecomputeFleetMeta(f);
+}
+
+async function processSrpFleet() {
+  const fid = srpState.fleetId;
+  const f = (srpState.fleets || []).find((x) => x.id === fid) || {};
+  const freqs = (srpState.rows || []).filter((r) => r.fleetId === fid && srpIsPending(r));
+  const accepts = freqs.filter((r) => r.decision === 'accept' && r.pk);
+  const rejects = freqs.filter((r) => r.decision === 'reject' && r.pk);
+  const statusEl = $('#srp-process-status');
+  const btn = $('#srp-process');
+  if (!accepts.length && !rejects.length) return;
+  if (!srpState.csrf) { if (statusEl) statusEl.textContent = 'Missing CSRF token — rescan first.'; return; }
+  if (!confirm(`Process fleet "${f.name}":\n  Accept (set payout + approve): ${accepts.length}\n  Reject: ${rejects.length}${rejects.length ? ' (rejection mails sent)' : ''}\n\nThis writes to Alliance Auth. Continue?`)) return;
+
+  if (btn) btn.disabled = true;
+  const referer = `/srp/${fid}/view/`;
+  const errors = [];
+  try {
+    // 1) accepted: set the recommended ISK on each, then bulk-approve.
+    for (let i = 0; i < accepts.length; i++) {
+      const r = accepts[i];
+      if (statusEl) statusEl.textContent = `Setting payout ${i + 1}/${accepts.length}…`;
+      const amount = srpPayout(r.category, r.lossAmt);
+      const up = await window.api.aaPostForm(
+        r.updateUrl || `/srp/request/${r.pk}/update/`,
+        { csrfmiddlewaretoken: srpState.csrf, pk: r.pk, name: 'srp_total_amount', value: String(amount) },
+        referer,
+      );
+      if (!up.ok) errors.push(`set value ${r.pilot}: HTTP ${up.status}`);
+    }
+    if (accepts.length) {
+      if (statusEl) statusEl.textContent = `Approving ${accepts.length}…`;
+      const fields = { csrfmiddlewaretoken: srpState.csrf };
+      accepts.forEach((r) => { fields[r.pk] = 'on'; });
+      const ap = await window.api.aaPostForm('/srp/request/approve/', fields, referer);
+      if (!ap.ok) errors.push(`approve batch: HTTP ${ap.status}`);
+    }
+    // 2) rejected: bulk-reject, then auto-send rejection mails.
+    if (rejects.length) {
+      if (statusEl) statusEl.textContent = `Rejecting ${rejects.length}…`;
+      const fields = { csrfmiddlewaretoken: srpState.csrf };
+      rejects.forEach((r) => { fields[r.pk] = 'on'; });
+      const rj = await window.api.aaPostForm('/srp/request/reject/', fields, referer);
+      if (!rj.ok) errors.push(`reject batch: HTTP ${rj.status}`);
+      for (let i = 0; i < rejects.length; i++) {
+        const r = rejects[i];
+        if (statusEl) statusEl.textContent = `Sending reject mail ${i + 1}/${rejects.length}…`;
+        const mr = await sendSrpRejectMail(r, f);
+        if (!mr.ok) errors.push(`mail ${r.pilot}: ${mr.error}`);
+      }
+    }
+    if (statusEl) statusEl.textContent = 'Refreshing…';
+    await srpRefreshFleet(fid);
+    if (statusEl) statusEl.textContent = errors.length ? `Done with ${errors.length} issue(s): ${errors.slice(0, 3).join('; ')}` : 'Processed.';
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `Process error: ${e.message || e}`;
+  } finally {
+    if (btn) btn.disabled = false;
+    renderSrp();
+  }
+}
+
+async function clearProcessedAll() {
+  if (!srpState.scanned) { alert('Scan SRP first.'); return; }
+  if (!srpState.csrf) { alert('Missing CSRF token — rescan first.'); return; }
+  const processed = (srpState.rows || []).filter((r) => r.pk && !srpIsPending(r));
+  if (!processed.length) { alert('No processed (approved/rejected) requests to clear.'); return; }
+  if (!confirm(`Delete ${processed.length} processed (approved + rejected) request(s) across all fleets from Alliance Auth?\n\nThis cannot be undone.`)) return;
+  const status = $('#srp-status');
+  const btn = $('#btn-srp-clear-processed');
+  if (btn) btn.disabled = true;
+  try {
+    const byFleet = new Map();
+    processed.forEach((r) => {
+      if (!byFleet.has(r.fleetId)) byFleet.set(r.fleetId, []);
+      byFleet.get(r.fleetId).push(r);
+    });
+    let removed = 0;
+    const errors = [];
+    for (const [fid, list] of byFleet) {
+      if (status) status.textContent = `Clearing ${list.length} from fleet ${fid}…`;
+      const fields = { csrfmiddlewaretoken: srpState.csrf };
+      list.forEach((r) => { fields[r.pk] = 'on'; });
+      const res = await window.api.aaPostForm('/srp/request/remove/', fields, `/srp/${fid}/view/`);
+      if (res.ok) removed += list.length; else errors.push(`fleet ${fid}: HTTP ${res.status}`);
+    }
+    if (status) status.textContent = `Removed ${removed} processed request(s)${errors.length ? `; issues: ${errors.join('; ')}` : ''}.`;
+    await runSrpScan();
+  } catch (e) {
+    if (status) status.textContent = `Clear error: ${e.message || e}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Delegated change events within the SRP content area.
+document.addEventListener('change', (e) => {
+  const cat = e.target.closest('#srp-content .srp-cat');
+  if (cat) {
+    const row = (srpState.rows || []).find((r) => String(r.pk) === String(cat.dataset.pk));
+    if (row) { row.category = cat.value; renderSrp(); }
+    return;
+  }
+  const reason = e.target.closest('#srp-content .srp-reason');
+  if (reason) {
+    const row = (srpState.rows || []).find((r) => String(r.pk) === String(reason.dataset.pk));
+    if (row) row.reason = reason.value; // no re-render — keep focus while typing
+  }
+});
+
+// Delegated clicks within the SRP content area (copy / open / back / toggle / process).
+document.addEventListener('click', async (e) => {
+  const cp = e.target.closest('#srp-content .copyable');
+  if (cp) {
+    try {
+      await navigator.clipboard.writeText(cp.dataset.copy || '');
+      const prev = cp.dataset.prevText ?? cp.textContent;
+      cp.dataset.prevText = prev;
+      cp.textContent = 'copied!';
+      cp.classList.add('payout-copied');
+      setTimeout(() => { cp.textContent = prev; cp.classList.remove('payout-copied'); }, 900);
+    } catch (_) {}
+    return;
+  }
+  const open = e.target.closest('#srp-content .srp-open-fleet');
+  if (open) { e.preventDefault(); openSrpFleet(parseInt(open.dataset.fleet, 10)); return; }
+  const delRow = e.target.closest('#srp-content .srp-del-fleet');
+  if (delRow) { deleteSrpFleet(parseInt(delRow.dataset.fleet, 10)); return; }
+  if (e.target.closest('#srp-delete-fleet')) { deleteSrpFleet(srpState.fleetId); return; }
+  if (e.target.closest('#srp-back')) { srpBackToList(); return; }
+  const tog = e.target.closest('#srp-content .srp-tog');
+  if (tog && !tog.disabled) {
+    const row = (srpState.rows || []).find((r) => String(r.pk) === String(tog.dataset.pk));
+    if (row) { row.decision = (row.decision === tog.dataset.dec) ? null : tog.dataset.dec; renderSrp(); }
+    return;
+  }
+  if (e.target.closest('#srp-accept-all')) {
+    (srpState.rows || []).filter((r) => r.fleetId === srpState.fleetId && srpIsPending(r)).forEach((r) => { r.decision = 'accept'; });
+    renderSrp();
+    return;
+  }
+  if (e.target.closest('#srp-process')) { processSrpFleet(); return; }
+});
+
+$('#btn-srp-scan')?.addEventListener('click', runSrpScan);
+$('#btn-srp-clear-processed')?.addEventListener('click', clearProcessedAll);
+
+// SRP rejection template save (Mail tab).
+$('#srp-reject-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const subject = $('#srp-reject-subject')?.value || '';
+  const body = $('#srp-reject-body')?.value || '';
+  const st = $('#srp-reject-status');
+  try {
+    const res = await fetch(`${API}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ srp_reject_subject: subject, srp_reject_body: body }),
+    });
+    if (res.ok) { srpRejectTemplate = { subject, body }; if (st) st.textContent = 'Saved.'; }
+    else if (st) st.textContent = `Error: ${await res.text()}`;
+  } catch (err) { if (st) st.textContent = `Error: ${err.message || err}`; }
+  if (st) setTimeout(() => { st.textContent = ''; }, 2500);
+});
+
+renderSrp();
+
+// ===================== In-app link viewer (side panel + pop-out) =====================
+// External links (zKillboard, Janice, Mutamarket, wiki…) clicked anywhere in the
+// app are intercepted and opened either in a docked side panel (default) or in
+// their own window, per the Config "Link handling" setting.
+
+function openLinkPanel(url) {
+  const panel = $('#link-panel');
+  const view = $('#link-panel-view');
+  if (!panel || !view) { window.api?.openLinkWindow(url); return; }
+  panel.hidden = false;
+  document.body.classList.add('link-panel-open');
+  panel.dataset.url = url;
+  const label = $('#link-panel-url');
+  if (label) label.textContent = url;
+  try { view.src = url; } catch (_) { window.api?.openLinkWindow(url); }
+}
+
+function closeLinkPanel() {
+  const panel = $('#link-panel');
+  const view = $('#link-panel-view');
+  if (panel) { panel.hidden = true; delete panel.dataset.url; }
+  document.body.classList.remove('link-panel-open');
+  if (view) { try { view.src = 'about:blank'; } catch (_) {} }
+}
+
+function openExternalLink(url) {
+  if (!/^https?:\/\//i.test(url || '')) return;
+  if (linkOpenMode === 'window') window.api?.openLinkWindow(url);
+  else openLinkPanel(url);
+}
+
+// Capture-phase so we intercept before navigation. Only plain external http(s)
+// anchors are routed; in-app (#) links and JS handlers are left alone.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[href]');
+  if (!a) return;
+  if (a.closest('#link-panel')) return; // ignore the panel's own chrome
+  const href = a.getAttribute('href') || '';
+  if (!/^https?:\/\//i.test(href)) return;
+  e.preventDefault();
+  openExternalLink(a.href);
+}, true);
+
+$('#link-panel-close')?.addEventListener('click', closeLinkPanel);
+$('#link-panel-popout')?.addEventListener('click', () => {
+  const url = $('#link-panel')?.dataset.url;
+  if (url) window.api?.openLinkWindow(url);
+  closeLinkPanel();
+});
+// Keep the panel's URL label in sync as the user navigates inside the webview.
+(() => {
+  const view = $('#link-panel-view');
+  if (!view || !view.addEventListener) return;
+  view.addEventListener('did-navigate', (e) => {
+    const panel = $('#link-panel');
+    const label = $('#link-panel-url');
+    if (panel && e.url) panel.dataset.url = e.url;
+    if (label && e.url) label.textContent = e.url;
+  });
+})();

@@ -9,25 +9,54 @@
 <body>
   <header>
     <h1>Naval Defence Alliance Management Tool <span id="app-version" class="app-version"></span><button id="btn-check-update" class="check-update-btn" type="button" title="Check for updates now">⟳</button><span id="app-author" class="app-author"></span></h1>
+    <div class="topbar">
+      <div class="view-mode" role="group" aria-label="View mode">
+        <span class="view-mode-label">View</span>
+        <button id="view-member" class="view-mode-btn active" type="button" data-mode="member">Member</button>
+        <button id="view-admin" class="view-mode-btn" type="button" data-mode="admin">Admin</button>
+      </div>
+      <div class="nav-group settings-tabs" data-group="setup">
+        <span class="nav-group-label">Settings</span>
+        <button class="tab-btn" data-tab="config">Config</button>
+        <button class="tab-btn" data-tab="auth">Auth</button>
+        <button class="tab-btn" data-tab="mail">Mail</button>
+      </div>
+    </div>
     <nav>
-      <button class="tab-btn active" data-tab="config">Config</button>
-      <button class="tab-btn" data-tab="auth">Auth</button>
-      <button class="tab-btn" data-tab="buyback">Buyback</button>
-      <button class="tab-btn" data-tab="moon">Moon</button>
-      <button class="tab-btn" data-tab="working">Working</button>
-      <button class="tab-btn" data-tab="appraisal">Appraisal</button>
-      <button class="tab-btn" data-tab="mail">Mail</button>
-      <button class="tab-btn" data-tab="doctrines">Doctrines</button>
-      <button class="tab-btn" data-tab="readiness">Readiness</button>
-      <button class="tab-btn" data-tab="contracts">Contracts</button>
-      <button class="tab-btn" data-tab="sov">Sov</button>
+      <div class="nav-group" data-group="general">
+        <span class="nav-group-label">General</span>
+        <button class="tab-btn active" data-tab="appraisal">Appraisal</button>
+        <button class="tab-btn" data-tab="sov">Sov</button>
+        <button class="tab-btn" data-tab="doctrines">Doctrines</button>
+        <button class="tab-btn" data-tab="readiness">Market Readiness</button>
+        <button class="tab-btn" data-tab="market">Market</button>
+      </div>
+      <div class="nav-group" data-group="operations">
+        <span class="nav-group-label">Operations</span>
+        <button class="tab-btn" data-tab="buybacks">Buybacks</button>
+        <button class="tab-btn" data-tab="working">Working</button>
+        <button class="tab-btn" data-tab="contracts">Contracts</button>
+        <button class="tab-btn" data-tab="srp">SRP</button>
+        <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
+      </div>
     </nav>
   </header>
   <main>
-    <section id="tab-config" class="tab active">
+    <section id="tab-config" class="tab">
       <h2>Configuration</h2>
       <form id="config-form">
         <label>Corporation ID <input name="corp_id" type="number" /></label>
+
+        <fieldset>
+          <legend>Link handling</legend>
+          <p class="muted">How external links (zKillboard, Janice, etc.) open when clicked inside the app.</p>
+          <label>Open links in
+            <select id="link-open-mode" name="link_open_mode">
+              <option value="panel">Side panel (same window, pop-out button)</option>
+              <option value="window">New window</option>
+            </select>
+          </label>
+        </fieldset>
 
         <fieldset>
           <legend>Janice market</legend>
@@ -115,6 +144,17 @@
           </div>
         </fieldset>
 
+        <fieldset>
+          <legend>Market history archive</legend>
+          <p class="muted">Accumulates one gzipped full-depth snapshot of the Market tab's structure per day into a dedicated private GitHub repo — building the history ESI doesn't expose for player structures. Paste the repo's HTTPS URL (defaults to the <code>main</code> branch); the per-day path is generated automatically. The push is opportunistic (fires when the Market tab is open, at most once / 24h) and idempotent (one file per day). Use fine-grained PATs scoped to <strong>this repo only</strong>. Both PATs are opt-in at export time (Backup &amp; share below).</p>
+          <label class="aq-url-label">History repo URL <input name="market_history_repo_url" type="url" placeholder="https://github.com/&lt;owner&gt;/&lt;repo&gt;.git" /></label>
+          <div class="aq-pat-row">
+            <label>Read PAT <small class="muted">(<code>Contents: read</code> — for future analytics)</small> <input name="market_history_pat_read" type="password" autocomplete="off" placeholder="github_pat_… or ghp_…" /></label>
+            <label>Write PAT <small class="muted">(<code>Contents: read+write</code> — required to archive)</small> <input name="market_history_pat_write" type="password" autocomplete="off" placeholder="github_pat_…" /></label>
+          </div>
+          <p id="market-history-status" class="muted"></p>
+        </fieldset>
+
         <label>Janice API Key (optional) <input name="janice_api_key" type="text" autocomplete="off" placeholder="X-ApiKey from Janice" /></label>
 
         <fieldset>
@@ -137,15 +177,28 @@
 
     <section id="tab-auth" class="tab">
       <h2>Authentication</h2>
-      <p class="muted">Slot&nbsp;1 is the primary character (used for wallets, corp contracts, mail). Slots&nbsp;2&nbsp;&amp;&nbsp;3 are optional alts logged in so the Contracts page can also see alliance contracts those toons have access to.</p>
+      <p class="muted">Slot&nbsp;1 is the primary character (used for wallets, corp contracts, mail). Slots&nbsp;2&nbsp;&amp;&nbsp;3 are optional alts logged in so the Contracts page can also see alliance contracts those toons have access to. Slot&nbsp;4 is dedicated to <strong>Hooks &amp; Hubs</strong> — log in a character with the <strong>Director</strong> role to read skyhook &amp; sov-hub structure fuel.</p>
       <div id="auth-slots"></div>
       <p>Legacy status: <span id="auth-status" class="muted">checking...</span></p>
       <div class="actions">
         <button id="btn-refresh-status" class="secondary">Refresh all slots</button>
       </div>
+
+      <h3>Alliance Auth (Doctrines &amp; Market Readiness)</h3>
+      <p class="muted">Sign in to Alliance Auth at <code>auth.navaldefence.org</code> once; the session is remembered and reused by the Doctrines and Market Readiness tabs.</p>
+      <div class="actions">
+        <button id="btn-aa-open" type="button">Sign in to Alliance Auth</button>
+        <button id="btn-aa-logout" class="secondary" type="button">Sign out</button>
+      </div>
+      <p id="aa-auth-status" class="muted"></p>
     </section>
 
-    <section id="tab-buyback" class="tab">
+    <section id="tab-buybacks" class="tab">
+      <div class="bb-subtoggle" role="group" aria-label="Buyback type">
+        <button type="button" class="bb-sub-btn active" data-pane="general">General Buyback</button>
+        <button type="button" class="bb-sub-btn" data-pane="ore">Ore Buyback</button>
+      </div>
+      <div id="bb-pane-general" class="bb-pane">
       <h2>Buyback contracts</h2>
       <div id="wallet-summary" class="wallet-summary"></div>
       <div id="buyback-payout-total" class="payout-total" hidden></div>
@@ -165,16 +218,54 @@
         <button class="filter-btn" data-filter="errors">Errors</button>
       </div>
       <div id="results"></div>
+      </div>
+
+      <div id="bb-pane-ore" class="bb-pane" hidden>
+      <div class="moon-layout">
+        <div class="moon-main">
+          <h2>Ore buyback (moon contracts)</h2>
+          <div id="moon-wallet-summary" class="wallet-summary"></div>
+          <div id="moon-payout-total" class="payout-total" hidden></div>
+          <div class="actions">
+            <button id="btn-fetch-moon">Fetch &amp; process</button>
+            <button id="btn-refresh-moon-wallets" class="secondary">Refresh wallets</button>
+            <button id="btn-toggle-calc" class="secondary" type="button">Hide calculator</button>
+          </div>
+          <p id="moon-status" class="muted"></p>
+          <div class="progress-area" id="moon-progress" hidden>
+            <div class="progress-bar"><div class="progress-fill"></div></div>
+            <div class="progress-step muted">starting…</div>
+          </div>
+          <div class="filter-bar" data-target="moon">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="approve">Approve</button>
+            <button class="filter-btn" data-filter="reject">Reject</button>
+            <button class="filter-btn" data-filter="errors">Errors</button>
+          </div>
+          <div id="moon-results"></div>
+        </div>
+        <aside class="moon-sidebar" id="moon-calc-sidebar">
+          <div class="calc-header">
+            <strong>Calculator</strong>
+            <div class="calc-header-actions">
+              <button id="btn-calc-popout" class="calc-icon-btn" type="button" title="Open in window">⇱</button>
+            </div>
+          </div>
+          <div id="calc-mount"></div>
+          <p class="muted calc-help">Click the display, then use numpad to type. 70/80/90% copies to clipboard.</p>
+        </aside>
+      </div>
+      </div>
     </section>
 
-    <section id="tab-appraisal" class="tab">
-      <h2>Appraisal — Janice + Mutamarket</h2>
-      <p class="muted">Paste anything from the in-game inventory window. <strong>Non-abyssal items</strong> get a normal Janice appraisal (the same code the Buyback / Moon tabs already use). <strong>Abyssal modules</strong> are routed through <a href="https://mutamarket.com" target="_blank" rel="noopener">Mutamarket</a> automatically — for each abyssal type in the paste, we pull the live listings and report both the <em>marketplace median</em> (real seller asking prices) and the <em>estimator median</em> (Mutamarket's AI fair-value estimate). The two prices are shown separately; sum them as you prefer.</p>
+    <section id="tab-appraisal" class="tab active">
+      <h2>Appraisal — Janice</h2>
+      <p class="muted">Paste anything from the in-game inventory window to get a Janice appraisal (the same code the Buyback / Moon tabs already use). Buy / Split / Sell totals come back with 80–120% modifier chips on every figure for instant buyback math.</p>
       <div class="appraise-row">
         <label>Trade hub <select id="appraise-market"></select></label>
         <label class="appraise-persist-label"><input type="checkbox" id="appraise-persist" checked /> Save a shareable Janice link</label>
       </div>
-      <textarea id="appraise-paste" class="appraise-paste" rows="10" placeholder="Paste EVE-format items here — one per line, e.g.&#10;Abyssal Stasis Webifier&#9;1&#10;Damage Control II&#9;1&#10;Tritanium&#9;10000"></textarea>
+      <textarea id="appraise-paste" class="appraise-paste" rows="10" placeholder="Paste EVE-format items here — one per line, e.g.&#10;Damage Control II&#9;1&#10;Tritanium&#9;10000"></textarea>
       <div class="actions">
         <button id="btn-appraise" type="button">Appraise</button>
         <button id="btn-appraise-clear" type="button" class="secondary">Clear</button>
@@ -209,15 +300,26 @@
           <span id="mail-presets-status" class="muted"></span>
         </div>
       </form>
+
+      <form id="srp-reject-form">
+        <fieldset>
+          <legend>SRP rejection template</legend>
+          <p class="muted">Auto-sent in-game to the pilot when you reject an SRP request on the <strong>SRP</strong> tab. Variables: <code>{pilot}</code> <code>{ship}</code> <code>{fleet}</code> <code>{fc}</code> <code>{kill_link}</code> <code>{loss_value}</code> <code>{reason}</code> <code>{date}</code>.</p>
+          <label>Subject <input type="text" id="srp-reject-subject" placeholder="SRP request rejected — {ship}" /></label>
+          <label>Body <textarea id="srp-reject-body" rows="6" placeholder="Mail body; use {variable} placeholders"></textarea></label>
+          <div class="actions">
+            <button type="submit">Save SRP template</button>
+            <span id="srp-reject-status" class="muted"></span>
+          </div>
+        </fieldset>
+      </form>
     </section>
 
     <section id="tab-doctrines" class="tab">
       <h2>Doctrines &amp; Fittings</h2>
-      <p class="muted">Pulled from Alliance Auth at <code>auth.navaldefence.org</code>. Sign in once; the session is remembered for future fetches.</p>
+      <p class="muted">Pulled from Alliance Auth at <code>auth.navaldefence.org</code>. Sign in via the <strong>Auth</strong> tab; the session is remembered for future fetches.</p>
       <div class="actions">
-        <button id="btn-aa-open" type="button">Sign in to Alliance Auth</button>
         <button id="btn-aa-refresh" type="button">Refresh doctrines</button>
-        <button id="btn-aa-logout" class="secondary" type="button">Sign out</button>
       </div>
       <p id="aa-status" class="muted"></p>
       <div id="doctrines-list"></div>
@@ -264,6 +366,21 @@
       </details>
     </section>
 
+    <section id="tab-srp" class="tab">
+      <h2>SRP — Ship Replacement payouts</h2>
+      <p class="muted">Pulls outstanding SRP requests from <code>auth.navaldefence.org/srp/</code> (uses the Alliance Auth login from the Doctrines tab) and computes a recommended payout per the <a href="https://wiki.navaldefence.org/en/navy-programs/ship-replacement" target="_blank" rel="noopener">SRP scheme</a>: payout = rate × the killboard loss value. <strong>Logistics</strong> &amp; <strong>Interdictors</strong> auto-set to 100%; everything else defaults to <strong>Standard 75%</strong>. Use each row's category dropdown to set Links / Fight&nbsp;Club (max&nbsp;10M) / Hisec-NPC (max&nbsp;5M) or correct a guess — the recommended figure updates live and is click-to-copy. Eligibility (what qualifies) stays your call; this only does the math.</p>
+      <div class="actions">
+        <button id="btn-srp-scan" type="button">Scan SRP</button>
+        <button id="btn-srp-clear-processed" type="button" class="secondary" title="Delete every approved/rejected request across all fleets from Alliance Auth">Clear processed (all fleets)</button>
+        <span id="srp-status" class="muted"></span>
+      </div>
+      <div class="progress-area" id="srp-progress" style="display:none">
+        <div class="progress-bar"><div class="progress-fill" id="srp-progress-fill"></div></div>
+        <div class="progress-step muted" id="srp-progress-step"></div>
+      </div>
+      <div id="srp-content"></div>
+    </section>
+
     <section id="tab-sov" class="tab">
       <h2>Sovereignty dashboard</h2>
       <p class="muted">ADM, sov holdings, active campaigns, and live system activity for the corp's alliance. All data is public ESI — no scopes required.</p>
@@ -272,43 +389,6 @@
         <span id="sov-status" class="muted"></span>
       </div>
       <div id="sov-content"></div>
-    </section>
-
-    <section id="tab-moon" class="tab">
-      <div class="moon-layout">
-        <div class="moon-main">
-          <h2>Moon contracts</h2>
-          <div id="moon-wallet-summary" class="wallet-summary"></div>
-          <div id="moon-payout-total" class="payout-total" hidden></div>
-          <div class="actions">
-            <button id="btn-fetch-moon">Fetch &amp; process</button>
-            <button id="btn-refresh-moon-wallets" class="secondary">Refresh wallets</button>
-            <button id="btn-toggle-calc" class="secondary" type="button">Hide calculator</button>
-          </div>
-          <p id="moon-status" class="muted"></p>
-          <div class="progress-area" id="moon-progress" hidden>
-            <div class="progress-bar"><div class="progress-fill"></div></div>
-            <div class="progress-step muted">starting…</div>
-          </div>
-          <div class="filter-bar" data-target="moon">
-            <button class="filter-btn active" data-filter="all">All</button>
-            <button class="filter-btn" data-filter="approve">Approve</button>
-            <button class="filter-btn" data-filter="reject">Reject</button>
-            <button class="filter-btn" data-filter="errors">Errors</button>
-          </div>
-          <div id="moon-results"></div>
-        </div>
-        <aside class="moon-sidebar" id="moon-calc-sidebar">
-          <div class="calc-header">
-            <strong>Calculator</strong>
-            <div class="calc-header-actions">
-              <button id="btn-calc-popout" class="calc-icon-btn" type="button" title="Open in window">⇱</button>
-            </div>
-          </div>
-          <div id="calc-mount"></div>
-          <p class="muted calc-help">Click the display, then use numpad to type. 70/80/90% copies to clipboard.</p>
-        </aside>
-      </div>
     </section>
 
     <section id="tab-working" class="tab">
@@ -341,6 +421,67 @@
         </aside>
       </div>
     </section>
+
+    <section id="tab-market" class="tab">
+      <h2>Market analytics</h2>
+      <p class="muted">Live snapshot of the first configured structure's market (<span id="market-structure-label">…</span>). This market is seeded mostly with sell orders, so the dashboard leads with sell-side liquidity. <strong>Snapshot only</strong> — no history (ESI exposes none for player structures). Cached 5&nbsp;min; hit Refresh to re-fetch.</p>
+      <div class="actions">
+        <button id="btn-market-refresh" type="button">Refresh market</button>
+        <span id="market-status" class="muted"></span>
+      </div>
+      <div class="progress-area" id="market-progress" hidden>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-step muted">starting…</div>
+      </div>
+      <div id="market-tiles" class="market-tiles"></div>
+      <div id="market-turnover" class="market-turnover"></div>
+      <div class="market-filters">
+        <label class="market-chk market-lens-toggle" title="Show only doctrine-required items, with quantity-aware shortfall against this market"><input id="market-lens" type="checkbox" /> Doctrine lens</label>
+        <input id="market-search" type="search" placeholder="Search item name…" autocomplete="off" />
+        <select id="market-category"><option value="">All categories</option></select>
+        <select id="market-lens-status" class="market-lens-only" hidden>
+          <option value="">All statuses</option>
+          <option value="missing">Missing</option>
+          <option value="short">Short</option>
+          <option value="stocked">Stocked</option>
+        </select>
+        <label class="market-filter-num market-only">Min sell value <input id="market-min-value" type="number" min="0" step="1000000" placeholder="0" /></label>
+        <label class="market-chk market-only"><input id="market-single-seller" type="checkbox" /> Single seller</label>
+        <label class="market-chk market-only"><input id="market-has-buy" type="checkbox" /> Has buy orders</label>
+        <button id="market-clear-filters" type="button" class="secondary">Clear</button>
+        <span id="market-result-count" class="muted"></span>
+      </div>
+      <p id="market-lens-note" class="muted" hidden></p>
+      <div class="market-table-wrap">
+        <table id="market-table" class="market-table">
+          <thead id="market-thead"></thead>
+          <tbody id="market-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-hooks-hubs" class="tab">
+      <h2>Hooks &amp; Hubs</h2>
+      <p class="muted">Skyhook &amp; sovereignty-hub <strong>fuel</strong> is read live from ESI via <strong>slot&nbsp;4</strong> (a Director character — set it up on the Auth tab). Power, workforce, installed upgrades and skyhook collection contents are <strong>not exposed by ESI</strong>, so the upgrade/workforce planner below is driven by manual data you maintain here.</p>
+
+      <h3>Structure fuel</h3>
+      <div class="actions">
+        <button id="btn-hh-fuel-refresh" type="button">Refresh fuel</button>
+        <span id="hh-fuel-status" class="muted"></span>
+      </div>
+      <div id="hh-fuel-content"></div>
+
+      <h3>Upgrade &amp; workforce planner <span class="muted">— manual data (not in ESI)</span></h3>
+      <div class="actions">
+        <button id="btn-hh-plan-save" type="button">Save plan</button>
+        <button id="btn-hh-plan-reload" type="button" class="secondary">Reload</button>
+        <button id="btn-hh-plan-add-system" type="button" class="secondary">+ System</button>
+        <button id="btn-hh-plan-add-transfer" type="button" class="secondary">+ Workforce transfer</button>
+        <button id="btn-hh-plan-import-hubs" type="button" class="secondary">Import systems from my sov hubs</button>
+        <span id="hh-plan-status" class="muted"></span>
+      </div>
+      <div id="hh-planner-content"></div>
+    </section>
   </main>
 
   <div id="mail-modal" class="modal" hidden>
@@ -358,8 +499,21 @@
     </div>
   </div>
 
+  <!-- In-app link viewer: docks on the right, can pop out into its own window -->
+  <div id="link-panel" class="link-panel" hidden>
+    <div class="link-panel-head">
+      <span id="link-panel-url" class="link-panel-url"></span>
+      <button id="link-panel-popout" class="link-panel-btn" type="button" title="Pop out into its own window">⇱ Pop out</button>
+      <button id="link-panel-close" class="link-panel-btn" type="button" title="Close">✕</button>
+    </div>
+    <webview id="link-panel-view" class="link-panel-view" src="about:blank" partition="persist:linkview"></webview>
+  </div>
+
   <script src="parse-utils.js"></script>
+  <script src="hooks-hubs-utils.js"></script>
   <script src="calculator.js"></script>
   <script src="app.js"></script>
+  <script src="hooks-hubs.js"></script>
+  <script src="market.js"></script>
 </body>
 </html>

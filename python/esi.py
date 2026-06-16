@@ -26,6 +26,32 @@ def resolve_names(ids, user_agent):
     return out
 
 
+def resolve_ids(names, user_agent):
+    """Resolve names -> ids via POST /universe/ids/. Returns a dict keyed by
+    lowercased character name -> character_id (only the `characters` bucket)."""
+    cleaned = sorted({n.strip() for n in names if n and n.strip()})
+    out = {}
+    if not cleaned:
+        return out
+    for i in range(0, len(cleaned), 500):
+        chunk = cleaned[i:i + 500]
+        resp = requests.post(
+            f'{ESI_BASE}/universe/ids/',
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': user_agent,
+            },
+            params={'datasource': 'tranquility'},
+            json=chunk,
+        )
+        resp.raise_for_status()
+        data = resp.json() or {}
+        for ent in (data.get('characters') or []):
+            out[(ent.get('name') or '').lower()] = ent.get('id')
+    return out
+
+
 def send_evemail(character_id, recipient_id, subject, body, access_token, user_agent):
     """Send an EVE mail from the authenticated character to a single recipient.
 
@@ -248,6 +274,39 @@ def fetch_corp_contracts(corp_id, access_token, user_agent):
             break
         page += 1
     return all_contracts
+
+
+def fetch_corp_structures(corp_id, access_token, user_agent):
+    """Fetch all pages of corporation-owned structures from ESI.
+
+    Returns the raw structure records — each carries `structure_id`, `type_id`,
+    `system_id`, `state`, `fuel_expires` (ISO8601, when present), and a
+    `services` list. Skyhooks and sovereignty hubs appear here alongside Upwell
+    citadels/engineering complexes. Requires the
+    `esi-corporations.read_structures.v1` scope on a character with the Director
+    role; ESI returns 403 otherwise (let the caller decide how to surface that).
+    """
+    url = f'{ESI_BASE}/corporations/{corp_id}/structures/'
+    all_structures = []
+    page = 1
+    while True:
+        resp = requests.get(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'token': access_token, 'page': page},
+        )
+        if resp.status_code >= 500:
+            break
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        all_structures.extend(batch)
+        max_page = int(resp.headers.get('x-pages', page))
+        if page >= max_page:
+            break
+        page += 1
+    return all_structures
 
 
 def fetch_public_contracts_paged(region_id, user_agent):

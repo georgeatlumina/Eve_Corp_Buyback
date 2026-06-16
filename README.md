@@ -16,11 +16,9 @@ payout. Highlights:
   the real refined minerals from the refinery into a per-pin Janice paste
   box, get back the buy total × the contract's blended payout fraction.
   Pins persist across app restarts.
-- An **Appraisal** tab for one-shot Janice work with first-class
-  abyssal-module support (Mutamarket marketplace + AI-estimator medians
-  surfaced separately so the spread typical of thin abyssal markets stays
-  visible). 80/90/100/110/120% chips on every headline figure for instant
-  buyback math.
+- An **Appraisal** tab for one-shot Janice work — Buy / Split / Sell
+  totals with 80/90/100/110/120% chips on every headline figure for instant
+  buyback math, plus a shareable Janice link.
 - A **Contracts** dashboard that tallies corp-posted doctrine fits against
   user-configured quotas. **Alliance quota sync** via a private GitHub repo
   (Contents API + fine-grained PATs split read/write) so the admin edits
@@ -81,10 +79,8 @@ https://github.com/georgeatlumina/Eve_Corp_Buyback/releases/latest
    / `disputed`) persist on disk; pins survive app restarts and Moon-tab
    re-fetches.
 7. **One-shot appraisals (Appraisal tab).** Paste any EVE-format inventory
-   (Ctrl/Cmd-Enter to fire), get a Janice block plus a Mutamarket addendum
-   for any abyssal modules in the same paste. Marketplace median and AI
-   estimator median are reported separately; click any headline or
-   percentage chip to copy the integer.
+   (Ctrl/Cmd-Enter to fire), get a Janice block with Buy / Split / Sell
+   totals. Click any headline or percentage chip to copy the integer.
 8. **Send mail** — once mail presets are configured (Mail tab), every contract
    row gets a button per preset. Click it to preview the rendered mail and
    send it to that contract's issuer.
@@ -275,7 +271,7 @@ with *Hide calculator* or pop it out into its own window.
 
 ### Appraisal tab (no config needed)
 
-One-shot Janice appraisal pad with first-class abyssal-module support:
+One-shot Janice appraisal pad:
 
 - Paste any EVE-format inventory (drag from cargo bay, hangar, contract
   window — anything Janice accepts).
@@ -287,14 +283,10 @@ You get back:
   a click-to-copy headline and a row of 80 / 90 / 100 / 110 / 120 %
   percentage-modifier chips (also click-to-copy). Buyback admins can grab
   "90 % of Jita buy" without doing the math.
-- **Abyssal addendum** per type (Mutamarket). Marketplace median (median
-  of `contract.price` for actively-asking sellers) and AI-estimator median
-  (median of Mutamarket's AI fair-value field) are reported side-by-side
-  so the wide spread typical of thin abyssal markets stays visible. Min /
-  max / count shown for both.
-- **Five summary tiles** at the bottom — Janice / Marketplace / Estimator
-  / Grand-Janice-plus-marketplace / Grand-Janice-plus-estimator. Every
-  figure copyable.
+- An **effective-prices** drawer (smoothed via recent history) when those
+  figures differ from the immediate book.
+- A **shareable Janice link** (tick "Save a shareable Janice link") that
+  copies/opens the appraisal on janice.e-351.com.
 
 ### Mail templates (Mail tab)
 
@@ -322,6 +314,31 @@ The **Sov** tab aggregates public-ESI sovereignty data (IHUB ADM, system
 ownership map, active campaigns, system jumps/kills, incursions) into a
 single dashboard. No auth required — it runs entirely off public
 endpoints.
+
+### Hooks & Hubs tab (admin — needs a Director slot)
+
+Admin dashboard for Orbital Skyhooks and Sovereignty Hubs, in two halves:
+
+- **Structure fuel (live ESI).** Pulls `fuel_expires` from
+  `/corporations/{corp_id}/structures/` and shows, per type, an overview tile
+  (count · low-fuel count · soonest expiry) plus a per-structure table sorted
+  by time remaining (red < 3 days, amber < 7). Requires the
+  `esi-corporations.read_structures.v1` scope on a **Director** character —
+  log that toon into the new **slot 4** on the Auth tab. (Any authenticated
+  slot whose token carries the scope + role contributes; structures are
+  deduped.) After upgrading you must re-login so the new scope is granted.
+
+- **Upgrade & workforce planner (manual).** ESI does **not** expose Equinox
+  power, workforce, installed upgrades, or the skyhook collection reservoir,
+  so this half is a manual planning table persisted locally
+  (`<userData>/eve_auth/workforce_plan.json`). Enter each system's power and
+  workforce, assign upgrades from an editable catalog, and add workforce
+  transfers between systems. The app live-checks feasibility — **power is
+  local (a system's own balance must stay ≥ 0); workforce can be transferred
+  between systems** — flipping rows green/red as you shuffle upgrades or move
+  workforce. *Import systems from my sov hubs* seeds the table with the system
+  names from the fuel half. Edit freely (the sandbox) then **Save plan**;
+  **Reload** discards unsaved changes.
 
 ## Troubleshooting
 

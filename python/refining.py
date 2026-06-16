@@ -1,14 +1,10 @@
-import bz2
 import csv
-import io
 import os
+import sys
 import threading
-import urllib.request
 
-import requests
-
-from config import AUTH_DIR
 from esi import fetch_group_info, fetch_type_info
+from janice import fetch_buy_prices as janice_buy_prices
 
 # EVE categories whose items are accepted in moon-payout contracts:
 #   25   — Asteroid: regular ore, moon ore, ice (raw + compressed)
@@ -129,11 +125,16 @@ def is_refined_output(type_id, user_agent):
     except Exception:
         return False
 
-FUZZWORK_MATERIALS_URL = 'https://www.fuzzwork.co.uk/dump/latest/invTypeMaterials.csv.bz2'
-FUZZWORK_AGGREGATES_URL = 'https://market.fuzzwork.co.uk/aggregates/'
+# Reprocessing yields ship as a bundled static CSV (the ore/moon-ore/ice subset
+# moon contracts ever refine), regenerated from EVE Ref by
+# gen_mineable_materials.py. Fuzzwork removed its CSV dumps upstream and ESI
+# never exposed invTypeMaterials, so a committed subset is the reliable source.
+def _bundled_data_path(name):
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, 'data', name)
 
-CACHE_DIR = AUTH_DIR
-MATERIALS_CACHE = os.path.join(CACHE_DIR, 'invTypeMaterials.csv')
+
+MATERIALS_PATH = _bundled_data_path('mineable_type_materials.csv')
 
 HUBS = {
     'Jita 4-4': {'station_id': 60003760},
@@ -153,14 +154,8 @@ def _load_materials():
     with _lock:
         if _materials is not None:
             return _materials
-        if not os.path.exists(MATERIALS_CACHE):
-            os.makedirs(CACHE_DIR, exist_ok=True)
-            with urllib.request.urlopen(FUZZWORK_MATERIALS_URL) as r:
-                raw = bz2.decompress(r.read())
-            with open(MATERIALS_CACHE, 'wb') as f:
-                f.write(raw)
         materials = {}
-        with open(MATERIALS_CACHE, encoding='utf-8') as f:
+        with open(MATERIALS_PATH, encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 tid = int(row['typeID'])
@@ -192,43 +187,22 @@ def yields_for(type_id, quantity, user_agent):
     return yields, remainder
 
 
-def fetch_buy_prices(station_id, type_ids, user_agent):
-    """Get max buy price at a station for each type_id, via fuzzwork aggregates."""
-    if not type_ids:
-        return {}
-    out = {}
-    ids = list(type_ids)
-    for i in range(0, len(ids), 100):
-        chunk = ids[i:i + 100]
-        resp = requests.get(
-            FUZZWORK_AGGREGATES_URL,
-            params={'station': station_id, 'types': ','.join(str(t) for t in chunk)},
-            headers={'User-Agent': user_agent},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        for tid_str, info in resp.json().items():
-            buy = info.get('buy') or {}
-            try:
-                out[int(tid_str)] = float(buy.get('max') or 0)
-            except (ValueError, TypeError):
-                pass
-    return out
-
-
 def compute_refined_payout(
     items, hub_name,
     moon_ore_efficiency, non_moon_ore_efficiency, ice_efficiency,
     non_moon_payout_fraction,
     user_agent,
     moon_payout_fraction=MOON_ORE_PAYOUT_FRACTION,
+    janice_api_key=None,
 ):
     """Returns refined value + per-bucket payout (moon ore at moon_payout_fraction,
     everything else at non_moon_payout_fraction). Moon ore and non-moon ore are
     refined at independent yields; ice has its own yield as well.
+
+    Refined minerals are priced through Janice (immediate buy price at
+    `hub_name`), which requires a configured Janice API key.
     """
-    hub = HUBS.get(hub_name)
-    if not hub:
+    if hub_name not in HUBS:
         raise ValueError(f'Unknown trade hub: {hub_name!r}')
 
     moon_ore_totals = {}      # mineral_type_id -> raw yield from moon ore (pre-efficiency)
@@ -316,7 +290,7 @@ def compute_refined_payout(
         set(moon_ore_totals) | set(non_moon_ore_totals) | set(ice_totals)
         | set(moon_leftover) | set(other_leftover)
     )
-    prices = fetch_buy_prices(hub['station_id'], price_ids, user_agent)
+    prices = janice_buy_prices(price_ids, hub_name, janice_api_key, user_agent)
 
     # Per-bucket value, plus a merged breakdown for the items dropdown.
     breakdown = []
@@ -352,8 +326,12 @@ def compute_refined_payout(
         non_moon_leftover_value += value
         leftover_breakdown.append({'type_id': tid, 'quantity': qty, 'unit_price': price, 'value': value})
 
-    moon_total = moon_value + moon_leftover_value
-    non_moon_total = non_moon_value + non_moon_leftover_value
+    # Leftover (sub-portion remainders + unrefinable items) is intentionally
+    # NOT paid: you can only reprocess in whole portions, so leftovers carry no
+    # refined value. Tracked in leftover_breakdown for transparency, but
+    # excluded from the payout totals.
+    moon_total = moon_value
+    non_moon_total = non_moon_value
     moon_payout = moon_total * moon_payout_fraction
     non_moon_payout = non_moon_total * non_moon_payout_fraction
 

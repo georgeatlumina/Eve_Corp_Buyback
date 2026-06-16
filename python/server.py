@@ -1,3 +1,4 @@
+import gzip
 import json
 import os
 import secrets
@@ -43,6 +44,7 @@ from esi import (
     fetch_constellation_info,
     fetch_contract_items,
     fetch_corp_contracts,
+    fetch_corp_structures,
     fetch_corp_wallets,
     fetch_corporation_info,
     fetch_incursions,
@@ -58,10 +60,11 @@ from esi import (
     fetch_system_jumps,
     fetch_system_kills,
     resolve_names,
+    resolve_ids,
     send_evemail,
 )
 from janice import create_appraisal, create_appraisal_from_text, fetch_type_sell_price
-from mutamarket import appraise_abyssal_type, is_abyssal_item_name
+from market import enrich as enrich_types, missing_ids as meta_missing_ids
 from pinned import (
     append_appraisal,
     load_pinned,
@@ -71,6 +74,7 @@ from pinned import (
 )
 from refining import compute_refined_payout, is_donation, is_mineable, is_prismaticite, is_refined_output
 from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
+from workforce_plan import load_plan, save_plan
 
 PORT = 8765
 REDIRECT_URI = f'http://localhost:{PORT}/callback'
@@ -125,6 +129,9 @@ class ConfigUpdate(BaseModel):
     moon_payout_fraction: Optional[float] = None
     non_moon_payout_fraction: Optional[float] = None
     mail_presets: Optional[list[dict]] = None
+    srp_reject_subject: Optional[str] = None
+    srp_reject_body: Optional[str] = None
+    link_open_mode: Optional[str] = None
     home_structure_id: Optional[int] = None
     home_region_id: Optional[int] = None
     quotas: Optional[list[dict]] = None
@@ -133,6 +140,9 @@ class ConfigUpdate(BaseModel):
     alliance_quota_pat_read: Optional[str] = None
     alliance_quota_pat_write: Optional[str] = None
     alliance_quota_allow_push: Optional[bool] = None
+    market_history_repo_url: Optional[str] = None
+    market_history_pat_read: Optional[str] = None
+    market_history_pat_write: Optional[str] = None
 
 
 @app.post('/api/config')
@@ -245,12 +255,11 @@ class SendMailRequest(BaseModel):
     body: str
 
 
-@app.post('/api/mail/send')
-def send_mail(req: SendMailRequest):
-    """Send an EVE mail from the authenticated character to recipient_id."""
-    if not req.recipient_id:
+def _send_mail_core(recipient_id: int, subject: str, body: str):
+    """Shared mail-send path: validate auth/scope on slot1, send to one recipient."""
+    if not recipient_id:
         raise HTTPException(400, 'recipient_id is required')
-    if not req.subject.strip() or not req.body.strip():
+    if not subject.strip() or not body.strip():
         raise HTTPException(400, 'subject and body cannot be empty')
 
     cached = load_cached_tokens()
@@ -280,12 +289,41 @@ def send_mail(req: SendMailRequest):
 
     try:
         result = send_evemail(
-            character_id, req.recipient_id, req.subject, req.body,
+            character_id, int(recipient_id), subject, body,
             access_token, get_user_agent(),
         )
     except Exception as e:
         raise HTTPException(502, str(e))
     return {'ok': True, 'mail_id': result}
+
+
+@app.post('/api/mail/send')
+def send_mail(req: SendMailRequest):
+    """Send an EVE mail from the authenticated character to recipient_id."""
+    return _send_mail_core(req.recipient_id, req.subject, req.body)
+
+
+class SendMailByNameRequest(BaseModel):
+    recipient_name: str
+    subject: str
+    body: str
+
+
+@app.post('/api/mail/send-by-name')
+def send_mail_by_name(req: SendMailByNameRequest):
+    """Resolve an EVE character name -> id, then send. Used by the SRP tab's
+    auto-rejection mail where we only have the pilot's display name."""
+    name = (req.recipient_name or '').strip()
+    if not name:
+        raise HTTPException(400, 'recipient_name is required')
+    try:
+        ids = resolve_ids([name], get_user_agent())
+    except Exception as e:
+        raise HTTPException(502, f'name resolution failed: {e}')
+    cid = ids.get(name.lower())
+    if not cid:
+        raise HTTPException(404, f'Could not resolve character name {name!r} to an ID')
+    return _send_mail_core(cid, req.subject, req.body)
 
 
 @app.get('/api/wallets')
@@ -931,6 +969,7 @@ def _validate_stream(cfg, req):
                     non_moon_payout_frac,
                     get_user_agent(),
                     moon_payout_fraction=moon_payout_frac,
+                    janice_api_key=janice_key,
                 )
                 refined_block['moon_ore_refining_efficiency'] = moon_ore_refining_eff
                 refined_block['non_moon_ore_refining_efficiency'] = non_moon_ore_refining_eff
@@ -1005,6 +1044,73 @@ def _summarize_orders(structure_id: int, orders: list, fetched_at: float) -> dic
         'fetched_at': fetched_at,
         'order_count': len(orders),
         'by_type': by_type,
+    }
+
+
+def _analyze_orders(structure_id: int, orders: list, fetched_at: float, type_meta: dict) -> dict:
+    """Fold the full (buy + sell) order book into per-type analytics rows plus
+    market-wide totals. Snapshot only — no history. Each row carries name +
+    group + category from the Fuzzwork type index so the renderer can search
+    and filter without per-type ESI calls."""
+    by_type: dict[int, dict] = {}
+    for o in orders:
+        tid = o.get('type_id')
+        if not tid:
+            continue
+        tid = int(tid)
+        price = float(o.get('price') or 0)
+        vol = int(o.get('volume_remain') or 0)
+        e = by_type.get(tid)
+        if e is None:
+            e = by_type[tid] = {
+                'type_id': tid,
+                'best_sell': None, 'sell_orders': 0, 'sell_units': 0, 'sell_value': 0.0,
+                'best_buy': None, 'buy_orders': 0, 'buy_units': 0, 'buy_value': 0.0,
+            }
+        if o.get('is_buy_order'):
+            e['buy_orders'] += 1
+            e['buy_units'] += vol
+            e['buy_value'] += price * vol
+            if e['best_buy'] is None or price > e['best_buy']:
+                e['best_buy'] = price
+        else:
+            e['sell_orders'] += 1
+            e['sell_units'] += vol
+            e['sell_value'] += price * vol
+            if e['best_sell'] is None or price < e['best_sell']:
+                e['best_sell'] = price
+
+    rows = []
+    totals = {
+        'types': 0, 'orders': len(orders),
+        'sell_orders': 0, 'buy_orders': 0,
+        'total_sell_value': 0.0, 'total_buy_value': 0.0,
+    }
+    for tid, e in by_type.items():
+        meta = type_meta.get(tid) or {}
+        spread = spread_pct = None
+        if e['best_sell'] is not None and e['best_buy'] is not None:
+            spread = e['best_sell'] - e['best_buy']
+            if e['best_sell']:
+                spread_pct = round(spread / e['best_sell'] * 100, 2)
+        rows.append({
+            **e,
+            'name': meta.get('name', ''),
+            'group_name': meta.get('group_name', ''),
+            'category_name': meta.get('category_name', ''),
+            'spread': spread,
+            'spread_pct': spread_pct,
+        })
+        totals['sell_orders'] += e['sell_orders']
+        totals['buy_orders'] += e['buy_orders']
+        totals['total_sell_value'] += e['sell_value']
+        totals['total_buy_value'] += e['buy_value']
+    totals['types'] = len(rows)
+    return {
+        'structure_id': structure_id,
+        'fetched_at': fetched_at,
+        'totals': totals,
+        'rows': rows,
     }
 
 
@@ -1112,6 +1218,451 @@ def stream_aa_market(structure_id: Optional[int] = None, refresh: bool = False):
     return StreamingResponse(
         _market_stream(structure_id, refresh), media_type='application/x-ndjson',
     )
+
+
+def _analytics_stream(structure_id: Optional[int], refresh: bool):
+    """Yield NDJSON progress events while fetching the structure order book,
+    then a `done` event with the full per-type analytics payload."""
+    cfg = load_config()
+    try:
+        sid = _resolve_market_structure_id(cfg, structure_id)
+    except HTTPException as e:
+        yield _emit('error', message=e.detail)
+        return
+
+    now = time.time()
+    cached = _market_cache.get(sid)
+    use_cache = bool(not refresh and cached and (now - cached['fetched_at']) < _MARKET_TTL_SECONDS)
+
+    if use_cache:
+        orders = cached['orders']
+        fetched_at = cached['fetched_at']
+    else:
+        client_id, secret_key = get_app_credentials()
+        try:
+            token = get_valid_access_token(client_id, secret_key, get_user_agent())
+        except Exception as e:
+            yield _emit('error', message=f'Not authenticated: {e}')
+            return
+        yield _emit('progress', page=0, max_pages=None, orders_so_far=0, message='Connecting to ESI…')
+        orders = []
+        try:
+            for page, max_pages, batch in fetch_structure_orders_paged(sid, token, get_user_agent()):
+                orders.extend(batch)
+                yield _emit('progress', page=page, max_pages=max_pages,
+                            orders_so_far=len(orders), message=f'Page {page} of {max_pages}')
+        except Exception as e:
+            yield _emit('error', message=f'ESI structure market fetch failed: {e}')
+            return
+        _market_cache[sid] = {'fetched_at': now, 'orders': orders}
+        fetched_at = now
+
+    # Resolve names + market categories from ESI. Already-seen types come from
+    # the on-disk cache instantly; only brand-new types cost ESI calls.
+    type_ids = {int(o['type_id']) for o in orders if o.get('type_id')}
+    n_missing = len(meta_missing_ids(type_ids))
+    if n_missing:
+        yield _emit('progress', page=None, max_pages=None, orders_so_far=len(orders),
+                    message=f'Resolving names & categories for {n_missing} new items (first run only, please wait)…')
+    try:
+        type_meta = enrich_types(type_ids, get_user_agent())
+    except Exception as e:
+        yield _emit('error', message=f'Failed to resolve item metadata: {e}')
+        return
+
+    payload = _analyze_orders(sid, orders, fetched_at, type_meta)
+    yield _emit('done', payload=payload, from_cache=use_cache)
+
+
+@app.get('/api/market/analytics/stream')
+def stream_market_analytics(structure_id: Optional[int] = None, refresh: bool = False):
+    """NDJSON stream of the structure market analytics. Emits `progress` per
+    page, then a `done` event with `{structure_id, fetched_at, totals, rows}`.
+    Snapshot only (no history). Reuses the shared 5-minute structure-market
+    cache that backs the AA market view."""
+    return StreamingResponse(
+        _analytics_stream(structure_id, refresh), media_type='application/x-ndjson',
+    )
+
+
+def _github_path_sha(owner, repo, branch, path, pat, user_agent):
+    """Return a file's blob sha, or None if it doesn't exist (404). Used to make
+    the daily archive idempotent without decoding the (binary) body."""
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if pat:
+        headers['Authorization'] = f'Bearer {pat}'
+    api = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+    resp = requests.get(api, headers=headers, params={'ref': branch}, timeout=15)
+    if resp.status_code == 404:
+        return None
+    if resp.status_code in (401, 403):
+        raise PermissionError(f'{resp.status_code} {resp.reason} — PAT rejected for {owner}/{repo}')
+    resp.raise_for_status()
+    body = resp.json()
+    if isinstance(body, list):
+        return None
+    return body.get('sha')
+
+
+def _github_put_bytes(owner, repo, branch, path, raw_bytes, sha, pat, user_agent, message):
+    """Write/replace a binary file via the Contents API (base64 of raw bytes).
+    Sibling of _github_contents_put for arbitrary bytes (e.g. gzip)."""
+    import base64
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Authorization': f'Bearer {pat}',
+    }
+    api = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+    body = {'message': message, 'content': base64.b64encode(raw_bytes).decode('ascii'), 'branch': branch}
+    if sha:
+        body['sha'] = sha
+    resp = requests.put(api, headers=headers, json=body, timeout=30)
+    if resp.status_code in (401, 403):
+        raise PermissionError(f'{resp.status_code} {resp.reason} — write PAT rejected (needs Contents: read+write on this repo)')
+    if resp.status_code == 409:
+        raise RuntimeError('409 conflict — file changed between read and write')
+    if resp.status_code >= 400:
+        try:
+            msg = resp.json().get('message') or resp.text
+        except Exception:
+            msg = resp.text
+        raise RuntimeError(f'{resp.status_code} {resp.reason} — {msg}')
+    out = resp.json() or {}
+    return {'commit_html_url': (out.get('commit') or {}).get('html_url')}
+
+
+def _market_history_summary(orders: list) -> dict:
+    """Compact per-type fold for the archive (no names/ESI). Keeps phase-2
+    history reads cheap so they needn't re-parse the full depth."""
+    per_type: dict[str, dict] = {}
+    total_sell = total_buy = 0.0
+    for o in orders:
+        tid = o.get('type_id')
+        if not tid:
+            continue
+        key = str(int(tid))
+        price = float(o.get('price') or 0)
+        vol = int(o.get('volume_remain') or 0)
+        e = per_type.get(key)
+        if e is None:
+            e = per_type[key] = {'best_sell': None, 'best_buy': None,
+                                 'sell_units': 0, 'buy_units': 0,
+                                 'sell_orders': 0, 'buy_orders': 0}
+        if o.get('is_buy_order'):
+            e['buy_orders'] += 1
+            e['buy_units'] += vol
+            total_buy += price * vol
+            if e['best_buy'] is None or price > e['best_buy']:
+                e['best_buy'] = price
+        else:
+            e['sell_orders'] += 1
+            e['sell_units'] += vol
+            total_sell += price * vol
+            if e['best_sell'] is None or price < e['best_sell']:
+                e['best_sell'] = price
+    return {
+        'total_sell_value': total_sell,
+        'total_buy_value': total_buy,
+        'types': len(per_type),
+        'per_type': per_type,
+    }
+
+
+@app.post('/api/market/history/archive')
+def archive_market_history(structure_id: Optional[int] = None, force: bool = False):
+    """Push today's full-depth market snapshot (gzipped) to the configured
+    history repo, one file per day at market-history/<structure_id>/<date>.json.gz.
+
+    Opportunistic + idempotent: every client may call this on tab load. It
+    no-ops if (a) <24h since the last push from this machine, or (b) today's
+    file already exists in the repo (incl. a 409 race with another client).
+    Returns `{archived: bool, reason, ...}`; never raises on the no-op paths."""
+    cfg = load_config()
+    repo_url = (cfg.get('market_history_repo_url') or '').strip()
+    pat = (cfg.get('market_history_pat_write') or '').strip()
+    if not repo_url or not pat:
+        return {'archived': False, 'reason': 'not_configured'}
+    parsed = _parse_github_blob_url(repo_url)
+    if not parsed:
+        return {'archived': False, 'reason': 'bad_repo_url'}
+    owner, repo, branch, _ = parsed
+
+    now = datetime.now(timezone.utc)
+    today = now.strftime('%Y-%m-%d')
+    last = cfg.get('market_history_last_archived') or ''
+    if not force and last:
+        try:
+            last_dt = datetime.fromisoformat(last)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            if (now - last_dt).total_seconds() < 24 * 3600:
+                return {'archived': False, 'reason': 'recent', 'last_archived': last}
+        except ValueError:
+            pass
+
+    try:
+        sid = _resolve_market_structure_id(cfg, structure_id)
+    except HTTPException as e:
+        return {'archived': False, 'reason': 'no_structure', 'detail': e.detail}
+
+    cached = _market_cache.get(sid)
+    if cached:
+        orders, fetched_at = cached['orders'], cached['fetched_at']
+    else:
+        client_id, secret_key = get_app_credentials()
+        try:
+            token = get_valid_access_token(client_id, secret_key, get_user_agent())
+            orders = fetch_structure_orders(sid, token, get_user_agent())
+        except Exception as e:
+            return {'archived': False, 'reason': 'fetch_failed', 'detail': str(e)}
+        fetched_at = time.time()
+        _market_cache[sid] = {'fetched_at': fetched_at, 'orders': orders}
+
+    path = f'market-history/{sid}/{today}.json.gz'
+    ua = get_user_agent()
+    try:
+        existing = _github_path_sha(owner, repo, branch, path, pat, ua)
+    except Exception as e:
+        return {'archived': False, 'reason': 'check_failed', 'detail': str(e)}
+    if existing and not force:
+        cfg['market_history_last_archived'] = now.isoformat()
+        save_config(cfg)
+        return {'archived': False, 'reason': 'already_exists', 'path': path}
+
+    snapshot = {
+        'date': today,
+        'structure_id': sid,
+        'fetched_at': fetched_at,
+        'order_count': len(orders),
+        'summary': _market_history_summary(orders),
+        'orders': orders,
+    }
+    raw = gzip.compress(json.dumps(snapshot, separators=(',', ':')).encode('utf-8'))
+    try:
+        result = _github_put_bytes(owner, repo, branch, path, raw, existing, pat, ua,
+                                   f'Market snapshot {today} (structure {sid})')
+    except RuntimeError as e:
+        if '409' in str(e):  # another client wrote it first — fine, treat as done
+            cfg['market_history_last_archived'] = now.isoformat()
+            save_config(cfg)
+            return {'archived': False, 'reason': 'race_already_exists', 'path': path}
+        return {'archived': False, 'reason': 'put_failed', 'detail': str(e)}
+    except Exception as e:
+        return {'archived': False, 'reason': 'put_failed', 'detail': str(e)}
+
+    cfg['market_history_last_archived'] = now.isoformat()
+    save_config(cfg)
+    return {'archived': True, 'path': path, 'bytes': len(raw),
+            'commit': result.get('commit_html_url')}
+
+
+# ----------------------- Market history: turnover (net on-book change) --------
+# Reads back the daily snapshot archive (one gzipped file per day per structure)
+# and reports the change in listed sell/buy value over 24h / 72h / weekly /
+# monthly windows. These are ORDER-BOOK snapshots, not trades, so "turnover"
+# here = net change in listed (on-book) value between the window's endpoints —
+# not measured trade volume. Only the per-day `summary` totals are read (the
+# archive includes them precisely so history reads stay cheap).
+
+# (key, days-back) for the four windows surfaced on the Market tab.
+DEFAULT_TURNOVER_WINDOWS = (('24h', 1), ('72h', 3), ('weekly', 7), ('monthly', 30))
+
+# Immutable-per-date, so cache parsed summaries for the process lifetime.
+_market_history_cache: dict[tuple, dict] = {}
+
+
+def _github_list_dir(owner, repo, branch, path, pat, user_agent):
+    """List a directory via the Contents API. Returns the raw entry list
+    (each has `name`, `path`, `size`, ...), or [] if the path doesn't exist."""
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if pat:
+        headers['Authorization'] = f'Bearer {pat}'
+    api = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+    resp = requests.get(api, headers=headers, params={'ref': branch}, timeout=20)
+    if resp.status_code == 404:
+        return []
+    if resp.status_code in (401, 403):
+        raise PermissionError(f'{resp.status_code} {resp.reason} — read PAT rejected for {owner}/{repo}')
+    resp.raise_for_status()
+    body = resp.json()
+    return body if isinstance(body, list) else []
+
+
+def _github_get_bytes(owner, repo, branch, path, pat, user_agent):
+    """Fetch a file's raw bytes via the Contents API raw media type (works for
+    files over the 1 MB base64 cap, unlike the default JSON response)."""
+    headers = {
+        'Accept': 'application/vnd.github.raw',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if pat:
+        headers['Authorization'] = f'Bearer {pat}'
+    api = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+    resp = requests.get(api, headers=headers, params={'ref': branch}, timeout=30)
+    if resp.status_code in (401, 403):
+        raise PermissionError(f'{resp.status_code} {resp.reason} — read PAT rejected for {owner}/{repo}')
+    resp.raise_for_status()
+    return resp.content
+
+
+def _load_history_summary(owner, repo, branch, sid, date_str, pat, user_agent):
+    """Return the cheap `{total_sell_value, total_buy_value, types}` summary for
+    one archived day, decompressing only as needed and caching per (sid, date)."""
+    ck = (sid, date_str)
+    if ck in _market_history_cache:
+        return _market_history_cache[ck]
+    raw = _github_get_bytes(owner, repo, branch, f'market-history/{sid}/{date_str}.json.gz', pat, user_agent)
+    snap = json.loads(gzip.decompress(raw).decode('utf-8'))
+    summ = snap.get('summary') or {}
+    out = {
+        'total_sell_value': float(summ.get('total_sell_value') or 0),
+        'total_buy_value': float(summ.get('total_buy_value') or 0),
+        'types': summ.get('types'),
+    }
+    _market_history_cache[ck] = out
+    return out
+
+
+def _select_baselines(dates_sorted, windows):
+    """Pure: for each (key, days) window pick the baseline date = the most recent
+    snapshot on/before (latest - days). Returns {key: (days, baseline|None, coverage)}.
+
+    coverage: 'ok' (a snapshot old enough exists), 'partial' (none that old, so the
+    oldest available is used), or 'insufficient' (<2 snapshots — no delta possible)."""
+    result = {}
+    if not dates_sorted:
+        return result
+    parsed = [(d, datetime.fromisoformat(d).date().toordinal()) for d in dates_sorted]
+    latest_ord = parsed[-1][1]
+    for key, days in windows:
+        target = latest_ord - days
+        base = None
+        for d, o in parsed:
+            if o <= target:
+                base = d
+            else:
+                break
+        if base is not None:
+            result[key] = (days, base, 'ok')
+        elif len(dates_sorted) >= 2:
+            result[key] = (days, dates_sorted[0], 'partial')
+        else:
+            result[key] = (days, None, 'insufficient')
+    return result
+
+
+def _compute_turnover(dates_sorted, summaries, windows=DEFAULT_TURNOVER_WINDOWS):
+    """Pure: net on-book change per window. `summaries` must contain the latest
+    date plus every baseline `_select_baselines` picks. Returns a list of window
+    rows with latest/baseline values and signed deltas (+ % change)."""
+    if not dates_sorted:
+        return []
+    latest = dates_sorted[-1]
+    lat = summaries[latest]
+    latest_ord = datetime.fromisoformat(latest).date().toordinal()
+    sel = _select_baselines(dates_sorted, windows)
+    out = []
+    for key, days in windows:
+        _days, base, coverage = sel[key]
+        row = {
+            'key': key, 'days': days, 'coverage': coverage,
+            'latest_sell_value': lat['total_sell_value'],
+            'latest_buy_value': lat['total_buy_value'],
+            'baseline_date': base,
+        }
+        if base is None:
+            row.update({'span_days': None, 'baseline_sell_value': None, 'baseline_buy_value': None,
+                        'delta_sell_value': None, 'delta_buy_value': None, 'pct_sell': None, 'pct_buy': None})
+        else:
+            b = summaries[base]
+            ds = lat['total_sell_value'] - b['total_sell_value']
+            db = lat['total_buy_value'] - b['total_buy_value']
+            row.update({
+                'span_days': latest_ord - datetime.fromisoformat(base).date().toordinal(),
+                'baseline_sell_value': b['total_sell_value'],
+                'baseline_buy_value': b['total_buy_value'],
+                'delta_sell_value': ds,
+                'delta_buy_value': db,
+                'pct_sell': None if not b['total_sell_value'] else round(ds / b['total_sell_value'] * 100, 2),
+                'pct_buy': None if not b['total_buy_value'] else round(db / b['total_buy_value'] * 100, 2),
+            })
+        out.append(row)
+    return out
+
+
+@app.get('/api/market/history/turnover')
+def market_history_turnover(structure_id: Optional[int] = None):
+    """Net on-book change over 24h / 72h / weekly / monthly, read from the daily
+    snapshot archive. No-ops gracefully when the history repo isn't configured or
+    too few snapshots have accumulated yet (the dashboard fills in over time)."""
+    cfg = load_config()
+    repo_url = (cfg.get('market_history_repo_url') or '').strip()
+    pat = (cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or '').strip()
+    if not repo_url or not pat:
+        return {'configured': False, 'reason': 'not_configured', 'windows': []}
+    parsed = _parse_github_blob_url(repo_url)
+    if not parsed:
+        return {'configured': False, 'reason': 'bad_repo_url', 'windows': []}
+    owner, repo, branch, _ = parsed
+    try:
+        sid = _resolve_market_structure_id(cfg, structure_id)
+    except HTTPException as e:
+        return {'configured': True, 'reason': 'no_structure', 'detail': e.detail, 'windows': []}
+
+    ua = get_user_agent()
+    try:
+        entries = _github_list_dir(owner, repo, branch, f'market-history/{sid}', pat, ua)
+    except PermissionError as e:
+        return {'configured': True, 'reason': 'pat_rejected', 'detail': str(e), 'windows': []}
+    except Exception as e:
+        return {'configured': True, 'reason': 'list_failed', 'detail': str(e), 'windows': []}
+
+    # File names are '<YYYY-MM-DD>.json.gz'; keep only well-formed dates.
+    dates = []
+    for ent in entries:
+        name = ent.get('name') or ''
+        if name.endswith('.json.gz'):
+            stem = name[:-8]
+            try:
+                datetime.fromisoformat(stem)
+                dates.append(stem)
+            except ValueError:
+                continue
+    dates.sort()
+    if not dates:
+        return {'configured': True, 'structure_id': sid, 'snapshots': 0, 'windows': []}
+
+    sel = _select_baselines(dates, DEFAULT_TURNOVER_WINDOWS)
+    needed = {dates[-1]}
+    for _days, base, _cov in sel.values():
+        if base:
+            needed.add(base)
+    summaries = {}
+    for d in needed:
+        try:
+            summaries[d] = _load_history_summary(owner, repo, branch, sid, d, pat, ua)
+        except Exception as e:
+            return {'configured': True, 'reason': 'fetch_failed', 'detail': f'{d}: {e}', 'windows': []}
+
+    return {
+        'configured': True,
+        'structure_id': sid,
+        'snapshots': len(dates),
+        'latest_date': dates[-1],
+        'available_dates': dates,
+        'windows': _compute_turnover(dates, summaries, DEFAULT_TURNOVER_WINDOWS),
+    }
 
 
 _AMARR_SYSTEM_ID = 30002187
@@ -1416,7 +1967,7 @@ def _scan_contracts_stream():
     })
 
 
-# ----------------------- Appraisal tab (Janice + Mutamarket) -----------------------
+# ----------------------- Appraisal tab (Janice) -----------------------
 
 
 class AppraiseRequest(BaseModel):
@@ -1425,42 +1976,10 @@ class AppraiseRequest(BaseModel):
     persist: bool = False              # ask Janice to keep a shareable code
 
 
-def _parse_input_lines(input_text: str) -> list[dict]:
-    """Mirror Janice's line parser so we can recover the user's typed names.
-
-    Janice echoes the input in its response but doesn't return per-item
-    names in its structured items list — only itemType_eid + amount. To
-    label rows in the Abyssal addendum with the names the user actually
-    pasted, we re-parse the input here. Returns a list of
-    ``{name, amount}`` in input order (same order Janice's items use).
-    """
-    import re as _re
-    out = []
-    for line in _re.split(r'\n+', input_text or ''):
-        line = line.strip()
-        if not line:
-            continue
-        parts = _re.split(r'\t+|\s{2,}', line)
-        name = parts[0].strip()
-        try:
-            amount = int(parts[1].replace(',', '').replace(' ', '').strip()) if len(parts) > 1 else 1
-        except (ValueError, IndexError):
-            amount = 1
-        out.append({'name': name, 'amount': amount})
-    return out
-
-
 @app.post('/api/appraise')
 def appraise(req: AppraiseRequest):
-    """Run a Janice appraisal and a Mutamarket per-type lookup on any abyssal
-    items in the same paste. Returns both sides so the renderer can show:
-
-      - the full Janice block (covers everything pricable on the regular
-        market — abyssals show up here at 0 ISK)
-      - an "abyssal addendum" block with per-type marketplace + estimator
-        stats for each abyssal type in the paste
-
-    No client-side splitting needed; the caller pastes the whole thing.
+    """Run a Janice appraisal on the pasted items and return the buy/split/sell
+    totals (immediate + effective) plus a shareable code when persist is set.
     """
     if not req.paste_text or not req.paste_text.strip():
         raise HTTPException(400, 'paste_text is empty')
@@ -1468,9 +1987,7 @@ def appraise(req: AppraiseRequest):
     cfg = load_config()
     market_name = req.market_name or cfg.get('janice_market') or 'Jita 4-4'
     api_key = cfg.get('janice_api_key') or None
-    ua = get_user_agent()
 
-    # --- Janice side ---
     try:
         janice_result = create_appraisal_from_text(
             req.paste_text, market_name, api_key=api_key, persist=req.persist,
@@ -1480,49 +1997,6 @@ def appraise(req: AppraiseRequest):
 
     raw = janice_result.get('raw') or {}
     raw_items = raw.get('items') or []
-    parsed_names = _parse_input_lines(raw.get('input') or req.paste_text)
-
-    # --- Detect abyssals from Janice's typed items list ---
-    # Two signals: (a) Janice priced the item at 0 with no buy/sell volume —
-    # i.e. it's unknown to the regular market; (b) the input line name starts
-    # with "Abyssal ". Either alone is noisy (a) catches unpublished items
-    # too; (b) doesn't have a type_id without Janice. Intersection of the two
-    # gives us "definitely an abyssal we can price".
-    abyssal_rows: list[dict] = []
-    by_type: dict[int, dict] = {}
-    for idx, item in enumerate(raw_items):
-        # Janice's REST API returns items with a nested `itemType` block; the
-        # anonymous RPC returns a flat `itemType_eid`. Support both so the
-        # endpoint works regardless of whether the user has a Janice API key.
-        itype = item.get('itemType') or {}
-        type_id = int(item.get('itemType_eid') or itype.get('eid') or 0)
-        amount = int(item.get('amount') or 0)
-        # Janice sets the top-level `price` to 0 for every item — real prices
-        # live under effectivePrices. The reliable "this isn't on the regular
-        # market" signal is buy_volume AND sell_volume both being zero, which
-        # for an abyssal-named item is conclusive (true abyssal modules are
-        # unique items and never trade on the regional market).
-        buy_vol = int(item.get('buyVolume') or 0)
-        sell_vol = int(item.get('sellVolume') or 0)
-        # Prefer Janice's canonical name (REST shape carries it), fall back to
-        # the line the user pasted.
-        name = (itype.get('name')
-                or (parsed_names[idx]['name'] if idx < len(parsed_names) else ''))
-        if not type_id or amount <= 0:
-            continue
-        looks_like_abyssal_name = is_abyssal_item_name(name)
-        zero_market_volume = (buy_vol == 0 and sell_vol == 0)
-        if not (looks_like_abyssal_name and zero_market_volume):
-            continue
-        # Roll up duplicate type_ids on the paste (admin pasted N "Abyssal Damage
-        # Control" rows — Mutamarket lookup is per-type, quantities sum).
-        bucket = by_type.setdefault(type_id, {'name': name, 'quantity': 0})
-        bucket['quantity'] += amount
-        # Preserve first-seen name for display.
-    for type_id, agg in by_type.items():
-        per_type = appraise_abyssal_type(type_id, agg['quantity'], ua)
-        per_type['name'] = agg['name']
-        abyssal_rows.append(per_type)
 
     # --- Surface buy/split/sell totals from Janice ---
     # immediatePrices = "use what's on the market right now" (what most
@@ -1543,14 +2017,7 @@ def appraise(req: AppraiseRequest):
     immediate = _grab_prices('immediatePrices')
     effective = _grab_prices('effectivePrices')
 
-    # --- Combined totals ---
     janice_total = float(janice_result.get('total_buy_price') or 0)
-    abyssal_market_total = sum(
-        (r.get('marketplace_total_median') or 0) for r in abyssal_rows
-    )
-    abyssal_estimator_total = sum(
-        (r.get('estimator_total_median') or 0) for r in abyssal_rows
-    )
 
     return {
         'market_name': janice_result.get('market_name') or market_name,
@@ -1564,14 +2031,6 @@ def appraise(req: AppraiseRequest):
             'item_count': len(raw_items),
             'prices_immediate': immediate,
             'prices_effective': effective,
-        },
-        'abyssals': abyssal_rows,
-        'totals': {
-            'janice_total_buy': janice_total,
-            'abyssal_marketplace_median_total': abyssal_market_total,
-            'abyssal_estimator_median_total': abyssal_estimator_total,
-            'grand_marketplace_median': janice_total + abyssal_market_total,
-            'grand_estimator_median': janice_total + abyssal_estimator_total,
         },
     }
 
@@ -2027,6 +2486,160 @@ def sov_overview():
         'auth_errors': auth_errors,
         'fetched_at': int(time.time()),
     }
+
+
+# ----------------------- Hooks & Hubs: structure fuel -----------------------
+# Skyhook + sov-hub fuel comes from the authenticated corp-structures endpoint.
+# Slot 4 is the intended source (a Director toon carrying
+# esi-corporations.read_structures.v1), but any authenticated slot whose token
+# has the scope + role contributes; structures are deduped by structure_id.
+#
+# NOTE: ESI does NOT expose Equinox power/workforce/installed-upgrades or the
+# skyhook collection reservoir — only fuel. The workforce planner below is fed
+# by manual user input instead (see workforce_plan.py).
+
+
+def _parse_esi_time(s):
+    """Parse an ESI ISO8601 timestamp (e.g. '2025-06-20T12:00:00Z') to epoch
+    seconds, or None if absent/unparseable."""
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(str(s).replace('Z', '+00:00')).timestamp()
+    except (ValueError, AttributeError):
+        return None
+
+
+def _classify_structure(type_name):
+    """Bucket a structure by its resolved type name. Robust to unknown type_ids:
+    anything we don't recognise lands in 'other' rather than being dropped."""
+    low = (type_name or '').lower()
+    if 'skyhook' in low:
+        return 'skyhook'
+    if 'sovereignty hub' in low:
+        return 'hub'
+    return 'other'
+
+
+@app.get('/api/structures/fuel')
+def structures_fuel():
+    """Fuel status for skyhooks and sovereignty hubs across every authenticated
+    slot's corp. Returns per-structure time-to-empty plus per-type summaries.
+    Never hard-fails on a single slot/corp — auth/role problems are surfaced in
+    `auth_errors` so a partial result still renders.
+    """
+    ua = get_user_agent()
+    client_id, secret_key = get_app_credentials()
+
+    # corp_id -> a working slot token (first slot found sitting in that corp).
+    corp_token: dict[int, str] = {}
+    auth_errors = []
+    for slot in list_authenticated_slots():
+        try:
+            token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            character_id = character_id_from_access_token(token)
+            char_info = _safe(lambda: fetch_character_info(character_id, ua)) if character_id else None
+            corp_id = (char_info or {}).get('corporation_id')
+            if corp_id:
+                corp_token.setdefault(int(corp_id), token)
+        except Exception as e:
+            auth_errors.append({'slot': slot, 'error': str(e)})
+
+    if not corp_token:
+        auth_errors.append({
+            'slot': 'slot4',
+            'error': 'No authenticated slot resolved to a corp. Log in slot 4 with a '
+                     'Director character on the Auth tab.',
+        })
+
+    # Fetch + dedup structures across corps.
+    by_id: dict[int, dict] = {}
+    for corp_id, token in corp_token.items():
+        try:
+            for s in fetch_corp_structures(corp_id, token, ua):
+                sid = s.get('structure_id')
+                if sid:
+                    by_id[int(sid)] = s
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else '?'
+            hint = (' — needs Director role + esi-corporations.read_structures.v1; '
+                    're-login slot 4 on the Auth tab') if status == 403 else ''
+            auth_errors.append({'corp_id': corp_id, 'error': f'structures HTTP {status}{hint}'})
+        except Exception as e:
+            auth_errors.append({'corp_id': corp_id, 'error': f'structures fetch failed: {e}'})
+
+    structures = list(by_id.values())
+
+    # Resolve type + system names in one bulk call.
+    ids = set()
+    for s in structures:
+        for key in ('type_id', 'system_id'):
+            if s.get(key):
+                ids.add(int(s[key]))
+    names = _safe(lambda: resolve_names(sorted(ids), ua)) or {} if ids else {}
+
+    now = time.time()
+    LOW_FUEL_SECONDS = 3 * 86400
+    buckets = {'skyhook': [], 'hub': [], 'other': []}
+    for s in structures:
+        type_name = names.get(int(s['type_id'])) if s.get('type_id') else None
+        system_name = names.get(int(s['system_id'])) if s.get('system_id') else None
+        expires_epoch = _parse_esi_time(s.get('fuel_expires'))
+        services = s.get('services') or []
+        buckets[_classify_structure(type_name)].append({
+            'structure_id': s.get('structure_id'),
+            'name': s.get('name'),
+            'system_name': system_name,
+            'type_name': type_name,
+            'fuel_expires': s.get('fuel_expires'),
+            'seconds_remaining': (expires_epoch - now) if expires_epoch is not None else None,
+            'state': s.get('state'),
+            'services_online': sum(1 for sv in services if sv.get('state') == 'online'),
+            'services_total': len(services),
+        })
+
+    def _by_remaining(r):
+        # None (no fuel data, e.g. unanchoring) sorts last; otherwise soonest first.
+        return (r['seconds_remaining'] is None, r['seconds_remaining'] or 0)
+
+    def _summarize(rows):
+        rem = [r['seconds_remaining'] for r in rows if r['seconds_remaining'] is not None]
+        return {
+            'count': len(rows),
+            'low_count': sum(1 for v in rem if v < LOW_FUEL_SECONDS),
+            'soonest_seconds': min(rem) if rem else None,
+        }
+
+    return {
+        'skyhooks': sorted(buckets['skyhook'], key=_by_remaining),
+        'hubs': sorted(buckets['hub'], key=_by_remaining),
+        'other': sorted(buckets['other'], key=_by_remaining),
+        'summary': {'skyhook': _summarize(buckets['skyhook']), 'hub': _summarize(buckets['hub'])},
+        'auth_errors': auth_errors,
+        'fetched_at': int(now),
+    }
+
+
+# ----------------------- Hooks & Hubs: workforce planner -----------------------
+# Pure persistence for the manual upgrade/workforce planning table. The Equinox
+# power/workforce/upgrade layer isn't in ESI, so the data is user-entered. All
+# scenario math lives client-side (renderer/hooks-hubs-utils.js).
+
+
+class WorkforcePlan(BaseModel):
+    systems: Optional[list] = None
+    transfers: Optional[list] = None
+    catalog: Optional[list] = None
+
+
+@app.get('/api/workforce-plan')
+def get_workforce_plan():
+    return load_plan()
+
+
+@app.put('/api/workforce-plan')
+def put_workforce_plan(plan: WorkforcePlan):
+    return save_plan(plan.model_dump())
 
 
 if __name__ == '__main__':
