@@ -30,7 +30,28 @@ authenticated character's corp contracts endpoint for outstanding
 item-exchange contracts at the home structure and tallies them against a
 user-configured quota list (ship hull + required count). Each quota row gets
 a green/amber/red progress bar; the dashboard exports a gap CSV or a plain
-shopping list for in-game multi-buy.
+shopping list for in-game multi-buy. Quotas can be edited locally or pulled
+from a shared source of truth — either a "secret" GitHub gist (no auth) or a
+private GitHub repo via the Contents API with fine-grained PATs (read +
+write, separated by role).
+
+A **Working** tab acts as an offline workspace for moon-contract processing:
+the operator pins any moon-result row to a persistent on-disk list, then on
+demand pastes the actual refined minerals (post-refinery) into a per-pin
+Janice paste box. The app re-runs the appraisal, multiplies by the
+contract's snapshot-derived blended payout fraction, and surfaces a copy-to-
+clipboard final payout. Pins survive Moon-tab re-fetches, renderer refreshes,
+and app close+reopen.
+
+An **Appraisal** tab is a one-shot Janice appraisal pad with first-class
+support for **abyssal modules** via Mutamarket. Paste any EVE-format
+inventory dump; the app routes pricable items to Janice, detects abyssal
+rolls (name prefix + the Janice-reports-zero-market-volume signal), fans out
+to Mutamarket for marketplace + AI-estimator medians on each abyssal type,
+and reports the two prices separately so the spread typical of thin abyssal
+markets stays visible. Click-to-copy percentage chips (80 / 90 / 100 / 110 /
+120 %) sit next to every headline so the operator can grab "90 % of Jita
+buy" for a buyback contract in one click.
 
 A secondary feature scans corp doctrines from Alliance Auth (`auth.navaldefence.org`)
 and cross-references each fit against the corp market for stocking gaps. A
@@ -69,11 +90,18 @@ mineral pricing).
          ▼                                     ▼
 ┌──────────────────┐               ┌──────────────────────┐
 │ electron/main.js │               │ ESI · Janice ·       │
-│ (windowing,      │               │ Fuzzwork             │
-│ AA session,      │               └──────────────────────┘
-│ auto-update)     │
+│ (windowing,      │               │ Fuzzwork · Mutamarket│
+│ AA session,      │               │ · GitHub Contents API│
+│ auto-update)     │               └──────────────────────┘
 └──────────────────┘
 ```
+
+**Splash screen.** Electron paints a borderless splash window
+([renderer/splash.html](renderer/splash.html)) while the sidecar boots —
+progress events come through a dedicated preload bridge
+([electron/splash-preload.js](electron/splash-preload.js)) so the bar
+animates as `/api/health` polls succeed. The splash dismisses itself once
+the main window is `ready-to-show`.
 
 ## Key flows
 
@@ -187,6 +215,112 @@ contracts tab uses CCP's non-ESI client API. So this scan sees only what
 corps you hold a director / Contract Manager token for. Adding more slots
 widens visibility one corp at a time.
 
+### Alliance quota sync (`POST /api/quotas/sync` and `/api/quotas/push`)
+
+Quotas can live on a shared source of truth so the whole alliance pulls
+from one file:
+
+- **Private GitHub repo (recommended).** Admin creates a repo containing a
+  `quotas.json` file, then issues two fine-grained PATs: a *Read PAT* with
+  `Contents: Read` distributed to every alliance member, and a *Write PAT*
+  with `Contents: Read and Write` kept on the admin's machine only. The
+  app's `_parse_github_blob_url` accepts every URL shape GitHub hands you —
+  blob, raw, Contents API, and the bare clone URL `github.com/<o>/<r>.git`
+  (defaults to `main`/`quotas.json`). Reads go through the Contents API via
+  `_github_contents_get`; the admin's Push button (gated behind the
+  per-machine `alliance_quota_allow_push` checkbox so importing the admin's
+  config doesn't auto-unlock writes) PUTs the local quota list back via
+  `_github_contents_put`, returning a commit SHA the renderer turns into a
+  clickable link in the sync-status chip.
+- **GitHub gist (legacy, still wired).** Bare gist URLs route through
+  `_resolve_gist_page_url`, which hits the Gists API to discover the
+  raw-file URL. The UI no longer advertises this option (only the
+  private-repo path is documented), but the backend still accepts gist
+  URLs — paste one and it still syncs. Use this if you don't want to set
+  up PATs.
+
+Last-sync metadata (`alliance_quota_last_synced` / `_last_status`) lives on
+disk only and is excluded from the whole-config export (recipient would
+inherit a misleading "synced at" string otherwise). The *Write PAT* and
+*Allow push* flag are likewise hard-stripped from exports — see
+`CONFIG_EXPORT_NEVER` in [renderer/app.js](renderer/app.js). A config kit is
+a distribution artifact, never an admin-credentials handover.
+
+### Working tab (pinned moon contracts, `/api/pinned*`)
+
+Offline workspace backed by [python/pinned.py](python/pinned.py). The
+operator pins a Moon-tab result row; the full result snapshot is POSTed to
+`/api/pinned` and persisted under `<userData>/eve_auth/pinned_contracts.json`
+(chmod 600). Each pin records:
+- `snapshot` — the moon-result dict verbatim.
+- `blended_fraction` — derived once at pin time from the snapshot's
+  refined block: `(moon_payout + non_moon_payout) / (moon_value +
+  non_moon_value)`. Encodes the effective payout fraction the operator
+  would apply to a re-priced refined output.
+- `status` — `pending` / `paid` / `disputed`; drives the card's left-border
+  colour.
+- `appraisals[]` — bounded ring (20 records) of admin-pasted Janice
+  appraisals. Each entry stores `janice_total`, `fraction_used`, `payout`,
+  `janice_code` (when the appraisal was persisted), and a paste preview.
+
+When the operator clicks **Appraise & apply N%**, the paste text goes
+through `create_appraisal_from_text` (janice.py) with `persist=True` so the
+returned code is shareable, then the blended fraction multiplies the
+Janice buy total. Result is appended to the pin's appraisal history. All
+payout figures (snapshot original, latest appraisal, every history row)
+are wrapped in `.payout-copy` for one-click copy-just-the-integer paste
+into the in-game wallet.
+
+### Appraisal tab (`POST /api/appraise`)
+
+One-shot Janice appraisal with first-class abyssal support. The renderer
+sends `{paste_text, market_name, persist}` to `/api/appraise`. The sidecar:
+
+1. `create_appraisal_from_text` against Janice. Returns per-item rows.
+2. Walks the rows and flags abyssals via two signals AND-ed together: name
+   starts with "Abyssal " AND Janice reports zero buy AND zero sell volume.
+   Abyssals never trade on the regional market, so the pair is conclusive.
+   Detection lives in [python/mutamarket.py](python/mutamarket.py)'s
+   `is_abyssal_item_name`.
+3. Per unique abyssal type_id, fans out to `mutamarket.fetch_listings(...)`
+   (cached 5 min in-process keyed by type_id — a single popular type can
+   return 14 MB).
+4. `summarize_listings` boils each type's listings into two parallel price
+   tracks: **marketplace** (median of `contract.price` for actively-asking
+   sellers) and **estimator** (median of Mutamarket's AI fair-value field).
+   Min / max / mean / count returned for both.
+
+Renderer combines into a single dashboard: three side-by-side price columns
+for the Janice block (Buy / Split / Sell), a percentage chip row
+(80/90/100/110/120%) under each headline with click-to-copy values, and a
+per-abyssal-type table with marketplace median vs estimator median plus
+roll-ups. Five summary tiles at the bottom: Janice / Marketplace /
+Estimator / Grand-Janice-plus-marketplace / Grand-Janice-plus-estimator.
+Every figure copyable.
+
+### Outstanding-payout totals (Buyback + Moon tabs)
+
+At the top of both pages, below the wallet tiles, sits a single panel:
+
+```
+Outstanding to be accepted     1,234,567,890   ISK     12 approve rows
+```
+
+Renderer-only. `_rowAcceptValue(kind, r)` returns the row's payout when its
+`classifyResult` is `approve`, zero otherwise (rejects + errors ignored —
+only what the corp would actually pay out). `renderPayoutTotal(kind)` sums
+across `lastResults[kind]`, formats with thousand separators, and writes to
+`#buyback-payout-total` / `#moon-payout-total`. Updated on every
+`appendResultIfMatch` (so it ticks up live as each result lands during a
+streaming fetch), every filter pill click, and the start-of-stream reset.
+
+Buyback per-row value = `appraisal.effective_offer` (Janice value × 90% in
+the standard flow), falling back to the contract's listed price when no
+appraisal block is present. Moon per-row value =
+`payout.refined.recommended_payout`. The headline number is wrapped in
+`.payout-copy` so a single click copies just the integer for in-game
+paste.
+
 ## Data & persistence
 
 Everything user-specific lives under `EVE_BUYBACK_DATA_DIR`:
@@ -198,13 +332,18 @@ Files in that directory:
   `DEFAULTS`. Old shapes are migrated forward by `_migrate` (note: migration
   runs **before** the `_USER_KEYS` filter in `load_config` so legacy keys
   like `home_station_id` → `home_structure_id` can be renamed without being
-  silently dropped).
+  silently dropped). Includes the alliance-quota-sync triplet
+  (`alliance_quota_url`, `alliance_quota_pat_read`, `alliance_quota_pat_write`,
+  `alliance_quota_allow_push`) and the per-machine sync metadata
+  (`alliance_quota_last_synced`, `alliance_quota_last_status`).
 - `tokens.json` — chmod 600. ESI tokens, dict keyed by slot
   (`slot1`/`slot2`/`slot3`); see Authentication flow above.
 - `ship_types.json` — flat list of every published EVE ship hull
   (`type_id`, `name`, `group_id`, `group_name`). Built once via
   `fetch_all_ship_types`; manually refresh by hitting
   `/api/universe/ships?refresh=true` (e.g. after an EVE expansion).
+- `pinned_contracts.json` — chmod 600. Array of pinned moon-result
+  snapshots driving the Working tab. Schema in [python/pinned.py](python/pinned.py).
 - `invTypeMaterials.csv` — Fuzzwork material dump, refreshed lazily.
 - `sidecar.log` — last sidecar run's stdout/stderr (truncated each startup).
 
@@ -250,6 +389,39 @@ localStorage** (`readinessState`), not on disk.
   director / Contract Manager token unlocks exactly one corp's postings.
   Multi-slot auth makes it possible to aggregate across several alliance
   corps if you can get tokens from each.
+- **Hourly auto-update polling (v1.1.2).** Every install polls GitHub
+  Releases once at startup (2 s delay) and then every hour. A
+  `dismissedUpdateTag` guards against re-prompting in the same session
+  after the user clicks Later, and an `updateDialogOpen` flag prevents
+  stacking dialogs if the hourly tick fires while a dialog is still up. A
+  manual ⟳ button next to the version chip in the header forces an
+  immediate interactive check with friendly "you're up to date" feedback.
+- **Orphan-sidecar sweep on launch (v1.1.3).** When the Electron main
+  process is force-killed (Task Manager / crash), its spawned Python child
+  can survive and keep port 8765 bound. A fresh install then fails to
+  rebind, exits, and the orphan keeps serving 404s on every newly-added
+  route. `killOrphanSidecars()` runs `taskkill /F /T /IM sidecar.exe` on
+  Windows or `pkill -x sidecar` on macOS/Linux before every spawn — the
+  common case is a no-op, the rare case is silently fixed. The dev-mode
+  Python entry point uses `python3 server.py` which doesn't match the
+  PyInstaller binary's image name, so dev runs are untouched.
+- **Whole-config import/export reads the live form (v1.1.4).** Both
+  handlers share one `collectConfigForm()` so unsaved edits (e.g. a freshly
+  pasted gist URL) flow into the exported file without making the user
+  Save first. The same `CONFIG_EXPORT_NEVER` set gates both directions —
+  whatever's removed on export is also removed on import, keeping the
+  asymmetry minimal.
+- **Write PAT and Allow-push flag never ride along in exports (v1.1.6).**
+  Hard-stripped via `CONFIG_EXPORT_NEVER` even though the Read PAT and
+  Janice key are opt-in at export time. Distribution kits can carry read
+  access (so a recipient syncs immediately after import); admin write
+  capability is paste-on-target-machine only.
+- **Janice gist transport kept in the backend after the UI removal
+  (v1.1.6).** The private-repo path is the one documented option, but
+  pasting a gist URL still routes through `_resolve_gist_page_url` and
+  syncs. Backward-compat for installs that already have a gist URL saved;
+  also a one-line revert path if the secret-gist option ever needs to come
+  back to the UI.
 
 ## Common entry points
 

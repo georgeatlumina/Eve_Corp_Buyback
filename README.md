@@ -6,10 +6,29 @@ contracts and computing recommended payouts for moon-mining contracts.
 It pulls outstanding contracts from ESI, appraises them against Janice, checks
 that they were issued to the correct structure for their item category, and —
 for moon contracts — refines the compressed ore and reports a recommended ISK
-payout. It also ships with EVE-mail templates so you can accept/reject in one
-click, an Alliance Auth doctrine readiness scanner, a multi-account Contracts
-dashboard that tallies corp-posted doctrine fits against user-configured
-quotas, and a sovereignty overview built on public ESI data.
+payout. Highlights:
+
+- **Buyback + Moon** tabs with click-to-copy payout figures, EVE-mail
+  templates for one-click accept/reject, an **outstanding-to-be-accepted
+  total** at the top of each page (counts only the rows you'd actually pay
+  out), and live progress as the streaming fetch runs.
+- A **Working** tab for offline admin processing — pin any moon row, paste
+  the real refined minerals from the refinery into a per-pin Janice paste
+  box, get back the buy total × the contract's blended payout fraction.
+  Pins persist across app restarts.
+- An **Appraisal** tab for one-shot Janice work with first-class
+  abyssal-module support (Mutamarket marketplace + AI-estimator medians
+  surfaced separately so the spread typical of thin abyssal markets stays
+  visible). 80/90/100/110/120% chips on every headline figure for instant
+  buyback math.
+- A **Contracts** dashboard that tallies corp-posted doctrine fits against
+  user-configured quotas. **Alliance quota sync** via a private GitHub repo
+  (Contents API + fine-grained PATs split read/write) so the admin edits
+  once and everyone pulls.
+- An **Alliance Auth doctrine readiness scanner** that cross-references
+  each fit against the configured structure's market.
+- A **Sov** tab built on public ESI (IHUB ADM, system jumps/kills,
+  incursions) — no auth required.
 
 > Internal docs: [CONTEXT.md](CONTEXT.md) (architecture & key flows),
 > [STRUCTURE.md](STRUCTURE.md) (file layout), [FUNCTIONS.md](FUNCTIONS.md)
@@ -50,8 +69,23 @@ https://github.com/georgeatlumina/Eve_Corp_Buyback/releases/latest
    filters to outstanding item-exchange contracts at your home structure,
    and tallies each one against the configured quotas. Per-quota progress
    bars go green/amber/red; the *Export gap CSV* and *Copy shopping list*
-   buttons make it easy to top up missing stock.
-6. **Send mail** — once mail presets are configured (Mail tab), every contract
+   buttons make it easy to top up missing stock. If the alliance is on the
+   private-repo workflow, ticking *Auto-sync on app start* keeps your local
+   quotas in lockstep with the shared `quotas.json`.
+6. **Process pinned contracts offline (Working tab).** On the Moon tab,
+   click *📌 Pin to Working* on any result row to copy the full snapshot
+   into the Working tab. Open the pin, paste the actual refined-mineral
+   output from your refinery into the Janice paste box, hit *Appraise &
+   apply N%* — the app re-runs the Janice appraisal and multiplies by the
+   contract's blended payout fraction. Notes + status (`pending` / `paid`
+   / `disputed`) persist on disk; pins survive app restarts and Moon-tab
+   re-fetches.
+7. **One-shot appraisals (Appraisal tab).** Paste any EVE-format inventory
+   (Ctrl/Cmd-Enter to fire), get a Janice block plus a Mutamarket addendum
+   for any abyssal modules in the same paste. Marketplace median and AI
+   estimator median are reported separately; click any headline or
+   percentage chip to copy the integer.
+8. **Send mail** — once mail presets are configured (Mail tab), every contract
    row gets a button per preset. Click it to preview the rendered mail and
    send it to that contract's issuer.
 
@@ -155,12 +189,112 @@ uses a non-ESI backend, so contracts posted by other alliance corps that
 you don't hold a director / Contract Manager token for **stay invisible**.
 Add more slots on the Auth tab to widen coverage one corp at a time.
 
+### Alliance quota sync — private GitHub repo
+
+If you want every alliance member working off the same quota list, host
+`quotas.json` in a **private GitHub repo** and let the app pull from there.
+Setup:
+
+1. **Create the repo** with a single `quotas.json` at the root (or any
+   path — the app accepts the full URL).
+2. **Generate two fine-grained PATs** at
+   <https://github.com/settings/personal-access-tokens/new>:
+   - **Read PAT** — repository access = your alliance repo only,
+     *Permissions → Contents: Read-only*. Distribute this PAT to every
+     alliance member via Discord / AA / wherever.
+   - **Write PAT** — same repo, *Permissions → Contents: Read and write*.
+     Keep on your admin machine only.
+3. **Admin fills the Config tab** with the repo URL (any of these works —
+   the parser handles all of them):
+   ```
+   https://github.com/<owner>/<repo>.git                  (Clone URL)
+   https://github.com/<owner>/<repo>                       (bare repo)
+   https://github.com/<owner>/<repo>/blob/main/quotas.json (file URL)
+   https://raw.githubusercontent.com/<owner>/<repo>/main/quotas.json
+   ```
+   plus Read PAT, plus Write PAT, plus tick **Allow push from this machine**
+   (un-hides the *Push to repo* button). Save.
+4. **Users fill the Config tab** with the same URL + the Read PAT only.
+   Optionally tick *Auto-sync on app start*. Save → *Sync now* once to
+   populate.
+5. **Updating quotas:** admin edits the table → *Push to repo* commits
+   `quotas.json` back to the repo via the Contents API and returns a
+   clickable commit link in the sync-status chip. Users' next launch
+   (auto-sync) or their next *Sync now* click picks up the change.
+
+**Distributing the kit** is the *Backup & share* fieldset. *Export config*
+downloads a JSON file containing every Config-tab setting. Sensitive keys
+have separate behaviour:
+- *Janice API key* and *Read PAT* — opt-in via a confirm() prompt at
+  export time. Include both for an alliance-distribution kit, then
+  recipients import → Save → they're synced immediately.
+- *Write PAT* and *Allow-push* flag — **never** included in exports, even
+  in personal-backup mode. Admin write capability must be pasted into the
+  field on the target machine; it never rides along in a JSON file.
+
+If you'd rather skip the PAT plumbing entirely, you can also paste the URL
+of a **secret GitHub gist** containing the quota JSON — the app's backend
+still resolves gist URLs (no UI hint), syncs them anonymously, and there's
+no push step.
+
 ### Janice API key (optional)
 
 Paste your `X-ApiKey` from [janice.e-351.com](https://janice.e-351.com/) to
 get higher rate limits. Without a key the app falls back to anonymous
 requests, which are fine for small corps but can throttle when you have
 many contracts.
+
+### Working tab (no config needed)
+
+The **Working** tab is an offline workspace for moon-contract triage.
+Workflow:
+
+1. On the **Moon** tab, click *📌 Pin to Working* on any row. The full
+   snapshot (items, refined breakdown, recommended payout, flags) is
+   POSTed to the sidecar and persisted at
+   `<userData>/eve_auth/pinned_contracts.json`. Survives app close + the
+   next Moon-tab re-fetch.
+2. Open the pin's card on the Working tab. The header shows the original
+   snapshot's recommended payout + the **blended payout fraction** the app
+   derived once at pin time (`(moon_payout + non_moon_payout) /
+   (moon_value + non_moon_value)` — the effective rate to re-apply on any
+   future appraisal of the actual refined output).
+3. Paste the actual refined minerals from your refinery into the Janice
+   paste box. *Pre-fill from snapshot* drops in the original calculated
+   refined breakdown if you want a starting point.
+4. *Appraise & apply N%* runs the Janice appraisal (persist on, so the
+   returned `code` is a shareable `janice.e-351.com/a/…` URL) and
+   multiplies the buy total by the blended fraction. The final payout is
+   click-to-copy.
+5. *Status* dropdown (`pending` / `paid` / `disputed`) drives the left
+   border colour. *Notes* auto-save on blur. Both persist on disk with
+   the pin.
+
+A calculator sidebar identical to the Moon tab's lives on the right; toggle
+with *Hide calculator* or pop it out into its own window.
+
+### Appraisal tab (no config needed)
+
+One-shot Janice appraisal pad with first-class abyssal-module support:
+
+- Paste any EVE-format inventory (drag from cargo bay, hangar, contract
+  window — anything Janice accepts).
+- Pick a market hub (defaults to your configured Janice hub).
+- Hit **Appraise** or `Ctrl/Cmd + Enter`.
+
+You get back:
+- **Three side-by-side price columns** — Buy / Split / Sell — each with
+  a click-to-copy headline and a row of 80 / 90 / 100 / 110 / 120 %
+  percentage-modifier chips (also click-to-copy). Buyback admins can grab
+  "90 % of Jita buy" without doing the math.
+- **Abyssal addendum** per type (Mutamarket). Marketplace median (median
+  of `contract.price` for actively-asking sellers) and AI-estimator median
+  (median of Mutamarket's AI fair-value field) are reported side-by-side
+  so the wide spread typical of thin abyssal markets stays visible. Min /
+  max / count shown for both.
+- **Five summary tiles** at the bottom — Janice / Marketplace / Estimator
+  / Grand-Janice-plus-marketplace / Grand-Janice-plus-estimator. Every
+  figure copyable.
 
 ### Mail templates (Mail tab)
 
@@ -235,6 +369,37 @@ assignee, including corps each slot is a director of). To widen visibility:
 log in additional slots on the Auth tab with directors / Contract Managers
 of the other alliance corps. See the *Contracts dashboard* config section
 above for details.
+
+### Quota sync says "404 — file not found"
+
+The repo URL parsed correctly but `quotas.json` isn't there yet. The first
+*Push to repo* from the admin's machine creates the file. If you're a user
+who hasn't seen any quotas published yet, ask the admin to push once.
+
+### Alliance quota sync says "401 / 403 — token rejected"
+
+Your PAT is missing the right scope or doesn't have access to the repo.
+Common gotchas:
+- Fine-grained PATs default to **no** repository access. Open the PAT
+  settings and add the alliance repo explicitly.
+- Read PAT needs *Contents: Read-only*; Write PAT needs *Contents: Read
+  and Write*. The app surfaces a hint that distinguishes the two.
+
+### Working-tab pin disappears after re-running Moon-tab fetch
+
+Pins are stored independently of the live Moon-tab result list, so they
+survive re-fetches by design. If a pin vanished, the on-disk file at
+`<userData>/eve_auth/pinned_contracts.json` was either deleted or
+corrupted. Check the file — invalid JSON is treated as "no pins".
+
+### `Pin failed: HTTP 404` on Windows after installing a new version
+
+An older app instance (or a force-quit one) left its sidecar.exe running,
+holding port 8765. The new install's sidecar can't bind, exits, and the
+orphan keeps serving 404s on new routes. **Fixed in v1.1.3+** — every
+launch now runs `taskkill /F /IM sidecar.exe` before spawning. If you're
+on a pre-1.1.3 install, end the orphan in Task Manager (Details tab) and
+relaunch.
 
 ## Running from source (development)
 

@@ -25,6 +25,12 @@ MOON_ORE_PAYOUT_FRACTION = 0.80  # All moon ore is paid at 80% by policy
 # calc would be wrong.
 PRISMATICITE_GROUP_ID = 4915
 
+# Refined outputs accepted in moon contracts alongside raw ore/ice. These
+# fall through `is_refinable` to the leftover bucket and get paid at
+# hub-buy × non_moon_payout_fraction (the same 90% bucket as ice).
+MINERAL_GROUP_ID = 18          # Tritanium, Pyerite, Mexallon, Isogen, Nocxium, Zydrine, Megacyte, Morphite
+ICE_PRODUCT_GROUP_ID = 423     # Heavy Water, Liquid Ozone, Strontium Clathrates, isotopes
+
 
 def is_mineable(type_id, user_agent):
     """True iff the type is one of: ore / moon ore / ice / sovereignty colony reagent
@@ -72,6 +78,54 @@ def is_donation(type_id, user_agent):
         type_info = fetch_type_info(type_id, user_agent)
         group_info = fetch_group_info(type_info['group_id'], user_agent)
         return group_info.get('category_id') == DONATION_CATEGORY_ID
+    except Exception:
+        return False
+
+
+_moon_materials_set = None
+_moon_materials_lock = threading.Lock()
+
+
+def _moon_material_type_ids(user_agent):
+    """Type IDs produced by refining any R4–R64 moon ore.
+
+    Built lazily by walking the moon-ore groups, listing the types in each,
+    and reading their material yields from the Fuzzwork dump. Cached for the
+    lifetime of the process.
+    """
+    global _moon_materials_set
+    if _moon_materials_set is not None:
+        return _moon_materials_set
+    with _moon_materials_lock:
+        if _moon_materials_set is not None:
+            return _moon_materials_set
+        materials = _load_materials()
+        out = set()
+        for gid in MOON_ORE_GROUP_IDS:
+            try:
+                group_info = fetch_group_info(gid, user_agent)
+            except Exception:
+                continue
+            for tid in group_info.get('types', []) or []:
+                for mid, _qty in materials.get(tid, []):
+                    out.add(mid)
+        _moon_materials_set = out
+        return out
+
+
+def is_refined_output(type_id, user_agent):
+    """True if `type_id` is a refined output of ore / moon ore / ice — a
+    mineral, R4–R64 moon material, or ice product.
+
+    Used at the contract-routing layer to accept these alongside raw ore in
+    moon contracts. In the payout math they're not refinable, so they fall
+    into the leftover bucket and get paid at hub-buy × non_moon_payout_fraction.
+    """
+    try:
+        gid = fetch_type_info(type_id, user_agent).get('group_id')
+        if gid == MINERAL_GROUP_ID or gid == ICE_PRODUCT_GROUP_ID:
+            return True
+        return type_id in _moon_material_type_ids(user_agent)
     except Exception:
         return False
 

@@ -69,6 +69,52 @@ function applyFilter(list, filter) {
   return list.filter((r) => classifyResult(r) === filter);
 }
 
+// ── Outstanding-payout totals (top of Buyback + Moon pages) ──
+// Sums what the corp wallet will actually owe once we hit Accept on every
+// row currently classified as 'approve'. Ignores 'reject'/'errors' since
+// those won't be paid. We render the count too so the operator can sanity-
+// check it against the visible result list.
+//
+// Buyback payout per row = appraisal.effective_offer (Janice value × 90%
+//   in the standard flow). If the row doesn't have an appraisal we fall
+//   back to the contract's listed price, which is what the corp would
+//   actually pay if the appraisal block is missing for some reason.
+// Moon payout per row    = payout.refined.recommended_payout (the headline
+//   number on each Moon contract row).
+function _rowAcceptValue(kind, r) {
+  if (classifyResult(r) !== 'approve') return 0;
+  if (kind === 'buyback') {
+    const eff = r.appraisal?.effective_offer;
+    if (typeof eff === 'number' && eff > 0) return eff;
+    if (typeof r.price === 'number' && r.price > 0) return r.price;
+    return 0;
+  }
+  // moon
+  return r.payout?.refined?.recommended_payout || 0;
+}
+
+function renderPayoutTotal(kind) {
+  const el = $(kind === 'buyback' ? '#buyback-payout-total' : '#moon-payout-total');
+  if (!el) return;
+  const list = lastResults[kind] || [];
+  if (!list.length) { el.hidden = true; el.innerHTML = ''; return; }
+  let total = 0;
+  let count = 0;
+  for (const r of list) {
+    const v = _rowAcceptValue(kind, r);
+    if (v > 0) { total += v; count += 1; }
+  }
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="payout-total-label">Outstanding to be accepted</div>
+    <div class="payout-total-amount">
+      <span class="payout-copy" role="button" tabindex="0" title="Click to copy" data-copy="${Math.round(total)}">${Math.round(total).toLocaleString()}</span>
+      <span class="payout-total-isk">ISK</span>
+    </div>
+    <div class="payout-total-meta muted">${count} approve row${count === 1 ? '' : 's'}</div>
+  `;
+}
+
 $$('.filter-bar').forEach((bar) => {
   const target = bar.dataset.target;
   bar.querySelectorAll('.filter-btn').forEach((btn) => {
@@ -267,6 +313,7 @@ $('#config-form').addEventListener('submit', async (e) => {
 });
 
 function renderMoonTab() {
+  renderPayoutTotal('moon');
   const list = applyFilter(lastResults.moon, filterState.moon);
   const root = $('#moon-results');
   root.innerHTML = '';
@@ -554,6 +601,8 @@ async function runValidateStream() {
   lastResults.moon = [];
   $('#results').innerHTML = '';
   $('#moon-results').innerHTML = '';
+  renderPayoutTotal('buyback');
+  renderPayoutTotal('moon');
   $('#run-status').textContent = 'starting…';
   $('#moon-status').textContent = 'starting…';
   showProgress('buyback', 0, 0);
@@ -628,12 +677,17 @@ function handleStreamEvent(ev) {
       showProgress('moon', ev.current, ev.total);
       appendResultIfMatch('moon', ev.result);
       break;
-    case 'done':
+    case 'done': {
       setStep('buyback', 'done');
       setStep('moon', 'done');
       hideProgress('buyback');
       hideProgress('moon');
+      const shown = lastResults.moon.length;
+      const dropped = ev.moon_dropped || 0;
+      const suffix = dropped ? ` (${dropped} hidden — non-mining items)` : '';
+      $('#moon-status').textContent = `Moon contracts: ${shown}${suffix}`;
       break;
+    }
     case 'error':
       $('#run-status').textContent = `Error: ${ev.message}`;
       $('#moon-status').textContent = `Error: ${ev.message}`;
@@ -660,6 +714,10 @@ function setStep(kind, step) {
 }
 
 function appendResultIfMatch(kind, result) {
+  // Always refresh the per-page total — the row may not be appended due to
+  // the active filter, but it has still landed in lastResults so the total
+  // needs to reflect it.
+  renderPayoutTotal(kind);
   if (filterState[kind] !== 'all' && classifyResult(result) !== filterState[kind]) return;
   const root = kind === 'buyback' ? $('#results') : $('#moon-results');
   const empty = root.querySelector('p.muted');
@@ -733,6 +791,7 @@ function renderWalletTiles(root, data, highlightDivision) {
 }
 
 function renderBuyback() {
+  renderPayoutTotal('buyback');
   const list = applyFilter(lastResults.buyback, filterState.buyback);
   const root = $('#results');
   root.innerHTML = '';

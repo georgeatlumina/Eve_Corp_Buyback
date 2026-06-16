@@ -10,7 +10,9 @@ project context see [CONTEXT.md](CONTEXT.md).
 Eve_Corp_Buyback/
 ├── electron/                   Electron main + preload (Node)
 ├── renderer/                   Static HTML/CSS/JS UI (no build step)
-├── python/                     FastAPI sidecar (ESI, Janice, refining)
+├── python/                     FastAPI sidecar (ESI, Janice, Mutamarket, refining)
+│   └── tests/                  pytest suite (Starlette TestClient)
+├── tests/                      Jest test suite for renderer parse helpers
 ├── assets/                     Icons (PNG variants + ICO/ICNS)
 ├── build/                      Build artifacts (PyInstaller, electron-builder)
 ├── dist/                       Packaged installers (DMG / NSIS)
@@ -19,7 +21,7 @@ Eve_Corp_Buyback/
 ├── package-lock.json
 ├── LICENSE
 ├── README.md                   User-facing docs (install, usage, config)
-├── CONTEXT.md                  Architecture & decisions (this folder)
+├── CONTEXT.md                  Architecture & decisions
 ├── STRUCTURE.md                You are here
 └── FUNCTIONS.md                Function-level index
 ```
@@ -32,8 +34,8 @@ Auth session, native windows, auto-update).
 
 | File | Lines | Role |
 |------|-------|------|
-| [main.js](electron/main.js) | ~450 | App lifecycle, sidecar spawn (`startPythonSidecar`), splash window with progress events (`createSplashWindow`/`emitSplash`), main window, calculator popout, Alliance Auth BrowserWindow + cookie-jar partition, GitHub-Releases auto-update (`checkForUpdate`). |
-| [preload.js](electron/preload.js) | ~12 | `contextBridge` exposing `window.api` with `openCalculator`, `aaOpen`, `aaLogout`, `aaFetchHtml`, and `appMeta` (returns name+version for the title-bar version chip). |
+| [main.js](electron/main.js) | ~545 | App lifecycle, sidecar spawn (`startPythonSidecar`), **orphan-sidecar sweep** before spawn (`killOrphanSidecars` — `taskkill /F /IM sidecar.exe` on Windows, `pkill -x sidecar` on macOS/Linux), splash window with progress events (`createSplashWindow`/`emitSplash`), main window, calculator popout, Alliance Auth BrowserWindow + cookie-jar partition, GitHub-Releases **auto-update** (`checkForUpdate`) — runs at 2 s post-startup and then every hour, with `dismissedUpdateTag` dedupe + `updateDialogOpen` re-entry guard. |
+| [preload.js](electron/preload.js) | ~12 | `contextBridge` exposing `window.api` with `openCalculator`, `aaOpen`, `aaLogout`, `aaFetchHtml`, `getMeta` (returns name+version for the title-bar version chip), and `checkForUpdate` (drives the manual ⟳ button — calls `checkForUpdate({interactive: true})` so up-to-date / error states each get a friendly dialog). |
 | [splash-preload.js](electron/splash-preload.js) | ~10 | Bridges `splash:progress` events from main into the splash renderer's DOM. |
 | [afterSign.js](electron/afterSign.js) | 21 | electron-builder hook; runs after code-signing during `npm run build:mac`. |
 
@@ -47,20 +49,23 @@ framework. All DOM updates are imperative.
 
 | File | Lines | Role |
 |------|-------|------|
-| [index.html](renderer/index.html) | ~290 | Tab shell (Config / Auth / Buyback / Moon / Mail / Doctrines / Readiness / Contracts / Sov), mail modal, calculator sidebar mount point, quota editor table, multi-slot auth slots container. |
-| [splash.html](renderer/splash.html) | ~140 | Borderless splash window shown while the Python sidecar boots; rendered via `splash-preload.js`. |
+| [index.html](renderer/index.html) | ~359 | Tab shell (Config / Auth / Buyback / Moon / **Working** / **Appraisal** / Mail / Doctrines / Readiness / Contracts / Sov), mail modal, calculator sidebar mount points (Moon + Working), Working-tab pin-card scaffold, Appraisal-tab paste box, quota editor table, multi-slot auth slots container, alliance-quota-sync fieldset (URL + Read PAT + Write PAT + Allow-push checkbox + Sync / Push buttons), backup-and-share fieldset (Export / Import config), outstanding-payout-total panels for Buyback and Moon. |
+| [splash.html](renderer/splash.html) | ~139 | Borderless splash window shown while the Python sidecar boots; rendered via `splash-preload.js`. |
 | [calculator.html](renderer/calculator.html) | 16 | Standalone calculator window template (popout target). |
-| [app.js](renderer/app.js) | ~2700 | **Everything else.** Config form ↔ sidecar, multi-slot auth UI, SSE/NDJSON consumption for `/api/validate`, `/api/aa/market/stream`, and `/api/contracts/scan`, buyback + moon row rendering, mail template engine, AA HTML scraping, doctrine + fit rendering, readiness dashboard, Contracts dashboard with quota progress bars + CSV/JSON quota import-export + ship-type datalist + gap-CSV / shopping-list exports. |
-| [calculator.js](renderer/calculator.js) | 211 | Self-contained numpad calculator with 70/80/90% copy-to-clipboard buttons; mounted both inline (Moon tab sidebar) and in the popout window. |
-| [styles.css](renderer/styles.css) | ~370 | Dark theme, tab styles, table layouts, progress bars, modal, auth-slot cards, quota table, contracts dashboard quota bars. |
+| [app.js](renderer/app.js) | ~4216 | **Everything else.** Config form ↔ sidecar, multi-slot auth UI, SSE/NDJSON consumption for `/api/validate`, `/api/aa/market/stream`, `/api/contracts/scan`, buyback + moon row rendering with **outstanding-payout totals** (`renderPayoutTotal` / `_rowAcceptValue`), Working tab (`runPinAppraisal`, `renderPinDetail`, calculator mount), Appraisal tab (Janice routing + Mutamarket abyssal addendum + percentage chip rows), mail template engine, AA HTML scraping, doctrine + fit rendering, readiness dashboard, Contracts dashboard with quota progress bars + CSV/JSON quota import-export + ship-type datalist + gap-CSV / shopping-list exports, alliance-quota-sync handlers (`runQuotaSync` / `runQuotaPush` / `updatePushButtonVisibility`) including the gist-URL fallback path that's no longer surfaced in the UI, whole-config export/import gated by `CONFIG_EXPORT_NEVER` (which now hard-strips Write PAT + Allow-push). |
+| [parse-utils.js](renderer/parse-utils.js) | 124 | Pure functions for HTML scraping + formatting (`extractTypeId`, `parseDoctrinesHtml`, `parseDoctrineDetail`, `parseFitDetail`, `fmtIsk`, `fmtMillions`). Loaded by `index.html` before `app.js`. CommonJS-exported at the bottom so [tests/parse-utils.test.js](tests/parse-utils.test.js) can require it from Jest. |
+| [calculator.js](renderer/calculator.js) | 211 | Self-contained numpad calculator with 70/80/90% copy-to-clipboard buttons; mounted both inline (Moon + Working tab sidebars, independent instances) and in the popout window. |
+| [styles.css](renderer/styles.css) | ~589 | Dark theme, tab styles, table layouts, progress bars, modal, auth-slot cards, quota table, contracts dashboard quota bars, Working-tab pin cards, Appraisal tab three-column price tiles + percentage chips, alliance-quota-sync row + PAT-row + push button, outstanding-payout-total panel, splash. |
 
-**State lives in `app.js` module-level lets:** `cfg`, `walletData`,
-`buybackResults`, `moonResults`, `aaState`, `readinessState`,
-`mailPresets`, `lastContractsScan`, `shipTypesCache`, `shipTypesByIdMap`,
-`shipTypesByNameMap`. No global store beyond that. `readinessState` is the
-only chunk persisted to `localStorage`; `shipTypesCache` is hydrated from
-the sidecar's disk-cached `/api/universe/ships` response on Config-tab
-load.
+**State lives in `app.js` module-level lets:** `lastResults` (buyback +
+moon), `walletData`, `aaState`, `readinessState`, `mailPresets`,
+`lastContractsScan`, `shipTypesCache` / `shipTypesByIdMap` /
+`shipTypesByNameMap`, `workingState` (pinned-contract list + expanded
+ids + filter), `appraisalState` (last paste + last result), and the
+auto-sync re-entry guards (`allianceQuotaAutoSyncDone`). No global store
+beyond that. `readinessState` is the only chunk persisted to
+`localStorage`; pins, ship types, and all other state hydrate from the
+sidecar on tab open.
 
 ## `python/` — FastAPI sidecar
 
@@ -70,24 +75,37 @@ Fuzzwork) goes through here.
 
 | File | Lines | Role |
 |------|-------|------|
-| [server.py](python/server.py) | ~1275 | FastAPI app, all routes, NDJSON streaming for validate / AA market / contracts scan, EVE SSO callback page, sov overview aggregator, multi-slot auth handlers, ship-type cache, region-from-station lookup. |
-| [auth.py](python/auth.py) | ~153 | EVE SSO authorize URL, code↔token exchange, refresh. Multi-slot token cache (dict keyed `slot1`/`slot2`/`slot3`; chmod 600). JWT payload decoder + `character_id_from_access_token`. Legacy single-record shape auto-migrates into slot1. |
-| [config.py](python/config.py) | ~135 | Config schema + defaults (incl. `home_structure_id`, `home_region_id`, `quotas`), JSON load/save (chmod 600), legacy-shape migration (`_migrate`). `load_config` runs `_migrate` **before** filtering by `_USER_KEYS` so renamed keys aren't dropped. |
-| [esi.py](python/esi.py) | ~458 | Thin ESI wrappers: `resolve_names`, `send_evemail`, `fetch_corp_wallets`, `fetch_corp_contracts`, `fetch_contract_items`, character contracts (`fetch_character_contracts` / `_items`), public contracts (`fetch_public_contracts_paged` / `_items`), universe lookups (`fetch_type_info`, `fetch_group_info`, `fetch_category_info`, `fetch_station/system/constellation/region_info`, `fetch_character/corporation/alliance_info`), structure markets (paged + non-paged), sov endpoints (`fetch_sovereignty_structures/map/campaigns`, `fetch_system_kills/jumps`, `fetch_incursions`), and the bulk `fetch_all_ship_types` (walks category 6). |
-| [janice.py](python/janice.py) | 211 | Janice appraisal fetch (RPC-first, API fallback), appraisal creation. `_normalize` is the single source of truth for the response shape consumed by `validate.py`. |
-| [refining.py](python/refining.py) | 325 | Type classification (`is_mineable`, `is_moon_ore`, `is_ice`, `is_prismaticite`, `is_donation`), Fuzzwork material dump loader, Fuzzwork market buy-price fetch, and the core `compute_refined_payout` that produces the moon-contract payout. |
+| [server.py](python/server.py) | ~2007 | FastAPI app, all routes, NDJSON streaming for validate / AA market / contracts scan, EVE SSO callback page, sov overview aggregator, multi-slot auth handlers, ship-type cache, region-from-station lookup, **Working-tab pin CRUD + per-pin appraise** endpoint, **Appraisal-tab combined Janice + Mutamarket** endpoint, **alliance-quota sync + push** endpoints (Contents API + gist fallback), **Amarr sell price** lookup. |
+| [auth.py](python/auth.py) | 153 | EVE SSO authorize URL, code↔token exchange, refresh. Multi-slot token cache (dict keyed `slot1`/`slot2`/`slot3`; chmod 600). JWT payload decoder + `character_id_from_access_token`. Legacy single-record shape auto-migrates into slot1. |
+| [config.py](python/config.py) | 152 | Config schema + defaults (incl. `home_structure_id`, `home_region_id`, `quotas`, the alliance-quota sync triplet, the on-disk last-sync metadata). JSON load/save (chmod 600), legacy-shape migration (`_migrate`). `load_config` runs `_migrate` **before** filtering by `_USER_KEYS` so renamed keys aren't dropped. |
+| [esi.py](python/esi.py) | 482 | Thin ESI wrappers: `resolve_names`, `send_evemail`, `fetch_corp_wallets`, `fetch_corp_contracts`, `fetch_contract_items`, character contracts (`fetch_character_contracts` / `_items`), public contracts (`fetch_public_contracts_paged` / `_items`), universe lookups (`fetch_type_info`, `fetch_group_info`, `fetch_category_info`, `fetch_station/system/constellation/region_info`, `fetch_character/corporation/alliance_info`), structure markets (paged + non-paged), regional market orders (`fetch_region_market_orders`), sov endpoints (`fetch_sovereignty_structures/map/campaigns`, `fetch_system_kills/jumps`, `fetch_incursions`), and the bulk `fetch_all_ship_types` (walks category 6). |
+| [janice.py](python/janice.py) | 270 | Janice integration: appraisal fetch (RPC-first, API fallback), appraisal creation from items (`create_appraisal`) and from raw paste text (`create_appraisal_from_text`, used by the Working tab and Appraisal tab — `persist=True` so the returned code is shareable). New: `fetch_type_sell_price` for the Amarr-pricing endpoint added by PR #3. `_normalize` is the single source of truth for the response shape. |
+| [mutamarket.py](python/mutamarket.py) | 168 | Mutamarket integration (public `/api/modules/type/{type_id}` listings endpoint) for abyssal-module pricing. 5-minute in-process cache keyed by type_id. `summarize_listings` boils each type's listings into two parallel price tracks: marketplace median (from `contract.price` of active sellers) and AI-estimator median (from Mutamarket's fair-value field). `is_abyssal_item_name` flags rolls by the "Abyssal " prefix that CCP standardised on. |
+| [pinned.py](python/pinned.py) | 156 | On-disk pin storage for the Working tab. `load_pinned` / `save_pinned` / `upsert_pin` / `remove_pin` / `update_pin_fields` (notes + status) / `append_appraisal` (bounded ring of 20 per pin). `_blended_fraction_from_snapshot` derives the payout fraction once at pin time so re-appraisals use the same effective rate regardless of the original moon/non-moon mix. |
+| [refining.py](python/refining.py) | 379 | Type classification (`is_mineable`, `is_moon_ore`, `is_ice`, `is_prismaticite`, `is_donation`, **`is_refined_output`** — minerals + moon materials + ice products, used to broaden moon-contract acceptance), Fuzzwork material dump loader, Fuzzwork market buy-price fetch, and the core `compute_refined_payout` that produces the moon-contract payout. |
 | [validate.py](python/validate.py) | 170 | `categorize` (courier/moon/buyback split), `validate_buyback_contract`, `process_moon_contract`, `validate_all`. Pure logic, no IO except via injected `payout_lookup`. |
+| [tests/test_market.py](python/tests/test_market.py) | 145 | pytest suite for `fetch_region_market_orders` + the `/api/market/amarr-sell` endpoint (PR #3). Uses `fastapi.testclient.TestClient`, which requires `httpx` (not currently in `requirements.txt` — install separately for local test runs). 12 tests; all pass. |
 | [requirements.txt](python/requirements.txt) | — | `fastapi`, `uvicorn`, `pydantic`, `requests`. |
-| [sidecar.spec](python/sidecar.spec) | — | PyInstaller spec for the bundled binary. |
+| [sidecar.spec](python/sidecar.spec) | — | PyInstaller spec for the bundled binary. Lists `pinned`, `mutamarket`, `janice`, `auth`, `config`, `esi`, `refining`, `validate` in `hiddenimports` belt-and-braces — they're already reachable from `server.py` but Windows PyInstaller has been observed to miss top-level imports declared mid-file. |
 
 **Caches & state on disk** (under `EVE_BUYBACK_DATA_DIR`, typically
 `<userData>/eve_auth/`):
-- `config.json` — user settings (chmod 600).
+- `config.json` — user settings (chmod 600). Includes the alliance-quota
+  triplet (`alliance_quota_url` + Read PAT + Write PAT + `allow_push`) and
+  the on-disk last-sync metadata.
 - `tokens.json` — ESI tokens, dict keyed by slot (chmod 600).
+- `pinned_contracts.json` — Working-tab pinned moon-result snapshots
+  (chmod 600). Schema in [python/pinned.py](python/pinned.py).
 - `ship_types.json` — every published ship hull `{type_id, name, group_id,
   group_name}`. Built on first hit to `/api/universe/ships`; refresh via
   `?refresh=true`.
 - `invTypeMaterials.csv` — Fuzzwork dump, lazy-loaded once per process.
+
+## `tests/` — Jest suite for the renderer
+
+| File | Lines | Role |
+|------|-------|------|
+| [parse-utils.test.js](tests/parse-utils.test.js) | 188 | 21 tests covering `extractTypeId`, `parseDoctrinesHtml`, `parseDoctrineDetail`, `parseFitDetail`, `fmtIsk`, and `fmtMillions`. Run via `npm test` (`jest` is a devDependency). |
 
 ## `assets/`
 

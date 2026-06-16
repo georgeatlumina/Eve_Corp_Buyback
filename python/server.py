@@ -69,7 +69,7 @@ from pinned import (
     update_pin_fields,
     upsert_pin,
 )
-from refining import compute_refined_payout, is_donation, is_mineable, is_prismaticite
+from refining import compute_refined_payout, is_donation, is_mineable, is_prismaticite, is_refined_output
 from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
 
 PORT = 8765
@@ -854,6 +854,7 @@ def _validate_stream(cfg, req):
     non_moon_payout_frac = float(cfg.get('non_moon_payout_fraction') or 0.90)
     moon_payout_frac = float(cfg.get('moon_payout_fraction') or 0.80)
     total_moon = len(buckets['moon'])
+    moon_dropped = 0  # contracts hidden because they contain non-mining items
 
     for idx, c in enumerate(buckets['moon'], 1):
         cid = c.get('contract_id')
@@ -908,7 +909,15 @@ def _validate_stream(cfg, req):
             )
 
             # Step 2: Mineable check (flag, don't bail — keeps Janice info visible).
-            bad = [i for i in items_named if not is_mineable(i['type_id'], get_user_agent())]
+            # Accept raw ore/moon ore/ice (is_mineable) AND their refined outputs
+            # (minerals, moon materials, ice products). Anything else makes the
+            # contract non-conforming and the moon loop will drop it from the stream.
+            ua = get_user_agent()
+            bad = [
+                i for i in items_named
+                if not is_mineable(i['type_id'], ua)
+                   and not is_refined_output(i['type_id'], ua)
+            ]
 
             # Step 3: Refined payout only if all items are mineable.
             refined_block = None
@@ -959,9 +968,18 @@ def _validate_stream(cfg, req):
 
         result = process_moon_contract(c, structures, payout_lookup)
         result['issuer_name'] = names.get(result.get('issuer_id'), '')
+
+        # Hard filter: contracts with any non-mining items don't belong in the
+        # Moon tab. The count is reported on `done` so the renderer can show
+        # "N hidden" under the moon header.
+        mo = (result.get('checks') or {}).get('mineable_only')
+        if mo and not mo.get('pass'):
+            moon_dropped += 1
+            continue
+
         yield _emit('moon_result', current=idx, total=total_moon, result=result)
 
-    yield _emit('done')
+    yield _emit('done', moon_dropped=moon_dropped)
 
 
 _market_cache: dict[int, dict[str, Any]] = {}

@@ -12,7 +12,7 @@ and a one-line description.
 
 ---
 
-## `python/server.py` — FastAPI sidecar entrypoint (~1275 LOC)
+## `python/server.py` — FastAPI sidecar entrypoint (~2007 LOC)
 
 [python/server.py](python/server.py)
 
@@ -20,42 +20,59 @@ and a one-line description.
 
 | Method+Path | Handler | Line | Purpose |
 |---|---|---|---|
-| `GET /api/health` | `health` | [92](python/server.py#L92) | Liveness probe used by `waitForSidecar`. |
-| `GET /api/config` | `get_config` | [97](python/server.py#L97) | Return merged config (defaults + saved). |
-| `POST /api/config` | `update_config` | [120](python/server.py#L120) | Partial-update saved config; pydantic `ConfigUpdate` filters keys. |
-| `GET /api/markets` | `list_markets` | [129](python/server.py#L129) | Return supported Janice market names. |
-| `GET /api/auth/status` | `auth_status` | [161](python/server.py#L161) | Per-slot status (`slot=slot1` default); refreshes the access token if near expiry. |
-| `GET /api/auth/slots` | `auth_slots` | [167](python/server.py#L167) | Array of statuses for all 3 slots — drives the Auth-tab UI. |
-| `POST /api/auth/login` | `auth_login` | [173](python/server.py#L173) | Build SSO authorize URL + state for `slot=slotN`; opens system browser. |
-| `POST /api/auth/logout` | `auth_logout` | [190](python/server.py#L190) | Clear cached tokens for the given slot. |
-| `GET /callback` | `sso_callback` | [197](python/server.py#L197) | EVE SSO redirect target; pops state→slot mapping, exchanges code for tokens, writes them under that slot's key. |
-| `POST /api/mail/send` | `send_mail` | [230](python/server.py#L230) | ESI evemail send via slot1 (requires `esi-mail.send_mail.v1`). |
-| `GET /api/wallets` | `get_wallets` | [273](python/server.py#L273) | All 7 corp wallet divisions + total (slot1). |
-| `GET /api/universe/ships` | `get_ship_types` | [288](python/server.py#L288) | Return every published EVE ship hull; cached to disk indefinitely. `?refresh=true` rebuilds. |
-| `GET /api/region/from-station` | `region_from_station` | [317](python/server.py#L317) | NPC station ID → `{station_name, system_id, system_name, region_id}` via the universe lookup chain. |
-| `POST /api/contracts/fetch` | `fetch_contracts` | [340](python/server.py#L340) | Raw corp contracts (used to preview before validation). |
-| `POST /api/validate` | `validate` | [364](python/server.py#L364) | NDJSON-streamed buyback + moon validation. |
-| `GET /api/aa/market` | `get_aa_market` | [578](python/server.py#L578) | One-shot structure market snapshot (cached 5 min). |
-| `GET /api/aa/market/stream` | `stream_aa_market` | [673](python/server.py#L673) | NDJSON-streamed page-by-page market fetch. |
-| `GET /api/contracts/scan` | `scan_contracts` | [932](python/server.py#L932) | NDJSON-streamed Contracts-dashboard scan: walks each authed slot's corp, filters to outstanding corp-posted item-exchanges at the home structure, fetches items, tallies against configured quotas. |
-| `GET /api/sov/overview` | `sov_overview` | [1135](python/server.py#L1135) | Sov-tab aggregator: sovereignty structures + map + campaigns + system jumps/kills + incursions, all enriched with names. |
+| `GET /api/health` | `health` | [104](python/server.py#L104) | Liveness probe used by `waitForSidecar`. |
+| `GET /api/config` | `get_config` | [109](python/server.py#L109) | Return merged config (defaults + saved). |
+| `POST /api/config` | `update_config` | [137](python/server.py#L137) | Partial-update saved config; pydantic `ConfigUpdate` filters keys. |
+| `GET /api/markets` | `list_markets` | [146](python/server.py#L146) | Return supported Janice market names. |
+| `GET /api/auth/status` | `auth_status` | [178](python/server.py#L178) | Per-slot status (`slot=slot1` default); refreshes the access token if near expiry. |
+| `GET /api/auth/slots` | `auth_slots` | [184](python/server.py#L184) | Array of statuses for all 3 slots — drives the Auth-tab UI. |
+| `POST /api/auth/login` | `auth_login` | [190](python/server.py#L190) | Build SSO authorize URL + state for `slot=slotN`; opens system browser. |
+| `POST /api/auth/logout` | `auth_logout` | [207](python/server.py#L207) | Clear cached tokens for the given slot. |
+| `GET /callback` | `sso_callback` | [214](python/server.py#L214) | EVE SSO redirect target; pops state→slot mapping, exchanges code for tokens, writes them under that slot's key. |
+| `POST /api/mail/send` | `send_mail` | [247](python/server.py#L247) | ESI evemail send via slot1 (requires `esi-mail.send_mail.v1`). |
+| `GET /api/wallets` | `get_wallets` | [290](python/server.py#L290) | All 7 corp wallet divisions + total (slot1). |
+| `GET /api/universe/ships` | `get_ship_types` | [305](python/server.py#L305) | Return every published EVE ship hull; cached to disk indefinitely. `?refresh=true` rebuilds. |
+| `POST /api/quotas/sync` | `sync_quotas` | [624](python/server.py#L624) | Pull `quotas.json` from the alliance source of truth — private GitHub repo via Contents API (auth via Read PAT) or gist (no auth, kept as fallback). |
+| `POST /api/quotas/push` | `push_quotas` | [659](python/server.py#L659) | Commit local quotas back to the configured GitHub repo file via Contents API (auth via Write PAT). Refuses unless `alliance_quota_allow_push` is true in config. |
+| `GET /api/region/from-station` | `region_from_station` | [728](python/server.py#L728) | NPC station ID → `{station_name, system_id, system_name, region_id}` via the universe lookup chain. |
+| `POST /api/contracts/fetch` | `fetch_contracts` | [751](python/server.py#L751) | Raw corp contracts (used to preview before validation). |
+| `POST /api/validate` | `validate` | [775](python/server.py#L775) | NDJSON-streamed buyback + moon validation. |
+| `GET /api/aa/market` | `get_aa_market` | [1005](python/server.py#L1005) | One-shot structure market snapshot (cached 5 min). |
+| `GET /api/aa/market/stream` | `stream_aa_market` | [1100](python/server.py#L1100) | NDJSON-streamed page-by-page market fetch. |
+| `GET /api/market/amarr-sell` | `amarr_sell_price` | [1117](python/server.py#L1117) | Min Amarr sell price for a single `type_id`. Prefers Janice's pricer endpoint when an API key is configured, falls back to a paged ESI regional-market scan filtered to the Amarr system. 5-minute in-process cache. Added by PR #3 for per-fit Amarr pricing on the Contracts dashboard. |
+| `POST /api/appraise` | `appraise_paste` | [1427](python/server.py#L1427) | Run a Janice appraisal against pasted EVE-format text + fan out to Mutamarket for any abyssal modules in the same paste. Returns a unified payload with the Janice block, per-abyssal Mutamarket summaries (marketplace + estimator medians), and grand totals. |
+| `GET /api/pinned` | `get_pinned` | [1573](python/server.py#L1573) | Working-tab: return the persisted pin list. |
+| `POST /api/pinned` | `post_pinned` | [1579](python/server.py#L1579) | Working-tab: upsert a pinned moon-result snapshot. Derives `blended_fraction` once at pin time. |
+| `DELETE /api/pinned/{contract_id}` | `delete_pinned` | [1593](python/server.py#L1593) | Working-tab: remove a pin. |
+| `PATCH /api/pinned/{contract_id}` | `patch_pinned` | [1598](python/server.py#L1598) | Working-tab: update `notes` or `status` (`pending`/`paid`/`disputed`) only. Whitelist enforced. |
+| `POST /api/pinned/{contract_id}/appraise` | `appraise_pinned` | [1608](python/server.py#L1608) | Working-tab: run a Janice appraisal against the admin's pasted refined-minerals text, apply the pin's saved blended fraction, append to the pin's appraisal-history ring. Returns the new pin + the appraisal record. |
+| `GET /api/contracts/scan` | `scan_contracts` | [1664](python/server.py#L1664) | NDJSON-streamed Contracts-dashboard scan: walks each authed slot's corp, filters to outstanding corp-posted item-exchanges at the home structure, fetches items, tallies against configured quotas. |
+| `GET /api/sov/overview` | `sov_overview` | [1867](python/server.py#L1867) | Sov-tab aggregator: sovereignty structures + map + campaigns + system jumps/kills + incursions, all enriched with names. |
 
 ### Helpers / internals
 
-- `_callback_page(msg)` — [85](python/server.py#L85) — minimal dark-themed HTML for the SSO landing tab.
-- `_normalize_slot(slot)` — [78](python/server.py#L78) — coerce optional slot to one of `VALID_SLOTS`, defaulting to `slot1`. Raises `HTTPException(400)` on invalid.
-- `_slot_status(slot)` — [135](python/server.py#L135) — single-slot status block used by both `/api/auth/status` and `/api/auth/slots`; auto-refreshes the access token if within 30s of expiry.
+- `_callback_page(msg)` — minimal dark-themed HTML for the SSO landing tab.
+- `_normalize_slot(slot)` — [90](python/server.py#L90) — coerce optional slot to one of `VALID_SLOTS`, defaulting to `slot1`. Raises `HTTPException(400)` on invalid.
+- `_slot_status(slot)` — [152](python/server.py#L152) — single-slot status block used by both `/api/auth/status` and `/api/auth/slots`; auto-refreshes the access token if within 30s of expiry.
 - `_auth_state` — module dict tracking `{pending: state→slot, completed: slot→bool, errors: slot→str}` for the SSO callback.
-- `ConfigUpdate` *(pydantic)* — [102](python/server.py#L102) — accepted config keys (incl. `home_structure_id`, `home_region_id`, `quotas`); unknown keys dropped.
-- `SendMailRequest` *(pydantic)* — [224](python/server.py#L224) — recipient/subject/body.
-- `ValidateRequest` *(pydantic)* — [354](python/server.py#L354) — optional pre-supplied `contracts`.
-- `_emit(event_type, **data)` — [358](python/server.py#L358) — encodes one NDJSON line for streams.
-- `_validate_stream(cfg, req)` — [375](python/server.py#L375) — **buyback+moon pipeline.** Fetches contracts, categorises, resolves issuer names, walks buyback then moon contracts, emits `progress`/`buyback_result`/`moon_result`/`done`/`error`. Constructs an inline `payout_lookup` closure that calls `compute_refined_payout`.
-- `_summarize_orders(structure_id, orders, fetched_at)` — [556](python/server.py#L556) — fold raw structure orders → `{type_id: {min_price, total_volume, order_count}}`.
-- `_resolve_market_structure_id(cfg, structure_id)` — [616](python/server.py#L616) — falls back to first configured structure when caller doesn't pass an explicit id.
-- `_market_stream(structure_id, refresh)` — [629](python/server.py#L629) — generator for `stream_aa_market`; reuses the in-memory cache when fresh.
-- `_matches_quota(quota, items_named, contract)` — [762](python/server.py#L762) — returns how many times a contract counts toward a quota row (ship `type_id` required, optional `title_filter` substring).
-- `_scan_contracts_stream()` — [785](python/server.py#L785) — **Contracts dashboard pipeline.** Iterates `list_authenticated_slots()`, resolves each toon's corp via `fetch_character_info`, calls `fetch_corp_contracts` with that slot's token (dedupes corps), filters per-slot, fetches items via `fetch_contract_items`, bulk-resolves type+issuer names, tallies against configured quotas, emits one `done` with `{structure_id, corps_scanned[], contracts[], quotas[]}`.
+- `ConfigUpdate` *(pydantic)* — accepted config keys (incl. `home_structure_id`, `home_region_id`, `quotas`, the alliance-quota triplet `alliance_quota_url`/`alliance_quota_pat_read`/`alliance_quota_pat_write`/`alliance_quota_allow_push`); unknown keys dropped.
+- `SendMailRequest` *(pydantic)* — recipient/subject/body.
+- `ValidateRequest` *(pydantic)* — optional pre-supplied `contracts`.
+- `_emit(event_type, **data)` — encodes one NDJSON line for streams.
+- `_coerce_quota_row(row)` — [338](python/server.py#L338) — normalise one quota record to the canonical shape; drops rows missing `ship_type_id` so a partially-bad alliance file doesn't wipe the user's quotas.
+- `_extract_quotas_from_payload(payload)` — [361](python/server.py#L361) — accept several JSON shapes from the alliance source of truth: bare array, `{quotas: [...]}`, the full export envelope `{_meta, config: {quotas: [...]}}`, and the simpler `{_meta, quotas: [...]}`.
+- `_resolve_gist_page_url(url, user_agent)` — [389](python/server.py#L389) — if the URL is a gist *page* URL, hit the Gists API to discover the first file's `raw_url` (preferring `.json`) and return that. Page URL from the gist's Share button works directly.
+- `_parse_github_blob_url(url)` — [425](python/server.py#L425) — detect every GitHub URL shape that points at a single file in a repo (`/blob/`, `/raw/`, `raw.githubusercontent.com`, `api.github.com/.../contents`, and the bare clone URL `github.com/<o>/<r>(.git)?` — the last defaults to `main/quotas.json`). Returns `(owner, repo, branch, path)` or `None`.
+- `_github_contents_get(owner, repo, branch, path, pat, user_agent)` — [476](python/server.py#L476) — wrap the Contents API GET. Returns `(decoded_text, sha)`; the sha is required for any future PUT. Surfaces 401/403/404 with hints that distinguish "private repo, no PAT" from "PAT lacks scope".
+- `_github_contents_put(owner, repo, branch, path, text, sha, pat, user_agent, message)` — [518](python/server.py#L518) — wrap the Contents API PUT. `sha=None` creates a new file. Surfaces 409 as a polite "someone pushed in between — sync, then push again" message.
+- `_sync_quotas_from_url(url, cfg, persist=True)` — [567](python/server.py#L567) — quota sync pipeline. Detects GitHub blob URLs and routes via Contents API with the Read PAT (Write PAT as fallback). Anything else falls back to an unauthenticated HTTPS GET via `_resolve_gist_page_url`. Validates, persists, and stamps the on-disk last-sync metadata.
+- `_validate_stream(cfg, req)` — [786](python/server.py#L786) — **buyback+moon pipeline.** Fetches contracts, categorises, resolves issuer names, walks buyback then moon contracts, emits `progress`/`buyback_result`/`moon_result`/`done`/`error`. Constructs an inline `payout_lookup` closure that calls `compute_refined_payout`. Moon items accepted iff `is_mineable` OR `is_refined_output` — contracts with anything else are silently dropped from the stream and counted on the `done` event as `moon_dropped`.
+- `_summarize_orders(structure_id, orders, fetched_at)` — fold raw structure orders → `{type_id: {min_price, total_volume, order_count}}`.
+- `_resolve_market_structure_id(cfg, structure_id)` — falls back to first configured structure when caller doesn't pass an explicit id.
+- `_market_stream(structure_id, refresh)` — generator for `stream_aa_market`; reuses the in-memory cache when fresh.
+- `_amarr_price_cache` — process-scope `{type_id: {price, fetched_at}}` with 5-minute TTL, backs the `/api/market/amarr-sell` endpoint.
+- `_matches_quota(quota, items_named, contract)` — [1153](python/server.py#L1153) — returns how many times a contract counts toward a quota row (ship `type_id` required, optional `title_filter` substring).
+- `_scan_contracts_stream()` — [1175](python/server.py#L1175) — **Contracts dashboard pipeline.** Iterates `list_authenticated_slots()`, resolves each toon's corp via `fetch_character_info`, calls `fetch_corp_contracts` with that slot's token (dedupes corps), filters per-slot, fetches items via `fetch_contract_items`, bulk-resolves type+issuer names, tallies against configured quotas, emits one `done` with `{structure_id, corps_scanned[], contracts[], quotas[]}`.
 - `_contract_items_cache` — process-scope `dict[contract_id → items]` so back-to-back scans don't re-download every contract's items.
 - `_SOV_STRUCTURE_TYPE_NAMES` — `{32458: 'IHUB'}` (TCUs were removed in the 2024 sov rework).
 
@@ -74,7 +91,7 @@ and a one-line description.
 
 ---
 
-## `python/refining.py` — refining math + classification (325 LOC)
+## `python/refining.py` — refining math + classification (~379 LOC)
 
 [python/refining.py](python/refining.py)
 
@@ -85,6 +102,8 @@ and a one-line description.
 - `is_ice(type_id, user_agent)` — [51](python/refining.py#L51) — group `465`.
 - `is_moon_ore(type_id, user_agent)` — [59](python/refining.py#L59) — groups `1884/1920/1921/1922/1923` (R4–R64).
 - `is_donation(type_id, user_agent)` — [67](python/refining.py#L67) — category `2143` (Magmatic Gas, Superionic Ice). Counted but priced at 0.
+- `is_refined_output(type_id, user_agent)` — refined output of ore/moon ore/ice — mineral (group 18), R4–R64 moon material (lazy-built from `MOON_ORE_GROUP_IDS` × the Fuzzwork dump), or ice product (group 423). Used to broaden moon-contract acceptance so a partial-refine paste is still accepted; in the payout math these still fall into the leftover bucket and get hub-buy × non-moon-payout-fraction.
+- `_moon_material_type_ids(user_agent)` — lazy + thread-safe build of the set of type IDs produced by refining R4–R64 moon ore. Cached for the process lifetime.
 
 ### Data + pricing
 
@@ -138,22 +157,72 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 
 ---
 
-## `python/janice.py` — Janice integration (211 LOC)
+## `python/janice.py` — Janice integration (~270 LOC)
 
 [python/janice.py](python/janice.py)
 
-| Function | Line | Purpose |
-|---|---|---|
-| `extract_code(url)` | [21](python/janice.py#L21) | Pull the appraisal code from `/a/<code>` URLs. |
-| `fetch_appraisal(url, api_key=None)` | [27](python/janice.py#L27) | Main entrypoint. Tries `_fetch_via_api` if key set, falls back to `_fetch_via_rpc`. |
-| `_fetch_via_rpc(code)` | [49](python/janice.py#L49) | Anonymous RPC fetch with sensible error mapping (RecordNotFound → user-friendly). |
-| `_fetch_via_api(code, api_key)` | [76](python/janice.py#L76) | Authenticated REST API fetch. |
-| `_normalize(code, data, source)` | [83](python/janice.py#L83) | Map raw Janice response → `{percentage, effective_offer, total_buy_price, market_name, items, source, raw}` consumed by `validate.py`. **Single source of truth for the appraisal shape.** |
-| `create_appraisal(items, market_name, api_key=None)` | [128](python/janice.py#L128) | Build a new appraisal from a list of `{name, quantity}` items. Used for moon Janice references. |
-| `_create_via_rpc(input_text, market_id)` | [162](python/janice.py#L162) | Anonymous appraisal-create. |
-| `_create_via_api(input_text, market_id, api_key)` | [190](python/janice.py#L190) | Authenticated appraisal-create. |
+| Function | Purpose |
+|---|---|
+| `extract_code(url)` | Pull the appraisal code from `/a/<code>` URLs. |
+| `fetch_appraisal(url, api_key=None)` | Main entrypoint. Tries `_fetch_via_api` if key set, falls back to `_fetch_via_rpc`. |
+| `_fetch_via_rpc(code)` | Anonymous RPC fetch with sensible error mapping (RecordNotFound → user-friendly). |
+| `_fetch_via_api(code, api_key)` | Authenticated REST API fetch. |
+| `_normalize(code, data, source)` | Map raw Janice response → `{percentage, effective_offer, total_buy_price, market_name, items, source, raw}` consumed by `validate.py`. **Single source of truth for the appraisal shape.** |
+| `create_appraisal(items, market_name, api_key=None)` | Build a new appraisal from a list of `{name, quantity}` items. Used for moon Janice references. |
+| `create_appraisal_from_text(input_text, market_name, api_key=None, persist=False)` | Used by the Working tab and Appraisal tab. Takes raw EVE-format paste text (skipping the items→text serialization). Set `persist=True` to ask Janice to save the appraisal so the returned `code` can be turned into a shareable `janice.e-351.com/a/<code>` URL. |
+| `fetch_type_sell_price(type_id, market_name='Amarr', api_key=None)` | Janice's pricer endpoint for one type at one market — used by `/api/market/amarr-sell`. Returns `None` if no API key is set (since pricer requires auth). |
+| `_create_via_rpc(input_text, market_id, persist=False)` | Anonymous appraisal-create. |
+| `_create_via_api(input_text, market_id, api_key, persist=False)` | Authenticated appraisal-create. |
+| `_fetch_pricer_via_api(type_id, market_id, api_key)` | Internal Janice pricer call used by `fetch_type_sell_price`. |
 
 Constants: `BUYBACK_PERCENTAGE = 0.90`, `JANICE_MARKET_IDS = {Jita 4-4: 2, Amarr: 115, Dodixie: 117, Rens: 116, Hek: 118}`.
+
+---
+
+## `python/mutamarket.py` — Mutamarket abyssal pricing (~168 LOC)
+
+[python/mutamarket.py](python/mutamarket.py)
+
+Public-API client for [Mutamarket](https://mutamarket.com) — the closest thing
+to a canonical pricing source for abyssal modules. Drives the Appraisal tab's
+addendum table where each abyssal type's marketplace median and AI-estimator
+median are reported separately so the wide spread typical of thin abyssal
+markets stays visible.
+
+| Function | Purpose |
+|---|---|
+| `is_abyssal_item_name(name)` | True iff the Janice-resolved name starts with `Abyssal ` (CCP's canonical prefix). Verified against ESI; that rule covers the entire category. |
+| `fetch_listings(type_id, user_agent)` | GET `/api/modules/type/<type_id>` from Mutamarket. 5-minute in-process cache keyed by `type_id` — a single popular type can return ~14 MB of listings so caching matters. |
+| `summarize_listings(listings)` | Boil a type's listings into two parallel price tracks: **marketplace** (median of `contract.price` across active sellers) and **estimator** (median of Mutamarket's AI fair-value field). `min` / `max` / `mean` / `count` returned for both. Returns `None` when the type has no listings. |
+
+The `/api/appraise` endpoint in [server.py](python/server.py) walks Janice's
+per-item array, AND-s `is_abyssal_item_name(item.name)` with the "Janice
+reports zero buy AND zero sell volume" signal (abyssals never trade on the
+regional market, so the pair is conclusive), then fans out per unique type
+to `fetch_listings` + `summarize_listings`. Handles both Janice response
+shapes — REST (nested `item.itemType.eid` / `.name`) and RPC anonymous
+(flat `itemType_eid`).
+
+---
+
+## `python/pinned.py` — Working-tab pin storage (~156 LOC)
+
+[python/pinned.py](python/pinned.py)
+
+On-disk persistence for the Working tab's pinned moon contracts. Pins
+survive renderer refreshes, Moon-tab re-fetches, and app close+reopen.
+
+| Function | Purpose |
+|---|---|
+| `load_pinned()` | Read `<EVE_BUYBACK_DATA_DIR>/pinned_contracts.json`. Returns `[]` on missing or unparseable file. Drops entries missing `contract_id` so one mangled record doesn't poison the rest. |
+| `save_pinned(pins)` | Write the full list, chmod 600. |
+| `_blended_fraction_from_snapshot(snapshot)` | Derive the effective payout fraction from a moon-result snapshot's refined block: `(moon_payout + non_moon_payout) / (moon_value + non_moon_value)`. The fraction the operator originally applied to refined value to get the recommended payout — re-used on every future appraisal of the actual refined output. |
+| `upsert_pin(snapshot, pinned_at)` | Add or replace a pin keyed by `contract_id`. Re-pins refresh the snapshot but **preserve notes / status / appraisals** so the operator doesn't lose history when a contract gets re-fetched. |
+| `remove_pin(contract_id)` | Drop a pin. |
+| `update_pin_fields(contract_id, patch)` | Apply a `{notes, status}` patch. `status` whitelist: `pending` / `paid` / `disputed`. |
+| `append_appraisal(contract_id, appraisal_record)` | Push one appraisal record onto the pin's appraisals ring (newest first, bounded to 20). |
+
+Module constants: `PINNED_PATH`, `VALID_STATUSES = ('pending', 'paid', 'disputed')`, `MAX_APPRAISALS_PER_PIN = 20`.
 
 ---
 
@@ -194,39 +263,52 @@ Module-level: `AUTH_DIR` (from `EVE_BUYBACK_DATA_DIR` env or `.eve_auth/` next t
 
 ---
 
-## `electron/main.js` — Electron main process (353 LOC)
+## `electron/main.js` — Electron main process (~545 LOC)
 
 [electron/main.js](electron/main.js)
 
 ### Lifecycle / sidecar
 
-- `ensureLogPath()` — [18](electron/main.js#L18) — lazy-init `<userData>/sidecar.log`.
-- `logSidecar(line)` — [28](electron/main.js#L28) — timestamped append + mirror to stdout.
-- `startPythonSidecar()` — [37](electron/main.js#L37) — spawn the dev `python3 server.py` or the packaged `sidecar` binary; pipe stdout/stderr into the log.
-- `waitForSidecar()` — [87](electron/main.js#L87) — poll `/api/health` for 30s.
+- `ensureLogPath()` — lazy-init `<userData>/sidecar.log`.
+- `logSidecar(line)` — timestamped append + mirror to stdout.
+- `killOrphanSidecars()` — runs `taskkill /F /T /IM sidecar.exe` on Windows or `pkill -x sidecar` on macOS/Linux **before** every spawn. Defends against a previous app instance leaving its child sidecar holding port 8765 — a fresh launch would otherwise fail with `WSAEADDRINUSE` and the orphan would keep serving stale routes.
+- `startPythonSidecar()` — spawn the dev `python3 server.py` or the packaged `sidecar` binary after orphan sweep. Pipes stdout/stderr into the log.
+- `waitForSidecar(onTick)` — poll `/api/health` for 30 s; calls `onTick(i, max)` per poll for the splash progress bar.
+
+### Splash window
+
+- `createSplashWindow()` — borderless transparent 460×220 window with the boot progress bar; loads `renderer/splash.html` via `splash-preload.js`.
+- `emitSplash(pct, step)` — push a progress update to the splash renderer; coalesces pending events while the splash window is loading.
+- `flushSplashPending()` — replay the latest coalesced event once the splash is ready.
+- `closeSplashWindow()` — dismiss the splash once the main window is `ready-to-show`.
 
 ### Windowing
 
-- `createWindow()` — [101](electron/main.js#L101) — main 1100×800 window, loads `renderer/index.html`.
-- `openCalculatorWindow()` — [116](electron/main.js#L116) — 280×470 always-on-top calculator popout.
-- `openAaWindow()` — [147](electron/main.js#L147) — Alliance Auth browser, partitioned `persist:aa-auth` session.
+- `createWindow()` — main 1100×800 window, loads `renderer/index.html` with `show: false`; revealed only after `ready-to-show` to avoid a flash of unstyled content.
+- `openCalculatorWindow()` — 280×470 always-on-top calculator popout.
+- `openAaWindow()` — Alliance Auth browser, partitioned `persist:aa-auth` session.
 
 ### IPC handlers (registered to `ipcMain.handle`)
 
-| Channel | Line | Purpose |
-|---|---|---|
-| `open-calculator` | [143](electron/main.js#L143) | Open the calculator popout. |
-| `aa:open` | [173](electron/main.js#L173) | Open AA window. |
-| `aa:logout` | [177](electron/main.js#L177) | Clear AA session storage + close window. |
-| `aa:fetch-html` | [183](electron/main.js#L183) | Fetch an AA path through the partitioned session; returns `{ok, status, finalUrl, html}`. |
+| Channel | Purpose |
+|---|---|
+| `app:meta` | Returns `{name, version}` from `package.json` — drives the title-bar version chip. |
+| `app:check-update` | Calls `checkForUpdate({interactive: true})` — drives the ⟳ button next to the version chip. |
+| `open-calculator` | Open the calculator popout. |
+| `aa:open` | Open AA window. |
+| `aa:logout` | Clear AA session storage + close window. |
+| `aa:fetch-html` | Fetch an AA path through the partitioned session; returns `{ok, status, finalUrl, html}`. |
 
 ### Auto-update (GitHub Releases)
 
-- `checkForUpdate()` — [214](electron/main.js#L214) — query latest release, compare semver, prompt to download.
-- `pickPlatformAsset(assets)` — [280](electron/main.js#L280) — pick the right `.dmg` / `.exe` for the host platform.
-- `httpsGetJson(url, redirects)` — [290](electron/main.js#L290) — minimal redirect-following JSON GET.
-- `downloadToFile(url, destPath, redirects)` — [312](electron/main.js#L312) — stream-to-disk with redirect handling.
-- `compareSemver(a, b)` — [335](electron/main.js#L335) — numeric semver comparator.
+- `checkForUpdate({interactive=false})` — query the latest release, compare semver, prompt to download. **Interactive mode** (driven from the ⟳ button) pops follow-up dialogs for every outcome: up-to-date / network failure / no platform asset / not packaged. Background mode (the hourly tick + the 2 s startup tick) is silent on every outcome except "update available and not already dismissed this session".
+- `dismissedUpdateTag` / `updateDialogOpen` — per-session state. The former suppresses re-prompting after the user clicks Later (interactive checks bypass this); the latter prevents stacking dialogs when an hourly tick fires while one is on screen.
+- `pickPlatformAsset(assets)` — pick the right `.dmg` / `.exe` for the host platform.
+- `httpsGetJson(url, redirects)` — minimal redirect-following JSON GET.
+- `downloadToFile(url, destPath, redirects)` — stream-to-disk with redirect handling.
+- `compareSemver(a, b)` — numeric semver comparator.
+
+Polling cadence: `setTimeout(runUpdateCheck, 2000)` at startup, then `setInterval(runUpdateCheck, 60 * 60 * 1000)` for the rest of the session.
 
 ---
 
@@ -249,21 +331,58 @@ notarization.
 
 ---
 
-## `renderer/app.js` — UI logic (~2700 LOC, vanilla JS)
+## `renderer/parse-utils.js` — pure DOM scraping + formatting (124 LOC)
+
+[renderer/parse-utils.js](renderer/parse-utils.js)
+
+Loaded by `index.html` before `app.js`. Pure functions — no side effects,
+no DOM mutation — so they're directly require-able from Jest tests in
+[tests/parse-utils.test.js](tests/parse-utils.test.js).
+
+| Function | Purpose |
+|---|---|
+| `extractTypeId(src)` | Pull `type_id` from an EVE image-server URL. |
+| `parseDoctrinesHtml(html)` | Scrape the doctrine list page from Alliance Auth. |
+| `parseDoctrineDetail(html)` | Scrape one doctrine's fits. |
+| `parseFitDetail(html)` | Scrape one fit's items. |
+| `fmtIsk(n)` | Compact ISK formatting — `1.23B`, `45.6M`, `7.8K`, etc. |
+| `fmtMillions(n)` | Round to nearest 1 M, emit `<N>M` with no decimal. Used on Contracts-tab quota bar headlines where space is tight. |
+
+Exports via `module.exports` when run under Node so Jest can require it
+without a bundler.
+
+---
+
+## `renderer/app.js` — UI logic (~4216 LOC, vanilla JS)
 
 [renderer/app.js](renderer/app.js)
 
-State lives in module-level lets near the top: `cfg`, `walletData`,
-`buybackResults`, `moonResults`, `aaState`, `readinessState`,
-`mailPresets`, `lastContractsScan`, `shipTypesCache`, `shipTypesByIdMap`,
-`shipTypesByNameMap`.
+State lives in module-level lets near the top: `lastResults` (buyback +
+moon), `walletData`, `aaState`, `readinessState`, `mailPresets`,
+`lastContractsScan`, `shipTypesCache` / `shipTypesByIdMap` /
+`shipTypesByNameMap`, `workingState`, `appraisalState`,
+`allianceQuotaAutoSyncDone`.
 
 > **Note on line numbers below:** the function inventory was originally
-> captured at app.js ~2143 LOC. The Contracts/Auth/quota additions
-> appended ~600 lines after the Readiness block, so earlier line numbers
-> are still roughly accurate for the original sections (Config / Buyback /
-> Moon / Mail / Doctrines / Readiness), but the Contracts and multi-slot
-> auth functions live at the bottom of the file (~line 2220+).
+> captured at app.js ~2143 LOC and has since grown to ~4216. Original
+> sections (Config / Auth / Buyback / Moon / Mail / Doctrines /
+> Readiness / Contracts) still anchor in roughly the same place at the
+> top of the file; the sections below this note (Working / Appraisal /
+> Alliance-quota push / Outstanding-payout totals) live in appended
+> blocks toward the bottom. Treat the numbers as approximate — use
+> `grep -n "^function "` to pin a current line.
+
+### v1.1.x additions (appended blocks)
+
+The renderer grew several new feature blocks across v1.1.0–v1.1.6:
+
+- **Outstanding-payout totals** (Buyback + Moon header). `_rowAcceptValue(kind, r)` returns the row's payout when `classifyResult(r) === 'approve'`, zero otherwise. `renderPayoutTotal(kind)` sums across `lastResults[kind]` and writes to `#buyback-payout-total` / `#moon-payout-total`. Hooked into `renderBuyback()`, `renderMoonTab()`, `appendResultIfMatch()`, and the `runValidateStream()` reset path so the panel updates live during a streaming fetch and on every filter pill click.
+- **Working tab** (pinned moon contracts). `loadPinnedContracts()`, `pinMoonContract(id)`, `unpinContract(id)`, `patchPin(id, patch)`, `runPinAppraisal(id, pasteText)`, `renderWorkingTab()`, `buildPinCard(pin)`, `renderPinDetail(pin)`, `togglePinExpanded(id)`, `initWorkingTab()`. Mounts a second calculator instance into `#working-calc-mount`. Delegated click handler on `#working-list` routes appraise / prefill / unpin / expand / status-change / notes-blur all from one listener.
+- **Appraisal tab.** `runAppraise()` posts the paste + market + persist flag to `/api/appraise`, renders the result block (three price columns for Janice Buy / Split / Sell with percentage chip rows, abyssal addendum table per type, five summary tiles at the bottom). Ctrl/Cmd-Enter in the textarea fires the appraise.
+- **Alliance quota sync + push.** `runQuotaSync({silent})`, `runQuotaPush()`, `updatePushButtonVisibility()`, `renderQuotaSyncStatus(cfg)`, `maybeAutoSyncQuotas()`. The auto-sync chain runs once per app launch after `loadConfig()` resolves when both `alliance_quota_url` and `alliance_quota_auto_sync` are set; failures stay in the last-sync chip rather than yanking the user with a dialog. Push is gated behind the `alliance_quota_allow_push` checkbox so importing the admin's config doesn't auto-unlock writes.
+- **Whole-config export / import.** `collectConfigForm()` (shared by Save + Export so unsaved edits flow into the file). `setConfigIoStatus(msg)`, `downloadBlob(name, mime, content)`. `CONFIG_EXPORT_NEVER` set: `scopes` / `alliance_quota_last_synced` / `alliance_quota_last_status` / `alliance_quota_pat_write` / `alliance_quota_allow_push`. Read PAT + Janice key are opt-in via a confirm() prompt.
+- **Update-check button.** Module-bottom IIFE wires the ⟳ header button to `window.api.checkForUpdate()`, with a `.spinning` class applied while in-flight.
+- **Sov tab.** `refreshSov()`, `renderSovTotals(d)`, `renderSovOwners(o)`, `renderSovCampaigns(c)`, `renderSovIncursions(i)`, `sovSystemRowHtml(s, includeRegionCol)`. Pulls everything in one `/api/sov/overview` call.
 
 ### Helpers + result classification
 
