@@ -7,7 +7,7 @@ import threading
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import requests
@@ -1730,6 +1730,33 @@ def _matches_quota(quota: dict, items_named: list[dict], contract: dict) -> int:
     return count
 
 
+def _filter_sold_contracts(contracts: list[dict], corp_id: int, structure_id: int, cutoff: str) -> list[dict]:
+    """Return finished item-exchange contracts issued by corp_id at structure_id after cutoff.
+
+    cutoff is an ISO-8601 string (e.g. from datetime.isoformat()); date_completed is
+    compared lexicographically, which is correct for ISO timestamps at the same UTC offset.
+    Deduplicates by contract_id.
+    """
+    seen: set[int] = set()
+    result: list[dict] = []
+    for c in contracts:
+        if c.get('type') != 'item_exchange':
+            continue
+        if (c.get('status') or '').lower() != 'finished':
+            continue
+        if int(c.get('start_location_id') or 0) != structure_id:
+            continue
+        if int(c.get('issuer_corporation_id') or 0) != corp_id:
+            continue
+        if (c.get('date_completed') or '') < cutoff:
+            continue
+        cid = int(c.get('contract_id') or 0)
+        if cid and cid not in seen:
+            seen.add(cid)
+            result.append(c)
+    return result
+
+
 def _scan_contracts_stream():
     """Stream outstanding item-exchange contracts that ANY authed slot's corp
     has posted at the configured home structure.
@@ -1764,6 +1791,9 @@ def _scan_contracts_stream():
 
     # contract_id -> {'contract': record, 'corp_id': int, 'token': str, 'source_corps': set}
     found: dict[int, dict] = {}
+    # Finished item-exchange contracts at home, completed within the last 30 days.
+    sold_found: dict[int, dict] = {}
+    cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     # Tally per corp_id: how many outstanding-item_exchange-at-home we kept,
     # so the UI can show a per-corp summary line.
     per_corp_kept: dict[int, int] = {}
@@ -1836,6 +1866,12 @@ def _scan_contracts_stream():
             else:
                 entry['source_corps'].add(corp_id)
         per_corp_kept[corp_id] = kept
+
+        for c in _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
+            cid = int(c.get('contract_id') or 0)
+            if cid not in sold_found:
+                sold_found[cid] = {'contract': c, 'corp_id': corp_id, 'token': token}
+
         yield _emit(
             'progress',
             step=f'{slot}: corp {corp_id} posted {kept} matching '
@@ -1848,7 +1884,7 @@ def _scan_contracts_stream():
             'corps_scanned': sorted(per_corp_kept.keys()),
             'contracts': [],
             'quotas': [
-                {**q, 'available': 0, 'missing': int(q.get('required') or 0), 'contracts': []}
+                {**q, 'available': 0, 'missing': int(q.get('required') or 0), 'contracts': [], 'sold_30d': 0}
                 for q in quotas
             ],
         })
@@ -1859,6 +1895,18 @@ def _scan_contracts_stream():
     items_errors: dict[int, str] = {}
     total = len(found)
 
+    def _fetch_items(cid_rec):
+        cid, rec = cid_rec
+        last_err = None
+        for attempt in range(3):
+            try:
+                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    time.sleep(1.5 ** attempt)
+        return cid, [], str(last_err)
+
     uncached = {cid: rec for cid, rec in found.items() if _contract_items_cache.get(cid) is None}
     for cid in found:
         if cid not in uncached:
@@ -1866,18 +1914,6 @@ def _scan_contracts_stream():
 
     if uncached:
         yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
-
-        def _fetch_items(cid_rec):
-            cid, rec = cid_rec
-            last_err = None
-            for attempt in range(3):
-                try:
-                    return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
-                except Exception as e:
-                    last_err = e
-                    if attempt < 2:
-                        time.sleep(1.5 ** attempt)
-            return cid, [], str(last_err)
 
         with ThreadPoolExecutor(max_workers=5) as pool:
             futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
@@ -1890,7 +1926,27 @@ def _scan_contracts_stream():
                 else:
                     _contract_items_cache[cid] = items
                 done += 1
-                yield _emit('progress', step=f'Items: {done}/{total}')
+                yield _emit('progress', step=f'Items: {done}/{total}', current=done, total=total, phase='items')
+
+    # ---- Fetch items for sold (finished) contracts ----
+    sold_items_by_id: dict[int, list] = {}
+    sold_uncached = {cid: rec for cid, rec in sold_found.items() if _contract_items_cache.get(cid) is None}
+    for cid in sold_found:
+        if cid not in sold_uncached:
+            sold_items_by_id[cid] = _contract_items_cache[cid]
+    if sold_uncached:
+        sold_total = len(sold_uncached)
+        sold_done = 0
+        yield _emit('progress', step=f'Fetching items for {sold_total} sold contract(s)…')
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in sold_uncached.items()}
+            for future in as_completed(futures):
+                cid, items, err = future.result()
+                sold_items_by_id[cid] = items
+                if not err:
+                    _contract_items_cache[cid] = items
+                sold_done += 1
+                yield _emit('progress', step=f'Sold items: {sold_done}/{sold_total}', current=sold_done, total=sold_total, phase='sold_items')
 
     # ---- Resolve type and issuer names ----
     type_ids = sorted({int(i.get('type_id') or 0) for items in items_by_id.values() for i in items})
@@ -1952,11 +2008,24 @@ def _scan_contracts_stream():
                 matched_ids.append({'contract_id': co['contract_id'], 'count': n})
                 available += n
         missing = max(0, required - available)
+        sold_30d = 0
+        for cid, rec in sold_found.items():
+            items_named_sold = [
+                {
+                    'type_id': int(i.get('type_id') or 0),
+                    'quantity': int(i.get('quantity') or 0),
+                    'is_included': bool(i.get('is_included', True)),
+                    'name': '',
+                }
+                for i in sold_items_by_id.get(cid, [])
+            ]
+            sold_30d += _matches_quota(q, items_named_sold, rec['contract'])
         quotas_out.append({
             **q,
             'available': available,
             'missing': missing,
             'contracts': matched_ids,
+            'sold_30d': sold_30d,
         })
 
     yield _emit('done', payload={

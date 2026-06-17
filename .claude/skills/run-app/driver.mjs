@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const APP_DIR = path.resolve(fileURLToPath(import.meta.url), '../../..');
+const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const SHOT_DIR = process.env.SCREENSHOT_DIR || 'C:/tmp/shots';
 fs.mkdirSync(SHOT_DIR, { recursive: true });
 
@@ -126,16 +126,21 @@ const COMMANDS = {
 };
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'driver> ' });
-rl.on('line', async line => {
+let queue = Promise.resolve();
+let rlClosed = false;
+const safePrompt = () => { if (!rlClosed) rl.prompt(); };
+rl.on('line', line => {
   const [cmd, ...rest] = line.trim().split(/\s+/);
-  if (!cmd) return rl.prompt();
+  if (!cmd) { queue = queue.then(safePrompt); return; }
   const fn = COMMANDS[cmd];
-  if (!fn) { console.log('unknown:', cmd, '— try: help'); return rl.prompt(); }
-  try { await fn(rest.join(' ')); } catch (e) { console.log('ERROR:', e.message); }
-  if (cmd === 'quit') { rl.close(); process.exit(0); }
-  rl.prompt();
+  if (!fn) { queue = queue.then(() => { console.log('unknown:', cmd, '— try: help'); safePrompt(); }); return; }
+  queue = queue.then(async () => {
+    try { await fn(rest.join(' ')); } catch (e) { console.log('ERROR:', e.message); }
+    if (cmd === 'quit') { if (!rlClosed) rl.close(); process.exit(0); }
+    safePrompt();
+  });
 });
-rl.on('close', async () => { await COMMANDS.quit(); process.exit(0); });
+rl.on('close', () => { rlClosed = true; queue = queue.then(async () => { await COMMANDS.quit(); process.exit(0); }); });
 
 console.log('Eve Corp Buyback driver — "help" for commands, "launch" to start');
 rl.prompt();
