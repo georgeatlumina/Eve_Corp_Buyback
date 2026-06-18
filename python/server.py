@@ -1697,7 +1697,7 @@ def get_amarr_sell_price(type_id: int, bust: bool = False):
         amarr_orders = [o for o in orders if not o.get('is_buy_order') and int(o.get('system_id') or 0) == _AMARR_SYSTEM_ID]
         min_sell = min((float(o['price']) for o in amarr_orders), default=None)
 
-    result = {'type_id': type_id, 'min_sell': min_sell}
+    result = {'type_id': type_id, 'min_sell': min_sell, 'source': 'janice' if api_key else 'esi'}
     _amarr_price_cache[type_id] = {'fetched_at': now, 'result': result}
     return result
 
