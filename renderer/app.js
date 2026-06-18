@@ -3026,13 +3026,19 @@ async function runContractsScan() {
     return;
   }
 
-  let progressTicks = 0;
+  let setupTicks = 0;
   await readNdjson(res, (evt) => {
     if (evt.event === 'progress') {
-      progressTicks += 1;
       step.textContent = evt.step || '';
-      // Indeterminate-ish: ramp 5%→95% with diminishing returns.
-      const pct = Math.min(95, 5 + progressTicks * 3);
+      let pct;
+      if (evt.phase === 'items' && evt.total > 0) {
+        pct = 25 + (evt.current / evt.total) * 60; // 25%→85%
+      } else if (evt.phase === 'sold_items' && evt.total > 0) {
+        pct = 85 + (evt.current / evt.total) * 10; // 85%→95%
+      } else {
+        setupTicks += 1;
+        pct = Math.min(23, 5 + setupTicks * 4); // 5%→23% for setup
+      }
       fill.style.width = pct + '%';
     } else if (evt.event === 'error') {
       status.textContent = `Error: ${evt.message}`;
@@ -3202,6 +3208,10 @@ function renderQuotaBar(q) {
         <span class="quota-amarr-price muted">—</span>
         <button type="button" class="quota-price-refresh" title="Refresh price" hidden>↻</button>
       </div>
+      <div class="quota-expand-row">
+        <span class="quota-expand-label">Sold last 30 days</span>
+        <span class="${(q.sold_30d ?? 0) > 0 ? '' : 'muted'}">${q.sold_30d ?? 0}</span>
+      </div>
     </div>
   `;
   // First click: toggle expand panel. Second click on the price row: fetch price.
@@ -3225,7 +3235,59 @@ function renderQuotaBar(q) {
     refreshBtn.hidden = true;
     const fmt = fmtIsk;
     const fmtM = fmtMillions;
+    const panel = div.querySelector('.quota-expand-panel');
+    function markEsi() {
+      priceEl.classList.add('esi-fallback');
+      panel.querySelector('.quota-esi-notice')?.remove();
+      const notice = document.createElement('div');
+      notice.className = 'quota-esi-notice';
+      notice.textContent = '⚠ ESI prices — add a Janice API key in Config for accuracy';
+      panel.appendChild(notice);
+    }
+    panel.querySelector('.quota-esi-notice')?.remove();
+    priceEl.classList.remove('esi-fallback');
     try {
+      // Fast path: price from a matching contract already in memory (skips Auth lookup).
+      const matchedContractId = q.contracts?.[0]?.contract_id;
+      const scanContract = matchedContractId != null
+        ? lastContractsScan?.contracts?.find((c) => c.contract_id === matchedContractId)
+        : null;
+      const contractPricingItems = scanContract?.items
+        ?.filter((i) => i.is_included !== false && i.type_id)
+        .map((i) => ({ typeId: i.type_id, name: i.name || String(i.type_id), qty: i.quantity }))
+        ?? null;
+
+      if (contractPricingItems?.length) {
+        priceEl.textContent = 'pricing…';
+        const uniqueIds = [...new Set(contractPricingItems.map((i) => i.typeId))];
+        const priceResults = await Promise.all(
+          uniqueIds.map((tid) =>
+            fetch(`${API}/api/market/amarr-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
+          )
+        );
+        const priceMap = new Map();
+        priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
+        if (priceResults.find((p) => p?.source)?.source === 'esi') markEsi();
+        let total = 0;
+        const unpriced = [];
+        for (const item of contractPricingItems) {
+          const p = priceMap.get(item.typeId);
+          if (p != null) total += p * item.qty;
+          else unpriced.push({ name: item.name, qty: item.qty });
+        }
+        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · from contracts)';
+        if (total > 0) {
+          div.dataset.price = total * 1.15;
+          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
+          priceEl.classList.remove('muted');
+          if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
+        } else {
+          priceEl.textContent = 'no Amarr prices found for contract items';
+        }
+        return;
+      }
+
+      // Fallback: Auth fit lookup.
       let fitDetail = null;
       let fitFoundOnAuth = false;
       if (window.api?.aaFetchHtml && (q.fit_id || q.ship_name || q.name)) {
@@ -3276,6 +3338,7 @@ function renderQuotaBar(q) {
         );
         const priceMap = new Map();
         priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
+        if (priceResults.find((p) => p?.source)?.source === 'esi') markEsi();
 
         let total = 0;
         const unpriced = [];
@@ -3311,6 +3374,7 @@ function renderQuotaBar(q) {
           if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
         }
         if (data.min_sell != null) {
+          if (data.source === 'esi') markEsi();
           div.dataset.price = data.min_sell * 1.15;
           priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
@@ -3320,9 +3384,10 @@ function renderQuotaBar(q) {
       }
     } catch {
       priceEl.textContent = 'error fetching price';
+    } finally {
+      refreshBtn.hidden = false;
+      if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
     }
-    refreshBtn.hidden = false;
-    if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
   }
 
   expandRow.addEventListener('click', async (e) => {
