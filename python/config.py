@@ -69,6 +69,12 @@ DEFAULTS = {
     'home_region_id': 0,
     # List of {name, ship_type_id, ship_name, required, title_filter}.
     'quotas': [],
+    # Institute (NLDF) doctrine quotas — same shape as quotas above.
+    'quotas_institute': [],
+    # EVE alliance IDs used to route contract scans per alliance.
+    # Set these in Config so the alliance selector knows which slots belong to which alliance.
+    'alliance_id_main': 0,
+    'alliance_id_institute': 0,
     # Optional alliance-wide quota distribution: admin hosts a JSON file
     # (GitHub Gist raw URL, raw.githubusercontent.com, or any reachable
     # https endpoint) and users sync from it. Auto-sync hits the URL once

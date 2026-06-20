@@ -246,6 +246,9 @@ async function loadConfig() {
   if ($('[name=home_structure_id]')) $('[name=home_structure_id]').value = cfg.home_structure_id || '';
   if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
   renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
+  renderQuotas(Array.isArray(cfg.quotas_institute) ? cfg.quotas_institute : [], $('#quotas-institute-tbody'));
+  if ($('[name=alliance_id_main]')) $('[name=alliance_id_main]').value = cfg.alliance_id_main || '';
+  if ($('[name=alliance_id_institute]')) $('[name=alliance_id_institute]').value = cfg.alliance_id_institute || '';
   if ($('[name=alliance_quota_url]')) {
     $('[name=alliance_quota_url]').value = cfg.alliance_quota_url || '';
   }
@@ -380,6 +383,9 @@ function collectConfigForm() {
     home_structure_id: parseInt(fd.get('home_structure_id')) || 0,
     home_region_id: parseInt(fd.get('home_region_id')) || 0,
     quotas: collectQuotas(),
+    quotas_institute: collectQuotas($('#quotas-institute-tbody')),
+    alliance_id_main: parseInt(fd.get('alliance_id_main')) || 0,
+    alliance_id_institute: parseInt(fd.get('alliance_id_institute')) || 0,
     alliance_quota_url: (fd.get('alliance_quota_url') || '').toString().trim(),
     alliance_quota_auto_sync: $('[name=alliance_quota_auto_sync]')?.checked || false,
     alliance_quota_pat_read: (fd.get('alliance_quota_pat_read') || '').toString().trim(),
@@ -2479,16 +2485,14 @@ document.addEventListener('change', (ev) => {
   }
 });
 
-function renderQuotas(list) {
-  const tbody = $('#quotas-tbody');
+function renderQuotas(list, tbody = $('#quotas-tbody')) {
   if (!tbody) return;
   tbody.innerHTML = '';
   const rows = (list && list.length) ? list : [{}];
   rows.forEach((q) => tbody.appendChild(quotaRow(q || {})));
 }
 
-function collectQuotas() {
-  const tbody = $('#quotas-tbody');
+function collectQuotas(tbody = $('#quotas-tbody')) {
   if (!tbody) return [];
   return [...tbody.querySelectorAll('.quota-row')]
     .map((r) => ({
@@ -2502,34 +2506,111 @@ function collectQuotas() {
     .filter((q) => q.ship_type_id || q.name);
 }
 
-const addQuotaBtn = $('#btn-add-quota');
-if (addQuotaBtn) {
-  addQuotaBtn.addEventListener('click', () => {
-    $('#quotas-tbody').appendChild(quotaRow({}));
+// Bind all interactive controls for one quota table section.
+function bindQuotaSection(tbodyId, { addBtnId, importCsvBtnId, importJsonBtnId, exportCsvBtnId, exportJsonBtnId, importFileId, ioStatusId, exportFilename = 'quotas' }) {
+  const getTbody = () => document.getElementById(tbodyId);
+  let importMode = 'csv';
+
+  function setStatus(msg) {
+    const el = document.getElementById(ioStatusId);
+    if (!el) return;
+    el.textContent = msg;
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
+  }
+
+  document.getElementById(addBtnId)?.addEventListener('click', () => {
+    getTbody()?.appendChild(quotaRow({}));
+  });
+
+  document.getElementById(exportCsvBtnId)?.addEventListener('click', () => {
+    const data = collectQuotas(getTbody());
+    downloadBlob(`${exportFilename}.csv`, 'text/csv', quotasToCsv(data));
+    setStatus(`Exported ${data.length} rows as CSV.`);
+  });
+
+  document.getElementById(exportJsonBtnId)?.addEventListener('click', () => {
+    const data = collectQuotas(getTbody());
+    downloadBlob(`${exportFilename}.json`, 'application/json', JSON.stringify(data, null, 2));
+    setStatus(`Exported ${data.length} rows as JSON.`);
+  });
+
+  document.getElementById(importCsvBtnId)?.addEventListener('click', () => {
+    importMode = 'csv';
+    document.getElementById(importFileId)?.click();
+  });
+
+  document.getElementById(importJsonBtnId)?.addEventListener('click', () => {
+    importMode = 'json';
+    document.getElementById(importFileId)?.click();
+  });
+
+  document.getElementById(importFileId)?.addEventListener('change', async (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    ev.target.value = '';
+    try {
+      const text = await file.text();
+      let imported;
+      if (importMode === 'json') {
+        const parsed = JSON.parse(text);
+        imported = Array.isArray(parsed) ? parsed : (parsed.quotas || []);
+      } else {
+        imported = quotasFromCsvText(text);
+      }
+      if (!imported.length) { setStatus('No rows parsed from file.'); return; }
+      const replace = confirm(`Imported ${imported.length} quota rows. OK = replace current list. Cancel = append.`);
+      const current = replace ? [] : collectQuotas(getTbody());
+      renderQuotas([...current, ...imported], getTbody());
+      setStatus(`${replace ? 'Replaced with' : 'Appended'} ${imported.length} rows. Click "Save" to persist.`);
+    } catch (e) {
+      alert(`Import failed: ${e.message || e}`);
+    }
+  });
+
+  getTbody()?.addEventListener('paste', (ev) => {
+    const text = ev.clipboardData?.getData('text') || '';
+    if (!text.includes('\n') && !text.includes('\t')) return;
+    ev.preventDefault();
+    const rows = parseDelimited(text);
+    if (!rows.length) return;
+    const tbody = getTbody();
+    const targetRow = ev.target.closest('tr.quota-row');
+    rows.forEach((cells, i) => {
+      if (i === 0 && targetRow) {
+        fillQuotaRowFromCells(targetRow, cells, ev.target);
+      } else {
+        tbody.appendChild(quotaRow(rowFromCells(cells)));
+      }
+    });
   });
 }
+
+bindQuotaSection('quotas-tbody', {
+  addBtnId: 'btn-add-quota',
+  importCsvBtnId: 'btn-quota-import-csv',
+  importJsonBtnId: 'btn-quota-import-json',
+  exportCsvBtnId: 'btn-quota-export-csv',
+  exportJsonBtnId: 'btn-quota-export-json',
+  importFileId: 'quota-import-file',
+  ioStatusId: 'quota-io-status',
+  exportFilename: 'quotas-nldo',
+});
+
+bindQuotaSection('quotas-institute-tbody', {
+  addBtnId: 'btn-add-quota-institute',
+  importCsvBtnId: 'btn-quota-institute-import-csv',
+  importJsonBtnId: 'btn-quota-institute-import-json',
+  exportCsvBtnId: 'btn-quota-institute-export-csv',
+  exportJsonBtnId: 'btn-quota-institute-export-json',
+  importFileId: 'quota-institute-import-file',
+  ioStatusId: 'quota-institute-io-status',
+  exportFilename: 'quotas-nldf',
+});
 
 // Paste-from-spreadsheet support: if the user pastes multi-line tab-separated
 // data into ANY quota input, expand into one row per line, mapping columns
 // left-to-right (name, type_id, ship_name, required, title_filter).
-$('#quotas-tbody')?.addEventListener('paste', (ev) => {
-  const text = ev.clipboardData?.getData('text') || '';
-  if (!text.includes('\n') && !text.includes('\t')) return; // single-cell paste — let the browser handle it
-  ev.preventDefault();
-  const rows = parseDelimited(text);
-  if (!rows.length) return;
-  const tbody = $('#quotas-tbody');
-  const targetRow = ev.target.closest('tr.quota-row');
-  // First parsed row replaces the cell-and-rightward of the target row, the rest are appended.
-  rows.forEach((cells, i) => {
-    if (i === 0 && targetRow) {
-      fillQuotaRowFromCells(targetRow, cells, ev.target);
-    } else {
-      const tr = quotaRow(rowFromCells(cells));
-      tbody.appendChild(tr);
-    }
-  });
-});
+// (handled per-section by bindQuotaSection above)
 
 function rowFromCells(cells) {
   return {
@@ -2627,64 +2708,6 @@ function downloadBlob(filename, mime, content) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-$('#btn-quota-export-csv')?.addEventListener('click', () => {
-  const data = collectQuotas();
-  downloadBlob('quotas.csv', 'text/csv', quotasToCsv(data));
-  setQuotaIoStatus(`Exported ${data.length} rows as CSV.`);
-});
-
-$('#btn-quota-export-json')?.addEventListener('click', () => {
-  const data = collectQuotas();
-  downloadBlob('quotas.json', 'application/json', JSON.stringify(data, null, 2));
-  setQuotaIoStatus(`Exported ${data.length} rows as JSON.`);
-});
-
-let _quotaImportMode = 'csv';
-$('#btn-quota-import-csv')?.addEventListener('click', () => {
-  _quotaImportMode = 'csv';
-  $('#quota-import-file').click();
-});
-$('#btn-quota-import-json')?.addEventListener('click', () => {
-  _quotaImportMode = 'json';
-  $('#quota-import-file').click();
-});
-
-$('#quota-import-file')?.addEventListener('change', async (ev) => {
-  const file = ev.target.files?.[0];
-  if (!file) return;
-  ev.target.value = '';
-  try {
-    const text = await file.text();
-    const mode = (_quotaImportMode === 'json' || file.name.toLowerCase().endsWith('.json'))
-      ? 'json' : 'csv';
-    let imported;
-    if (mode === 'json') {
-      const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) throw new Error('JSON root must be an array');
-      imported = parsed.map((q) => ({
-        name: String(q.name || ''),
-        ship_type_id: parseInt(q.ship_type_id) || 0,
-        ship_name: String(q.ship_name || ''),
-        required: parseInt(q.required) || 0,
-        title_filter: String(q.title_filter || ''),
-      }));
-    } else {
-      imported = quotasFromCsvText(text);
-    }
-    if (!imported.length) {
-      setQuotaIoStatus('No rows parsed from file.');
-      return;
-    }
-    const replace = confirm(
-      `Imported ${imported.length} quota rows. OK = replace current list. Cancel = append.`
-    );
-    const current = replace ? [] : collectQuotas();
-    renderQuotas([...current, ...imported]);
-    setQuotaIoStatus(`${replace ? 'Replaced with' : 'Appended'} ${imported.length} rows. Click "Save" to persist.`);
-  } catch (e) {
-    alert(`Import failed: ${e.message || e}`);
-  }
-});
 
 // --- Whole-config export / import ---
 // Exports every saved key on the Config tab (corp ID, structures, refining
@@ -2994,8 +3017,17 @@ $('#btn-lookup-region')?.addEventListener('click', async () => {
 
 // --- Contracts scan ---
 let lastContractsScan = null;
+let activeContractsAlliance = 'all';
+
+document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-alliance]');
+  if (!btn) return;
+  activeContractsAlliance = btn.dataset.alliance;
+  document.querySelectorAll('.alliance-btn').forEach((b) => b.classList.toggle('active', b === btn));
+});
 
 $('#btn-contracts-scan')?.addEventListener('click', runContractsScan);
+$('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
 $('#btn-contracts-export-csv')?.addEventListener('click', exportGapCsv);
 $('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
 
@@ -3014,7 +3046,7 @@ async function runContractsScan() {
 
   let res;
   try {
-    res = await fetch(`${API}/api/contracts/scan`);
+    res = await fetch(`${API}/api/contracts/scan?alliance=${activeContractsAlliance}`);
   } catch (e) {
     status.textContent = `Network error: ${e}`;
     progress.hidden = true;
@@ -3032,9 +3064,7 @@ async function runContractsScan() {
       step.textContent = evt.step || '';
       let pct;
       if (evt.phase === 'items' && evt.total > 0) {
-        pct = 25 + (evt.current / evt.total) * 60; // 25%→85%
-      } else if (evt.phase === 'sold_items' && evt.total > 0) {
-        pct = 85 + (evt.current / evt.total) * 10; // 85%→95%
+        pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
       } else {
         setupTicks += 1;
         pct = Math.min(23, 5 + setupTicks * 4); // 5%→23% for setup
@@ -3049,6 +3079,68 @@ async function runContractsScan() {
       fill.style.width = '100%';
       setTimeout(() => { progress.hidden = true; }, 600);
       prefetchHullPrices(evt.payload.quotas || []);
+    }
+  });
+}
+
+async function runSold30dScan() {
+  const status = $('#contracts-status');
+  const progress = $('#contracts-sold-progress');
+  const step = progress.querySelector('.progress-step');
+  const fill = progress.querySelector('.progress-fill');
+  status.textContent = '';
+  progress.hidden = false;
+  step.textContent = 'starting…';
+  fill.style.width = '5%';
+
+  let res;
+  try {
+    res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${activeContractsAlliance}`);
+  } catch (e) {
+    status.textContent = `Network error: ${e}`;
+    progress.hidden = true;
+    return;
+  }
+  if (!res.ok) {
+    status.textContent = `HTTP ${res.status}: ${await res.text()}`;
+    progress.hidden = true;
+    return;
+  }
+
+  let setupTicks = 0;
+  await readNdjson(res, (evt) => {
+    if (evt.event === 'progress') {
+      step.textContent = evt.step || '';
+      let pct;
+      if (evt.phase === 'items' && evt.total > 0) {
+        pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
+      } else {
+        setupTicks += 1;
+        pct = Math.min(23, 5 + setupTicks * 4);
+      }
+      fill.style.width = pct + '%';
+    } else if (evt.event === 'error') {
+      status.textContent = `Error: ${evt.message}`;
+    } else if (evt.event === 'done') {
+      const quotas = evt.payload?.quotas || [];
+      for (const q of quotas) {
+        const bars = document.querySelectorAll(
+          `.quota-bar[data-ship-type-id="${q.ship_type_id}"]`
+        );
+        for (const bar of bars) {
+          const tf = (q.title_filter || '').toLowerCase();
+          if (bar.dataset.titleFilter !== tf) continue;
+          const soldEl = bar.querySelector('.quota-sold-count');
+          if (soldEl) {
+            soldEl.textContent = q.sold_30d ?? '—';
+            if ((q.sold_30d ?? 0) > 0) soldEl.classList.remove('muted');
+            else soldEl.classList.add('muted');
+          }
+        }
+      }
+      step.textContent = 'done';
+      fill.style.width = '100%';
+      setTimeout(() => { progress.hidden = true; }, 600);
     }
   });
 }
@@ -3192,6 +3284,8 @@ function renderQuotaBar(q) {
   const div = document.createElement('div');
   div.className = `quota-bar quota-${state}`;
   div.dataset.shipName = (q.ship_name || q.name || '').toLowerCase();
+  div.dataset.shipTypeId = q.ship_type_id || '';
+  div.dataset.titleFilter = (q.title_filter || '').toLowerCase();
   div.dataset.missing = missing;
   div.dataset.price = '';
   div.innerHTML = `
@@ -3210,7 +3304,7 @@ function renderQuotaBar(q) {
       </div>
       <div class="quota-expand-row">
         <span class="quota-expand-label">Sold last 30 days</span>
-        <span class="${(q.sold_30d ?? 0) > 0 ? '' : 'muted'}">${q.sold_30d ?? 0}</span>
+        <span class="quota-sold-count muted">—</span>
       </div>
     </div>
   `;
@@ -3390,6 +3484,26 @@ function renderQuotaBar(q) {
     }
   }
 
+  async function loadSold30d() {
+    const soldEl = div.querySelector('.quota-sold-count');
+    if (!soldEl || !q.ship_type_id) return;
+    soldEl.textContent = '…';
+    try {
+      const params = new URLSearchParams({ ship_type_id: q.ship_type_id, alliance: activeContractsAlliance });
+      if (q.title_filter) params.set('title_filter', q.title_filter);
+      const res = await fetch(`${API}/api/contracts/sold-30d?${params}`);
+      const data = await res.json();
+      if (data.sold_30d != null) {
+        soldEl.textContent = data.sold_30d;
+        if (data.sold_30d > 0) soldEl.classList.remove('muted');
+      } else {
+        soldEl.textContent = '—';
+      }
+    } catch {
+      soldEl.textContent = '—';
+    }
+  }
+
   expandRow.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (e.target === refreshBtn) return; // handled by its own listener
@@ -3401,6 +3515,17 @@ function renderQuotaBar(q) {
   refreshBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await loadQuotaPrice(true);
+  });
+
+  const soldRow = div.querySelectorAll('.quota-expand-row')[1];
+  let soldLoaded = false;
+  soldRow.style.cursor = 'pointer';
+  soldRow.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (soldLoaded) return;
+    soldLoaded = true;
+    soldRow.style.cursor = 'default';
+    await loadSold30d();
   });
 
   return div;
