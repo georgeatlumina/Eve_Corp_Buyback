@@ -3098,7 +3098,7 @@ $('#btn-lookup-region')?.addEventListener('click', async () => {
 
 // --- Contracts scan ---
 let lastContractsScan = null;
-let activeContractsAlliance = 'all';
+let activeContractsAlliance = 'main';
 
 document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
   const btn = ev.target.closest('[data-alliance]');

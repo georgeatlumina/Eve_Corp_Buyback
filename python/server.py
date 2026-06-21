@@ -1839,13 +1839,12 @@ def _scan_contracts_stream(alliance: str = 'all'):
     ua = get_user_agent()
     client_id, secret_key = get_app_credentials()
 
-    # contract_id -> {'contract': record, 'corp_id': int, 'token': str, 'source_corps': set}
+    # contract_id -> {'contract': record, 'char_id': int, 'corp_id': int, 'token': str, 'source_corps': set}
     found: dict[int, dict] = {}
     # Finished item-exchange contracts at home, completed within the last 30 days.
     sold_found: dict[int, dict] = {}
     cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    # Tally per corp_id: how many outstanding-item_exchange-at-home we kept,
-    # so the UI can show a per-corp summary line.
+    # Tally per corp_id: how many new contracts we kept per slot's corp (for UI summary).
     per_corp_kept: dict[int, int] = {}
 
     for slot in slots:
@@ -1887,7 +1886,6 @@ def _scan_contracts_stream(alliance: str = 'all'):
             corp_contracts = fetch_corp_contracts(corp_id, token, ua)
         except Exception as e:
             msg = str(e)
-            # Surface 403 plainly — most common cause is missing director role.
             if '403' in msg or 'Forbidden' in msg:
                 yield _emit(
                     'progress',
@@ -1905,8 +1903,6 @@ def _scan_contracts_stream(alliance: str = 'all'):
                 continue
             if int(c.get('start_location_id') or 0) != structure_id:
                 continue
-            if int(c.get('issuer_corporation_id') or 0) != corp_id:
-                continue
             cid = int(c.get('contract_id') or 0)
             if not cid:
                 continue
@@ -1914,6 +1910,7 @@ def _scan_contracts_stream(alliance: str = 'all'):
             if entry is None:
                 found[cid] = {
                     'contract': c,
+                    'char_id': char_id,
                     'corp_id': corp_id,
                     'token': token,
                     'source_corps': {corp_id},
@@ -1926,12 +1923,12 @@ def _scan_contracts_stream(alliance: str = 'all'):
         for c in _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
             cid = int(c.get('contract_id') or 0)
             if cid not in sold_found:
-                sold_found[cid] = {'contract': c, 'corp_id': corp_id, 'token': token}
+                sold_found[cid] = {'contract': c, 'char_id': char_id, 'corp_id': corp_id, 'token': token}
 
         yield _emit(
             'progress',
-            step=f'{slot}: corp {corp_id} posted {kept} matching '
-                 f'(of {len(corp_contracts)} corp contracts total)',
+            step=f'{slot}: corp {corp_id} — {kept} matching at home structure '
+                 f'(of {len(corp_contracts)} total)',
         )
 
     _sold_contracts_cache[alliance] = sold_found
@@ -1958,7 +1955,7 @@ def _scan_contracts_stream(alliance: str = 'all'):
         last_err = None
         for attempt in range(3):
             try:
-                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+                return cid, fetch_character_contract_items(rec['char_id'], cid, rec['token'], ua), None
             except Exception as e:
                 last_err = e
                 if attempt < 2:
@@ -2316,23 +2313,19 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
             yield _emit('progress', step=f'{slot}: corp {corp_id} already fetched — skipping')
             continue
 
-        yield _emit('progress', step=f'{slot}: fetching corp {corp_id} contracts…')
+        yield _emit('progress', step=f'{slot}: fetching contracts visible to char {char_id}…')
         try:
-            corp_contracts = fetch_corp_contracts(corp_id, token, ua)
+            char_contracts = fetch_character_contracts(char_id, token, ua)
         except Exception as e:
-            msg = str(e)
-            if '403' in msg or 'Forbidden' in msg:
-                yield _emit('progress', step=f'{slot}: corp {corp_id} fetch forbidden (needs Contract Manager / Director role)')
-            else:
-                yield _emit('progress', step=f'{slot}: corp {corp_id} fetch failed — {msg}')
+            yield _emit('progress', step=f'{slot}: contract fetch failed — {e}')
             continue
 
-        for c in _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
+        for c in _filter_sold_contracts(char_contracts, corp_id, structure_id, cutoff_30d):
             cid = int(c.get('contract_id') or 0)
             if cid not in sold_found:
-                sold_found[cid] = {'contract': c, 'corp_id': corp_id, 'token': token}
+                sold_found[cid] = {'contract': c, 'char_id': char_id, 'corp_id': corp_id, 'token': token}
         per_corp_done.add(corp_id)
-        yield _emit('progress', step=f'{slot}: corp {corp_id} — {len(sold_found)} sold contract(s) so far')
+        yield _emit('progress', step=f'{slot}: {len(sold_found)} sold contract(s) so far')
 
     _sold_contracts_cache[alliance] = sold_found
 
@@ -2345,7 +2338,7 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
         last_err = None
         for attempt in range(3):
             try:
-                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+                return cid, fetch_character_contract_items(rec['char_id'], cid, rec['token'], ua), None
             except Exception as e:
                 last_err = e
                 if attempt < 2:
@@ -2424,7 +2417,7 @@ def contracts_sold_30d(ship_type_id: int, title_filter: str = '', alliance: str 
         last_err = None
         for attempt in range(3):
             try:
-                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+                return cid, fetch_character_contract_items(rec['char_id'], cid, rec['token'], ua), None
             except Exception as e:
                 last_err = e
                 if attempt < 2:
