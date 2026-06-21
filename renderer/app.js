@@ -2769,13 +2769,6 @@ function quotasFromCsvText(text) {
   return dataRows.map(rowFromCells).filter((q) => q.ship_type_id || q.name);
 }
 
-function setQuotaIoStatus(msg) {
-  const el = $('#quota-io-status');
-  if (el) {
-    el.textContent = msg;
-    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
-  }
-}
 
 function downloadBlob(filename, mime, content) {
   const blob = new Blob([content], { type: mime });
