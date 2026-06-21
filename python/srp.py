@@ -4,9 +4,10 @@ Given a zKillboard kill ID (parsed from the SRP request's kill link), pull the
 real hull and *fitted modules* off the killmail and derive an SRP payout
 category from the fit — not from the hull name alone. This is what lets us tell
 a links T3D / Nighthawk (command-burst modules fitted) apart from the same hull
-flown as DPS, and a T1 cruiser flown as logi (remote reps fitted) apart from a
-gank-fit one. The renderer cross-references the hull against the Auth doctrine
-list separately (it already has that index).
+flown as DPS, and a logi-platform flown with remote reps apart from a gank-fit
+one. Remote reps only count as logistics on an actual logi platform (T2 logi,
+T1 logi cruiser, or logi-fit T3D) — see _is_logi_platform. The renderer
+cross-references the hull against the Auth doctrine list separately.
 
 Flow per kill: zKillboard /killID/ -> killmail hash, then ESI killmail ->
 victim hull + fitted items, then resolve each fitted module's group. Killmails
@@ -50,10 +51,35 @@ _LOGI_NAME_RE = re.compile(r'remote (armor repairer|shield booster|hull repairer
 # its remote reps above.
 _DICTOR_HULL_GROUPS = {'interdictor', 'heavy interdiction cruiser'}
 _LOGI_HULL_GROUPS = {'logistics', 'logistics frigate'}
+# Remote reps only make a kill "logistics" when they're on a hull that's actually
+# a logi platform. The eligible platforms are: T2 logi (the _LOGI_HULL_GROUPS
+# above), a T1 logi cruiser, or a T3 destroyer flown in a logi config. Remote
+# reps bolted onto anything else (a DPS hull, a battleship) do not make it a logi
+# and must not be paid as one.
+# T1 logi cruisers + T1 support frigates (the remote-rep-bonused T1 hulls). T2
+# logi frigates are already covered by the 'logistics frigate' group above.
+_T1_LOGI_HULLS = {
+    'osprey', 'scythe', 'exequror', 'augoror',      # T1 logi cruisers
+    'bantam', 'navitas', 'burst', 'inquisitor',     # T1 support (logi) frigates
+}
+_T3D_HULL_GROUP = 'tactical destroyer'
 # Hulls treated as links boats by hull alone, regardless of doctrine membership
 # or whether command bursts were captured on the killmail. The Nighthawk is the
 # canonical case; add other links command hulls here as the corp confirms them.
 _LINKS_HULLS = {'nighthawk'}
+
+
+def _is_logi_platform(hull_name, hull_group):
+    """True if `hull` can legitimately be flown as logistics: a T2 logi
+    (Logistics / Logistics Frigate group), a T1 logi cruiser or support frigate
+    (Osprey/Scythe/Exequror/Augoror, Bantam/Navitas/Burst/Inquisitor), or a T3
+    destroyer (logi-fit). Used to gate remote-rep detection so incidental reps on
+    a non-logi hull don't get the logistics payout."""
+    return (
+        hull_group in _LOGI_HULL_GROUPS
+        or hull_group == _T3D_HULL_GROUP
+        or hull_name in _T1_LOGI_HULLS
+    )
 
 _cache = None          # str(kill_id) -> classification dict
 _cache_lock = threading.Lock()
@@ -153,15 +179,18 @@ def _classify_one(kill_id, user_agent):
         elif group in _LOGI_GROUPS or _LOGI_NAME_RE.search(name):
             has_logi = True
             out['modules'].append(name)
-    out['links'], out['logi'] = has_links, has_logi
 
     # Category precedence: fitted role wins; fall back to the hull group, then
     # to a hisec-NPC loss. Fight Club stays manual (not derivable from a kill).
     hg = (out['hull_group'] or '').lower()
     hn = (out['hull'] or '').lower()
+    # Remote reps only count as logistics on a hull that's actually a logi
+    # platform — otherwise an incidental rep on a DPS hull would over-pay.
+    logi_fit = has_logi and _is_logi_platform(hn, hg)
+    out['links'], out['logi'] = has_links, logi_fit
     if has_links:
         out['category'] = 'links'
-    elif has_logi:
+    elif logi_fit:
         out['category'] = 'logistics'
     elif hg in _DICTOR_HULL_GROUPS:
         out['category'] = 'interdictor'
@@ -219,3 +248,31 @@ def classify_kills(kill_ids, user_agent, max_workers=8):
                 results[str(kid)] = {'kill_id': kid, 'ok': False, 'error': str(e),
                                      'category': 'standard', 'links': False, 'logi': False}
     return results
+
+
+def classify_kills_stream(kill_ids, user_agent, max_workers=8):
+    """Like classify_kills, but a generator: classifies in parallel and yields
+    ``(done, total, str(kill_id), classification)`` as each kill finishes, so
+    callers can stream per-kill progress instead of blocking on the whole batch."""
+    ids = []
+    for k in kill_ids:
+        try:
+            ids.append(int(k))
+        except (TypeError, ValueError):
+            continue
+    ids = sorted(set(ids))
+    total = len(ids)
+    if not ids:
+        return
+    done = 0
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(ids))) as ex:
+        futs = {ex.submit(classify_kill, kid, user_agent): kid for kid in ids}
+        for fut in as_completed(futs):
+            kid = futs[fut]
+            try:
+                res = fut.result()
+            except Exception as e:
+                res = {'kill_id': kid, 'ok': False, 'error': str(e),
+                       'category': 'standard', 'links': False, 'logi': False}
+            done += 1
+            yield done, total, str(kid), res
