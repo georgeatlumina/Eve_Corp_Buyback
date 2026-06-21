@@ -4539,7 +4539,7 @@ function srpPayout(category, lossAmt) {
 // Logi — so a links T3D / Nighthawk or a T1 cruiser logi is recognised from
 // what it actually fitted, not the hull name. Each row is also cross-checked
 // against the Auth doctrine list (eligibility stays the reviewer's call).
-async function srpClassifyRows(rows) {
+async function srpClassifyRows(rows, onProgress) {
   // Build the doctrine fit index (same one the readiness/quota views use) in
   // parallel with the killmail classification request.
   const fitIndexReady = (async () => {
@@ -4552,13 +4552,39 @@ async function srpClassifyRows(rows) {
   const ids = [...new Set(rows.map((r) => parseInt(r.killId, 10)).filter(Boolean))];
   let results = {};
   if (ids.length) {
+    // Stream the classification: kills are characterised in parallel server-side
+    // and each completion arrives as an NDJSON line, so we can show per-kill
+    // progress instead of blocking on the whole batch.
     try {
-      const res = await fetch(`${API}/api/srp/classify`, {
+      const res = await fetch(`${API}/api/srp/classify/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kill_ids: ids }),
       });
-      if (res.ok) results = (await res.json()).results || {};
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line) continue;
+            let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
+            if (ev.event === 'progress') {
+              if (onProgress) onProgress(ev.done || 0, ev.total || ids.length);
+            } else if (ev.event === 'done') {
+              results = ev.results || results;
+            }
+          }
+        }
+      } else if (res.ok) {
+        results = (await res.json()).results || {}; // non-streaming fallback
+      }
     } catch (_) { /* leave rows on their hull-name guess */ }
   }
   await fitIndexReady;
@@ -4678,7 +4704,12 @@ async function runSrpScan() {
     }
     srpSetProgress(90, 'Classifying kills (hull + fitted modules)…');
     if (status) status.textContent = 'Classifying kills…';
-    await srpClassifyRows(rows);
+    await srpClassifyRows(rows, (done, total) => {
+      // Map per-kill completions onto the tail of the bar (90 → 98%).
+      const pct = 90 + (total ? (done / total) * 8 : 0);
+      srpSetProgress(pct, `Classifying kills (parallel) — ${done}/${total}…`);
+      if (status) status.textContent = `Classifying kills — ${done}/${total}…`;
+    });
     srpState.fleets = fleets;
     srpState.rows = rows;
     fleets.forEach(srpRecomputeFleetMeta);
