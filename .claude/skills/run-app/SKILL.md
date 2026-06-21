@@ -5,19 +5,21 @@ description: Launch and drive the Eve Corp Buyback Electron desktop app. Use whe
 
 Eve Corp Buyback is an Electron app with a Python sidecar (FastAPI, port 8765). On startup it shows a splash window while the sidecar boots (~15s), then transitions to the main UI (`renderer/index.html`). The driver handles this wait.
 
-All paths relative to the project root (`C:\dev\Eve_Corp_Buyback\Eve_Corp_Buyback`).
+Cross-platform (macOS / Windows / Linux). All paths below are relative to the project root.
 
 ## Run (human path)
 
-```powershell
+```sh
 npm start   # opens the Electron window directly
 ```
 
 ## Run (agent path — Playwright REPL)
 
-```powershell
+```sh
 node .claude/skills/run-app/driver.mjs
 ```
+
+The driver auto-detects the Electron binary per platform and strips `ELECTRON_RUN_AS_NODE` from the launch env (IDE/agent shells set it, which otherwise crashes the app on startup).
 
 Then at the `driver>` prompt:
 
@@ -45,17 +47,18 @@ quit
 | `windows` | list all open windows by URL |
 | `quit` | close app, exit driver |
 
-Screenshots land in `C:\tmp\shots\` (override: `SCREENSHOT_DIR` env var).
+Screenshots land in `<os-tmpdir>/eve-shots/` by default (e.g. `/tmp/eve-shots` on macOS/Linux, `%TEMP%\eve-shots` on Windows). Override with the `SCREENSHOT_DIR` env var.
 
 ## Gotchas
 
 - **Splash window is not the UI.** The app opens with `splash.html` while the Python sidecar starts. The driver polls for `index.html` and only sets `page` once that window appears. If you call `ss` before `launch` finishes you get nothing.
-- **BOM in `node_modules/electron/path.txt`** can cause `ENOENT: electron.exe` on `npm start`. May recur after `npm install`. The driver auto-fixes it at launch time. Manual fix: `[System.IO.File]::WriteAllText("...\node_modules\electron\path.txt", "electron.exe", [System.Text.Encoding]::ASCII)` in PowerShell.
+- **`ELECTRON_RUN_AS_NODE=1`** (commonly exported by IDE/agent terminals) makes the Electron binary run as plain Node, so the app crashes on startup (`ipcMain` is undefined / "Process failed to launch!"). The driver strips it from the launch env automatically. For `npm start`, unset it first (`unset ELECTRON_RUN_AS_NODE` / `$env:ELECTRON_RUN_AS_NODE=$null`).
+- **Windows — BOM in `node_modules/electron/path.txt`** can cause `ENOENT: electron.exe` on `npm start`. May recur after `npm install`. The driver auto-fixes it at launch time (Windows only). Manual fix: `[System.IO.File]::WriteAllText("...\node_modules\electron\path.txt", "electron.exe", [System.Text.Encoding]::ASCII)` in PowerShell.
 - **Python sidecar must be on PATH as `python3`** in dev mode. If it isn't, set `PYTHON_BIN=python` (or the full path) before `npm start`.
-- **Port 8765 conflict** from a crashed previous run: `main.js` auto-kills orphan `sidecar.exe` via `taskkill /IM sidecar.exe` on startup, so this is usually self-healing.
+- **Port 8765 conflict** from a crashed previous run: `main.js` auto-kills the orphan sidecar on startup, so this is usually self-healing.
 
 ## Troubleshooting
 
-- **`launch` hangs past 60s:** sidecar failed to start. Check `%APPDATA%\naval-defence-management-tool\sidecar.log`.
-- **`ERR_FILE_NOT_FOUND` on `electron.exe`:** BOM issue — see Gotchas above.
+- **`launch` hangs past 60s:** sidecar failed to start. Check the sidecar log under the app's userData dir (macOS: `~/Library/Application Support/naval-defence-management-tool/sidecar.log`; Windows: `%APPDATA%\naval-defence-management-tool\sidecar.log`).
+- **App window never appears / "Process failed to launch!":** almost always `ELECTRON_RUN_AS_NODE` — see Gotchas.
 - **Blank screenshot:** you got the splash, not the main window. Wait longer or check that the sidecar started.

@@ -370,6 +370,23 @@ def get_ship_types(refresh: bool = False):
     return {'ships': ships, 'from_cache': False}
 
 
+class SrpClassifyRequest(BaseModel):
+    kill_ids: list[int]
+
+
+@app.post('/api/srp/classify')
+def srp_classify(req: SrpClassifyRequest):
+    """Classify a batch of SRP kills by hull + fitted modules (see srp.py).
+
+    Returns {'results': {kill_id: classification}} so the SRP tab can set each
+    request's payout category from what was actually fitted (command bursts =>
+    Links, remote reps => Logistics) rather than guessing from the hull name.
+    """
+    from srp import classify_kills
+    results = classify_kills(req.kill_ids or [], get_user_agent())
+    return {'results': results}
+
+
 class QuotaSyncRequest(BaseModel):
     url: Optional[str] = None  # falls back to cfg['alliance_quota_url']
 
