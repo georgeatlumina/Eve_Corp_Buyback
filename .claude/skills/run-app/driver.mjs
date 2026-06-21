@@ -1,4 +1,4 @@
-// Playwright REPL driver for Eve Corp Buyback (Electron, Windows).
+// Playwright REPL driver for Eve Corp Buyback (Electron) — cross-platform (macOS / Windows / Linux).
 // Run: node .claude/skills/run-app/driver.mjs
 // The app shows a splash while the Python sidecar starts (~15s), then
 // transitions to the main window (renderer/index.html). This driver
@@ -6,14 +6,20 @@
 import { _electron as electron } from 'playwright';
 import * as readline from 'node:readline';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const SHOT_DIR = process.env.SCREENSHOT_DIR || 'C:/tmp/shots';
+const SHOT_DIR = process.env.SCREENSHOT_DIR || path.join(os.tmpdir(), 'eve-shots');
 fs.mkdirSync(SHOT_DIR, { recursive: true });
 
-const electronExe = path.join(APP_DIR, 'node_modules/electron/dist/electron.exe');
+// Electron's packaged binary lives at a different path on each platform.
+const DIST = path.join(APP_DIR, 'node_modules/electron/dist');
+const electronExe =
+  process.platform === 'win32'  ? path.join(DIST, 'electron.exe')
+  : process.platform === 'darwin' ? path.join(DIST, 'Electron.app/Contents/MacOS/Electron')
+  : path.join(DIST, 'electron');
 
 let app = null;
 let page = null; // the main UI window (index.html), not the splash
@@ -33,18 +39,29 @@ async function findMainWindow() {
 const COMMANDS = {
   async launch() {
     if (app) return console.log('already launched');
-    // Fix BOM in path.txt if present — may reappear after npm install.
-    const pathTxt = path.join(APP_DIR, 'node_modules/electron/path.txt');
-    const raw = fs.readFileSync(pathTxt);
-    if (raw[0] === 0xEF && raw[1] === 0xBB && raw[2] === 0xBF) {
-      fs.writeFileSync(pathTxt, raw.slice(3).toString('ascii').trim(), 'ascii');
-      console.log('fixed BOM in node_modules/electron/path.txt');
+    // Windows only: fix BOM in path.txt if present — may reappear after npm install.
+    if (process.platform === 'win32') {
+      try {
+        const pathTxt = path.join(APP_DIR, 'node_modules/electron/path.txt');
+        const raw = fs.readFileSync(pathTxt);
+        if (raw[0] === 0xEF && raw[1] === 0xBB && raw[2] === 0xBF) {
+          fs.writeFileSync(pathTxt, raw.slice(3).toString('ascii').trim(), 'ascii');
+          console.log('fixed BOM in node_modules/electron/path.txt');
+        }
+      } catch { /* path.txt absent is fine */ }
     }
+    // IDE/agent shells often export ELECTRON_RUN_AS_NODE=1, which makes the
+    // Electron binary run as plain Node — the app then crashes on startup
+    // (require('electron') returns a path string, so ipcMain is undefined).
+    // Strip it from the child's env so the app launches as a real Electron app.
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
     console.log('launching (splash shows while Python sidecar starts ~15s)…');
     app = await electron.launch({
       executablePath: electronExe,
       args: [APP_DIR],
       timeout: 30_000,
+      env,
     });
     console.log('waiting for main window…');
     page = await findMainWindow();
