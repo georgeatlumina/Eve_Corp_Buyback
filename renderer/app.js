@@ -494,6 +494,11 @@ function buildMoonRow(r) {
         `<div class="meta">&nbsp;&nbsp;Non-moon ore + ice: ${Math.round(refined.non_moon_value).toLocaleString()} ISK × ${nonMoonPct}% = ${Math.round(refined.non_moon_payout).toLocaleString()} ISK</div>`
       );
     }
+    if ((refined.mineral_value || 0) > 0) {
+      buckets.push(
+        `<div class="meta">&nbsp;&nbsp;Minerals: ${Math.round(refined.mineral_value).toLocaleString()} ISK × ${nonMoonPct}% = ${Math.round(refined.mineral_payout).toLocaleString()} ISK</div>`
+      );
+    }
 
     refinedBlock = `<div class="meta">Refined @ ${effLabel} efficiency @ ${market}: ${Math.round(refined.refined_value + (refined.leftover_value || 0)).toLocaleString()} ISK</div>
        ${buckets.join('\n')}
@@ -1652,6 +1657,9 @@ const readinessState = {
   settingsOpen: false,
   selection: null,      // null | { type: 'doctrine'|'category', id }
   search: '',
+  // Background Janice appraisal of the current selection's missing items.
+  // Keyed on the multibuy text so it only re-runs when the missing set changes.
+  appraisal: { key: null, loading: false, url: null, error: null, itemCount: 0 },
 };
 
 function loadReadinessPersistent() {
@@ -1898,6 +1906,51 @@ async function copyCurrentMissing() {
   }
 }
 
+// Kick off (or reuse) a background Janice appraisal for the current selection's
+// missing items. Idempotent: keyed on the multibuy text, so calling it on every
+// render only fires a network request when the missing set actually changes.
+// On completion it re-renders the dashboard so the link surfaces next to the
+// Copy missing button.
+async function ensureMissingAppraisal(ctx) {
+  const text = exportMultibuy(ctx.agg.missing);
+  const a = readinessState.appraisal;
+  if (!text) {
+    if (a.key !== null || a.loading || a.url || a.error) {
+      readinessState.appraisal = { key: null, loading: false, url: null, error: null, itemCount: 0 };
+    }
+    return;
+  }
+  const key = `${ctx.label} ${text}`;
+  if (a.key === key) return; // already built or in flight for this exact set
+  readinessState.appraisal = { key, loading: true, url: null, error: null, itemCount: 0 };
+  try {
+    const res = await fetch(`${API}/api/appraise`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paste_text: text, persist: true }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      let msg = t; try { msg = JSON.parse(t).detail || t; } catch (_) {}
+      throw new Error(`HTTP ${res.status}: ${msg}`);
+    }
+    const data = await res.json();
+    if (readinessState.appraisal.key !== key) return; // selection moved on
+    const code = data.janice?.code;
+    readinessState.appraisal = {
+      key,
+      loading: false,
+      url: code ? `https://janice.e-351.com/a/${code}` : null,
+      error: code ? null : 'Janice returned no shareable link',
+      itemCount: data.janice?.item_count || 0,
+    };
+  } catch (e) {
+    if (readinessState.appraisal.key !== key) return; // selection moved on
+    readinessState.appraisal = { key, loading: false, url: null, error: String(e.message || e), itemCount: 0 };
+  }
+  renderReadinessDashboard();
+}
+
 function downloadCurrentMissing() {
   const ctx = selectionContext();
   if (!ctx) return;
@@ -1942,10 +1995,26 @@ function renderMissingTable(missing, limit = 100) {
 }
 
 function renderExportActions() {
+  const a = readinessState.appraisal;
+  let janiceBlock = '';
+  if (a.loading) {
+    janiceBlock = `<span class="readiness-janice muted">Building Janice appraisal…</span>`;
+  } else if (a.url) {
+    janiceBlock = `
+      <span class="readiness-janice">
+        <span class="muted">Janice:</span>
+        <code class="readiness-janice-url copyable" role="button" tabindex="0" title="Click to copy" data-copy="${a.url}">${a.url}</code>
+        <button type="button" class="copyable secondary" data-copy="${a.url}">Copy link</button>
+        <a href="${a.url}" target="_blank" rel="noopener">Open ↗</a>
+      </span>`;
+  } else if (a.error) {
+    janiceBlock = `<span class="readiness-janice bad-text" title="${escapeHtml(a.error)}">Janice appraisal failed — <button class="link-btn" data-janice-retry="1">retry</button></span>`;
+  }
   return `
     <div class="actions">
       <button data-export="copy">Copy missing</button>
       <button data-export="txt" class="secondary">Download .txt</button>
+      ${janiceBlock}
     </div>
   `;
 }
@@ -1953,6 +2022,7 @@ function renderExportActions() {
 function renderReadinessSelection() {
   const ctx = selectionContext();
   if (!ctx) return null;
+  ensureMissingAppraisal(ctx); // fire-and-forget; re-renders when the link is ready
   const sel = readinessState.selection;
   const { agg, label } = ctx;
   const barClass = agg.pct >= 90 ? 'good' : agg.pct >= 60 ? 'warn' : 'bad';
@@ -2097,6 +2167,9 @@ function renderReadinessDashboard() {
   }
 
   const agg = aggregateMissing(scan, aaState.market);
+  // Build the Janice appraisal for the aggregate missing set so the link shows on
+  // the overview too (mirrors the no-selection branch of selectionContext()).
+  ensureMissingAppraisal({ label: 'All enabled fits', agg });
   const overallClass = agg.pct >= 90 ? 'good' : agg.pct >= 60 ? 'warn' : 'bad';
 
   // Per-category breakdown
@@ -2311,6 +2384,14 @@ $('#readiness-content')?.addEventListener('click', (e) => {
   if (copyBtn) { copyCurrentMissing(); return; }
   const txtBtn = e.target.closest('[data-export="txt"]');
   if (txtBtn) { downloadCurrentMissing(); return; }
+  const janiceRetry = e.target.closest('[data-janice-retry]');
+  if (janiceRetry) {
+    readinessState.appraisal = { key: null, loading: false, url: null, error: null, itemCount: 0 };
+    const ctx = selectionContext();
+    if (ctx) ensureMissingAppraisal(ctx);
+    renderReadinessDashboard();
+    return;
+  }
   const backBtn = e.target.closest('[data-readiness-back]');
   if (backBtn) { readinessGoBack(); return; }
   const docRow = e.target.closest('[data-open-doctrine]');
@@ -4476,7 +4557,7 @@ function renderAppraiseResult(data) {
 // Mirrors the .payout-copy pattern used elsewhere; one shared handler so
 // new copyable elements pick it up automatically.
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('#appraise-result .copyable');
+  const el = e.target.closest('#appraise-result .copyable, #readiness-content .copyable');
   if (!el) return;
   const v = el.dataset.copy || '';
   try {
@@ -4580,6 +4661,101 @@ function srpPayout(category, lossAmt) {
   return p;
 }
 
+// Classify a batch of requests off their killmails: the server pulls the real
+// hull and the *fitted modules* (via the zKill link we already parsed) and
+// derives a category from the fit — command bursts -> Links, remote reps ->
+// Logi — so a links T3D / Nighthawk or a T1 cruiser logi is recognised from
+// what it actually fitted, not the hull name. Each row is also cross-checked
+// against the Auth doctrine list (eligibility stays the reviewer's call).
+async function srpClassifyRows(rows, onProgress) {
+  // Build the doctrine fit index (same one the readiness/quota views use) in
+  // parallel with the killmail classification request.
+  const fitIndexReady = (async () => {
+    try {
+      if (!_fitIndexBuilding) _fitIndexBuilding = buildFitIndex();
+      await _fitIndexBuilding;
+    } catch (_) {}
+  })();
+
+  const ids = [...new Set(rows.map((r) => parseInt(r.killId, 10)).filter(Boolean))];
+  let results = {};
+  if (ids.length) {
+    // Stream the classification: kills are characterised in parallel server-side
+    // and each completion arrives as an NDJSON line, so we can show per-kill
+    // progress instead of blocking on the whole batch.
+    try {
+      const res = await fetch(`${API}/api/srp/classify/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kill_ids: ids }),
+      });
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line) continue;
+            let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
+            if (ev.event === 'progress') {
+              if (onProgress) onProgress(ev.done || 0, ev.total || ids.length);
+            } else if (ev.event === 'done') {
+              results = ev.results || results;
+            }
+          }
+        }
+      } else if (res.ok) {
+        results = (await res.json()).results || {}; // non-streaming fallback
+      }
+    } catch (_) { /* leave rows on their hull-name guess */ }
+  }
+  await fitIndexReady;
+
+  for (const r of rows) {
+    const c = results[String(r.killId)];
+    if (c && c.ok) {
+      if (c.hull) r.hull = c.hull;       // authoritative hull from the killmail
+      r.detect = { links: !!c.links, logi: !!c.logi, npc: !!c.npc, hisec: !!c.hisec, modules: c.modules || [] };
+      r.category = c.category || r.category;
+    } else {
+      r.detect = c ? { error: c.error || 'classify failed', modules: [] } : null;
+    }
+    // Doctrine membership: does this hull appear in any Auth doctrine fit?
+    // null = unknown (index unavailable, e.g. not signed in to Auth).
+    const hullName = (r.hull || r.ship || '').toLowerCase();
+    const bucket = _fitIndexByType.get(hullName) || [];
+    r.inDoctrine = _fitIndexByType.size > 0 ? bucket.length > 0 : null;
+    r.doctrineFits = bucket.map((b) => b.fitName);
+  }
+}
+
+// Small inline notes under the ship name: detected fit-role + a doctrine flag.
+const SRP_ROLE_LABEL = { links: 'Links', logistics: 'Logi', interdictor: 'Dictor' };
+function srpDetectBadge(r) {
+  const bits = [];
+  const d = r.detect;
+  if (d && (d.links || d.logi) && (d.modules || []).length) {
+    // Role proven by what was actually fitted on the killmail.
+    const role = d.links ? 'Links' : 'Logi';
+    bits.push(`<span class="srp-detect" title="From killmail fit: ${escapeAttr((d.modules || []).join(', '))}">⚙ ${role} fit</span>`);
+  } else if (SRP_ROLE_LABEL[r.category]) {
+    // Role from the hull itself (e.g. a Nighthawk is a links ship, an
+    // interdictor is a dictor) — no role module captured on the killmail.
+    bits.push(`<span class="srp-detect" title="Classified by hull">⚙ ${SRP_ROLE_LABEL[r.category]} (hull)</span>`);
+  }
+  if (d && d.npc && d.hisec) bits.push('<span class="srp-detect">hisec NPC</span>');
+  if (r.inDoctrine === false) {
+    bits.push('<span class="srp-flag-warn" title="Hull not found in any Auth doctrine fit — verify eligibility">⚠ not in doctrine</span>');
+  }
+  return bits.length ? `<div class="srp-info">${bits.join(' ')}</div>` : '';
+}
+
 function srpSetProgress(pct, step) {
   const area = $('#srp-progress'), fill = $('#srp-progress-fill'), st = $('#srp-progress-step');
   if (area) area.style.display = (pct == null) ? 'none' : '';
@@ -4654,6 +4830,14 @@ async function runSrpScan() {
         rows.push(r);
       });
     }
+    srpSetProgress(90, 'Classifying kills (hull + fitted modules)…');
+    if (status) status.textContent = 'Classifying kills…';
+    await srpClassifyRows(rows, (done, total) => {
+      // Map per-kill completions onto the tail of the bar (90 → 98%).
+      const pct = 90 + (total ? (done / total) * 8 : 0);
+      srpSetProgress(pct, `Classifying kills (parallel) — ${done}/${total}…`);
+      if (status) status.textContent = `Classifying kills — ${done}/${total}…`;
+    });
     srpState.fleets = fleets;
     srpState.rows = rows;
     fleets.forEach(srpRecomputeFleetMeta);
@@ -4742,8 +4926,8 @@ function renderSrpFleet(root) {
     const disabled = pending ? '' : ' disabled';
     return `
       <tr class="srp-req${r.decision ? ` srp-dec-${r.decision}` : ''}" data-pk="${escapeHtml(r.pk || '')}">
-        <td>${escapeHtml(r.pilot)}</td>
-        <td>${escapeHtml(r.ship)}${r.info ? `<div class="muted srp-info">${escapeHtml(r.info)}</div>` : ''}</td>
+        <td><span class="copyable" data-copy="${escapeAttr(r.pilot || '')}" title="Click to copy name">${escapeHtml(r.pilot)}</span></td>
+        <td>${escapeHtml(r.hull || r.ship)}${srpDetectBadge(r)}${r.info ? `<div class="muted srp-info">${escapeHtml(r.info)}</div>` : ''}</td>
         <td class="text-end">${fmtIsk(r.lossAmt)}</td>
         <td><select class="srp-cat" data-pk="${escapeHtml(r.pk || '')}"${disabled}>${srpCatOptions(r.category)}</select></td>
         <td class="text-end"><strong class="srp-payout copyable" data-copy="${payout}" title="Click to copy">${fmtIsk(payout)}</strong></td>
@@ -4848,6 +5032,7 @@ async function srpRefreshFleet(fid) {
     r.reason = '';
     return r;
   });
+  await srpClassifyRows(fresh);
   srpState.rows = (srpState.rows || []).filter((r) => r.fleetId !== fid).concat(fresh);
   const f = (srpState.fleets || []).find((x) => x.id === fid);
   if (f) srpRecomputeFleetMeta(f);

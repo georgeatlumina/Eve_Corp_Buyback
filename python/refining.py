@@ -114,8 +114,9 @@ def is_refined_output(type_id, user_agent):
     mineral, R4–R64 moon material, or ice product.
 
     Used at the contract-routing layer to accept these alongside raw ore in
-    moon contracts. In the payout math they're not refinable, so they fall
-    into the leftover bucket and get paid at hub-buy × non_moon_payout_fraction.
+    moon contracts. In the payout math they're already refined, so they skip
+    reprocessing and are paid at hub-buy × non_moon_payout_fraction (the
+    standard buyback fraction).
     """
     try:
         gid = fetch_type_info(type_id, user_agent).get('group_id')
@@ -208,6 +209,7 @@ def compute_refined_payout(
     moon_ore_totals = {}      # mineral_type_id -> raw yield from moon ore (pre-efficiency)
     non_moon_ore_totals = {}  # mineral_type_id -> raw yield from non-moon ore
     ice_totals = {}           # mineral_type_id -> raw yield from ice
+    mineral_totals = {}       # type_id -> qty of already-refined minerals/products (no refining)
     moon_leftover = {}        # moon-ore type_id -> leftover qty
     other_leftover = {}       # non-moon-ore / unknown type_id -> leftover qty
     donations = {}
@@ -215,6 +217,7 @@ def compute_refined_payout(
     has_moon_ore = False
     has_non_moon_ore = False
     has_ice = False
+    has_minerals = False
 
     for it in items:
         type_id = it.get('type_id')
@@ -226,6 +229,12 @@ def compute_refined_payout(
             continue
         if is_donation(type_id, user_agent):
             donations[type_id] = donations.get(type_id, 0) + qty
+            continue
+        # Already-refined minerals / moon materials / ice products: full value, no
+        # reprocessing. Paid at the standard (non-moon) fraction below.
+        if is_refined_output(type_id, user_agent):
+            mineral_totals[type_id] = mineral_totals.get(type_id, 0) + qty
+            has_minerals = True
             continue
         if not is_refinable(type_id):
             other_leftover[type_id] = other_leftover.get(type_id, 0) + qty
@@ -262,16 +271,18 @@ def compute_refined_payout(
         for tid, qty in sorted(prismaticite.items(), key=lambda kv: -kv[1])
     ]
 
-    nothing_refined = not (moon_ore_totals or non_moon_ore_totals or ice_totals)
+    nothing_refined = not (moon_ore_totals or non_moon_ore_totals or ice_totals or mineral_totals)
     nothing_priced = nothing_refined and not moon_leftover and not other_leftover
     if nothing_priced:
         return {
             'refined_value': 0,
             'moon_value': 0,
             'non_moon_value': 0,
+            'mineral_value': 0,
             'leftover_value': 0,
             'moon_payout': 0,
             'non_moon_payout': 0,
+            'mineral_payout': 0,
             'recommended_payout': 0,
             'breakdown': [],
             'leftover_breakdown': [],
@@ -280,6 +291,7 @@ def compute_refined_payout(
             'has_moon_ore': has_moon_ore,
             'has_non_moon_ore': has_non_moon_ore,
             'has_ice': has_ice,
+            'has_minerals': has_minerals,
             'has_donations': bool(donations),
             'has_prismaticite': bool(prismaticite),
             'moon_payout_fraction': moon_payout_fraction,
@@ -288,7 +300,7 @@ def compute_refined_payout(
 
     price_ids = (
         set(moon_ore_totals) | set(non_moon_ore_totals) | set(ice_totals)
-        | set(moon_leftover) | set(other_leftover)
+        | set(mineral_totals) | set(moon_leftover) | set(other_leftover)
     )
     prices = janice_buy_prices(price_ids, hub_name, janice_api_key, user_agent)
 
@@ -296,15 +308,21 @@ def compute_refined_payout(
     breakdown = []
     moon_value = 0.0
     non_moon_value = 0.0
-    all_mineral_ids = set(moon_ore_totals) | set(non_moon_ore_totals) | set(ice_totals)
+    mineral_value = 0.0
+    all_mineral_ids = (
+        set(moon_ore_totals) | set(non_moon_ore_totals) | set(ice_totals) | set(mineral_totals)
+    )
     for mid in all_mineral_ids:
         moon_qty = moon_ore_totals.get(mid, 0) * moon_ore_efficiency
         non_moon_qty = non_moon_ore_totals.get(mid, 0) * non_moon_ore_efficiency
         ice_qty = ice_totals.get(mid, 0) * ice_efficiency
-        actual_yield = moon_qty + non_moon_qty + ice_qty
+        # Directly-contributed minerals are already refined: full quantity, no efficiency.
+        mineral_qty = mineral_totals.get(mid, 0)
+        actual_yield = moon_qty + non_moon_qty + ice_qty + mineral_qty
         price = prices.get(mid, 0)
         moon_value += moon_qty * price
         non_moon_value += (non_moon_qty + ice_qty) * price
+        mineral_value += mineral_qty * price
         breakdown.append({
             'type_id': mid,
             'quantity': round(actual_yield),
@@ -334,15 +352,19 @@ def compute_refined_payout(
     non_moon_total = non_moon_value
     moon_payout = moon_total * moon_payout_fraction
     non_moon_payout = non_moon_total * non_moon_payout_fraction
+    # Already-refined minerals are paid at the standard (non-moon) buyback fraction.
+    mineral_payout = mineral_value * non_moon_payout_fraction
 
     return {
-        'refined_value': moon_value + non_moon_value,
+        'refined_value': moon_value + non_moon_value + mineral_value,
         'moon_value': moon_total,
         'non_moon_value': non_moon_total,
+        'mineral_value': mineral_value,
         'leftover_value': moon_leftover_value + non_moon_leftover_value,
         'moon_payout': moon_payout,
         'non_moon_payout': non_moon_payout,
-        'recommended_payout': moon_payout + non_moon_payout,
+        'mineral_payout': mineral_payout,
+        'recommended_payout': moon_payout + non_moon_payout + mineral_payout,
         'breakdown': sorted(breakdown, key=lambda b: -b['value']),
         'leftover_breakdown': sorted(leftover_breakdown, key=lambda b: -b['value']),
         'donation_breakdown': donation_breakdown,
@@ -350,6 +372,7 @@ def compute_refined_payout(
         'has_moon_ore': has_moon_ore,
         'has_non_moon_ore': has_non_moon_ore,
         'has_ice': has_ice,
+        'has_minerals': has_minerals,
         'has_donations': bool(donations),
         'has_prismaticite': bool(prismaticite),
         'moon_payout_fraction': moon_payout_fraction,

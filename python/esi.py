@@ -190,6 +190,43 @@ def fetch_all_ship_types(user_agent):
     return out
 
 
+ZKILL_BASE = 'https://zkillboard.com/api'
+
+
+def fetch_zkill_meta(kill_id, user_agent):
+    """Look up a kill on zKillboard by ID. Returns the killmail hash (needed to
+    pull the full killmail from ESI) plus zKill's `npc` flag. Public endpoint.
+
+    Returns {'hash': str, 'npc': bool} or None if zKill has no record.
+    """
+    resp = requests.get(
+        f'{ZKILL_BASE}/killID/{int(kill_id)}/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+    )
+    resp.raise_for_status()
+    data = resp.json() or []
+    if not data:
+        return None
+    zkb = (data[0] or {}).get('zkb') or {}
+    h = zkb.get('hash')
+    if not h:
+        return None
+    return {'hash': h, 'npc': bool(zkb.get('npc'))}
+
+
+def fetch_killmail(kill_id, kill_hash, user_agent):
+    """Fetch a full killmail from ESI (victim hull + fitted items, system, etc.).
+    Public endpoint — the (id, hash) pair is the access token. Killmails are
+    immutable, so callers should cache the result."""
+    resp = requests.get(
+        f'{ESI_BASE}/killmails/{int(kill_id)}/{kill_hash}/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def fetch_region_market_orders(region_id, type_id, user_agent, order_type='sell'):
     """Fetch all sell orders for a type in a region. Public endpoint, no auth needed."""
     url = f'{ESI_BASE}/markets/{int(region_id)}/orders/'
