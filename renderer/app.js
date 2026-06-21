@@ -2161,6 +2161,9 @@ function renderReadinessDashboard() {
   }
 
   const agg = aggregateMissing(scan, aaState.market);
+  // Build the Janice appraisal for the aggregate missing set so the link shows on
+  // the overview too (mirrors the no-selection branch of selectionContext()).
+  ensureMissingAppraisal({ label: 'All enabled fits', agg });
   const overallClass = agg.pct >= 90 ? 'good' : agg.pct >= 60 ? 'warn' : 'bad';
 
   // Per-category breakdown
