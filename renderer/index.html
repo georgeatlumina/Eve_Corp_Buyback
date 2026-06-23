@@ -93,12 +93,12 @@
             <span id="region-lookup-status" class="muted"></span>
           </div>
           <div class="hs-row">
-            <label>NLDO alliance ID <input name="alliance_id_main" type="number" placeholder="e.g. 99011978" /></label>
-            <label>NLDF alliance ID <input name="alliance_id_institute" type="number" placeholder="e.g. 99011979" /></label>
+            <label>NLDF (Main Alliance) ID <input name="alliance_id_main" type="number" placeholder="e.g. 99011978" /></label>
+            <label>NLDO alliance ID <input name="alliance_id_institute" type="number" placeholder="e.g. 99011979" /></label>
           </div>
-          <p class="muted">Set the EVE alliance IDs above so the <strong>NLDO / NLDF</strong> selector on the Contracts tab knows which authenticated slots belong to each alliance.</p>
+          <p class="muted">Set the EVE alliance IDs above so the <strong>NLDF / NLDO</strong> selector on the Contracts tab knows which authenticated slots belong to each alliance.</p>
 
-          <h4 class="quota-h4">NLDO — Ship/doctrine quotas</h4>
+          <h4 class="quota-h4">NLDF (Main Alliance) — Ship/doctrine quotas</h4>
           <p class="muted">Spreadsheet-style: tab/arrow between cells, click <em>+ Row</em> to add. Tip: paste rows directly from Excel/Sheets (tab- or comma-separated). CSV header: <code>name,ship_type_id,ship_name,required,title_filter</code>.</p>
           <div class="quota-table-wrap">
             <table id="quotas-table" class="quota-table">
@@ -126,8 +126,8 @@
             <span id="quota-io-status" class="muted"></span>
           </div>
 
-          <h4 class="quota-h4">NLDF (Institute) — Ship/doctrine quotas</h4>
-          <p class="muted">Same format as NLDO quotas above — used when <strong>NLDF</strong> is selected on the Contracts tab.</p>
+          <h4 class="quota-h4">NLDO — Ship/doctrine quotas</h4>
+          <p class="muted">Same format as NLDF quotas above — used when <strong>NLDO</strong> is selected on the Contracts tab.</p>
           <div class="quota-table-wrap">
             <table id="quotas-institute-table" class="quota-table">
               <thead>
@@ -154,7 +154,7 @@
             <span id="quota-institute-io-status" class="muted"></span>
           </div>
 
-          <h4 class="quota-h4">NLDO alliance quota sync</h4>
+          <h4 class="quota-h4">NLDF alliance quota sync</h4>
           <p class="muted">Pull quotas from a single source of truth — a <strong>private GitHub repo</strong> holding a <code>quotas.json</code> file. Paste the URL of the file (<code>https://github.com/&lt;owner&gt;/&lt;repo&gt;/blob/&lt;branch&gt;/quotas.json</code>). Every alliance member fills the <em>Read PAT</em> with a fine-grained token that has <code>Contents: read</code> on this repo. The admin additionally fills the <em>Write PAT</em> + ticks <em>Allow push</em> and uses the <strong>Push to repo</strong> button to commit changes. Sync also accepts the raw URL or the Contents API URL of the same file.</p>
           <!--
             Gist transport is still wired in the sidecar (see _resolve_gist_page_url
@@ -379,8 +379,8 @@
       <h2>Contracts &amp; quotas</h2>
       <p class="muted">Scans every outstanding item-exchange contract posted at the configured home structure by <strong>any corp that a logged-in slot is a Contract Manager / Director of</strong>. Add more slots on the Auth tab to cover more corps — each one widens the visible set. <strong>ESI limitation:</strong> corps you don't have a director token for stay invisible, even if their contracts show in the in-game alliance tab.</p>
       <div class="alliance-toggle" role="group" aria-label="Alliance filter">
-        <button type="button" class="alliance-btn active" data-alliance="main">NLDO</button>
-        <button type="button" class="alliance-btn" data-alliance="institute">NLDF</button>
+        <button type="button" class="alliance-btn active" data-alliance="main">NLDF (Main Alliance)</button>
+        <button type="button" class="alliance-btn" data-alliance="institute">NLDO</button>
       </div>
       <div class="actions">
         <button id="btn-contracts-scan" type="button">Scan contracts</button>

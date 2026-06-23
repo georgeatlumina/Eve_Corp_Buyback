@@ -3091,13 +3091,19 @@ $('#btn-lookup-region')?.addEventListener('click', async () => {
 
 // --- Contracts scan ---
 let lastContractsScan = null;
+const contractsScanCache = {};
 let activeContractsAlliance = 'main';
 
 document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
   const btn = ev.target.closest('[data-alliance]');
   if (!btn) return;
+  if (btn.dataset.alliance === activeContractsAlliance) return;
   activeContractsAlliance = btn.dataset.alliance;
   document.querySelectorAll('.alliance-btn').forEach((b) => b.classList.toggle('active', b === btn));
+  if (contractsScanCache[activeContractsAlliance]) {
+    lastContractsScan = contractsScanCache[activeContractsAlliance];
+    renderContractsDashboard(lastContractsScan);
+  }
 });
 
 $('#btn-contracts-scan')?.addEventListener('click', runContractsScan);
@@ -3148,6 +3154,7 @@ async function runContractsScan() {
       status.textContent = `Error: ${evt.message}`;
     } else if (evt.event === 'done') {
       lastContractsScan = evt.payload;
+      contractsScanCache[activeContractsAlliance] = evt.payload;
       renderContractsDashboard(evt.payload);
       step.textContent = 'done';
       fill.style.width = '100%';

@@ -578,7 +578,7 @@ def _github_contents_get(owner, repo, branch, path, pat, user_agent):
     if resp.status_code == 401 or resp.status_code == 403:
         raise PermissionError(
             f'{resp.status_code} {resp.reason} — '
-            f'{"PAT was rejected (expired, wrong scope, or no access to this repo?)" if pat else "private repo — set a read PAT in Config"}'
+            f'{"GitHub rejected the PAT — it may be expired, lack read access to this repo, or be missing the Contents: read scope" if pat else "private repo — set a read PAT in Config"}'
         )
     if resp.status_code == 404:
         raise FileNotFoundError(
@@ -624,8 +624,9 @@ def _github_contents_put(owner, repo, branch, path, text, sha, pat, user_agent, 
     resp = requests.put(api, headers=headers, json=body, timeout=20)
     if resp.status_code == 401 or resp.status_code == 403:
         raise PermissionError(
-            f'{resp.status_code} {resp.reason} — write PAT was rejected '
-            '(does it have `Contents: read+write` permission on this repo?)'
+            f'{resp.status_code} {resp.reason} — GitHub rejected the write PAT. '
+            'Check that alliance_quota_pat_write in Config has Contents: read+write permission on this repo. '
+            '("Allow push from this machine" is a separate app toggle and does not grant GitHub access.)'
         )
     if resp.status_code == 409:
         raise RuntimeError(
