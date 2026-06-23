@@ -3116,6 +3116,7 @@ async function runContractsScan() {
   const progress = $('#contracts-progress');
   const step = progress.querySelector('.progress-step');
   const fill = progress.querySelector('.progress-fill');
+  $('#contracts-hint').hidden = true;
   status.textContent = '';
   progress.hidden = false;
   step.textContent = 'starting…';
@@ -3169,6 +3170,7 @@ async function runSold30dScan() {
   const progress = $('#contracts-sold-progress');
   const step = progress.querySelector('.progress-step');
   const fill = progress.querySelector('.progress-fill');
+  $('#contracts-hint').hidden = true;
   status.textContent = '';
   progress.hidden = false;
   step.textContent = 'starting…';

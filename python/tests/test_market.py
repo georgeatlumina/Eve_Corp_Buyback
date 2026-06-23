@@ -22,7 +22,7 @@ class TestFetchRegionMarketOrders:
     def test_returns_all_orders_single_page(self):
         from esi import fetch_region_market_orders
         orders = [{'type_id': 11993, 'price': 170e6, 'is_buy_order': False, 'location_id': 60008494}]
-        with patch('esi.requests.get', return_value=self._make_response(orders)):
+        with patch('esi._session.get', return_value=self._make_response(orders)):
             result = fetch_region_market_orders(10000043, 11993, 'TestAgent')
         assert result == orders
 
@@ -35,13 +35,13 @@ class TestFetchRegionMarketOrders:
             self._make_response(page1, pages=2),
             self._make_response(page2, pages=2),
         ]
-        with patch('esi.requests.get', side_effect=responses):
+        with patch('esi._session.get', side_effect=responses):
             result = fetch_region_market_orders(10000043, 11993, 'TestAgent')
         assert len(result) == 2
 
     def test_passes_correct_params(self):
         from esi import fetch_region_market_orders
-        with patch('esi.requests.get', return_value=self._make_response([])) as mock_get:
+        with patch('esi._session.get', return_value=self._make_response([])) as mock_get:
             fetch_region_market_orders(10000043, 11993, 'TestAgent', order_type='sell')
         call_params = mock_get.call_args[1]['params']
         assert call_params['type_id'] == 11993

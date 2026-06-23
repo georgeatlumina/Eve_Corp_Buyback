@@ -1,5 +1,6 @@
 import gzip
 import json
+import logging
 import os
 import secrets
 import sys
@@ -17,6 +18,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+logger = logging.getLogger(__name__)
 
 from auth import (
     DEFAULT_SLOT,
@@ -135,6 +138,9 @@ class ConfigUpdate(BaseModel):
     home_structure_id: Optional[int] = None
     home_region_id: Optional[int] = None
     quotas: Optional[list[dict]] = None
+    quotas_institute: Optional[list[dict]] = None
+    alliance_id_main: Optional[int] = None
+    alliance_id_institute: Optional[int] = None
     alliance_quota_url: Optional[str] = None
     alliance_quota_auto_sync: Optional[bool] = None
     alliance_quota_pat_read: Optional[str] = None
@@ -1904,14 +1910,19 @@ def _scan_contracts_stream(alliance: str = 'all'):
                 continue
             if int(c.get('start_location_id') or 0) != structure_id:
                 continue
+            if int(c.get('issuer_corporation_id') or 0) != corp_id:
+                continue
             cid = int(c.get('contract_id') or 0)
             if not cid:
                 continue
             entry = found.get(cid)
             if entry is None:
+                logger.warning(
+                    'found contract %s | title="%s" | availability=%s | price=%s',
+                    cid, c.get('title') or '', c.get('availability'), c.get('price'),
+                )
                 found[cid] = {
                     'contract': c,
-                    'char_id': char_id,
                     'corp_id': corp_id,
                     'token': token,
                     'source_corps': {corp_id},
@@ -1956,7 +1967,7 @@ def _scan_contracts_stream(alliance: str = 'all'):
         last_err = None
         for attempt in range(3):
             try:
-                return cid, fetch_character_contract_items(rec['char_id'], cid, rec['token'], ua), None
+                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
             except Exception as e:
                 last_err = e
                 if attempt < 2:
@@ -2016,14 +2027,25 @@ def _scan_contracts_stream(alliance: str = 'all'):
             label = f'assigned→{c.get("assignee_id")}'
         else:
             label = avail or '?'
+        issuer_name = issuer_names.get(int(c.get('issuer_id') or 0), '')
+        price = c.get('price')
+        price_str = f'{price:,.0f} ISK' if price is not None else 'no price'
+        included = [i for i in items_named if i.get('is_included', True)]
+        items_str = ', '.join(
+            f'{i["name"] or i["type_id"]} x{i["quantity"]}' for i in included
+        ) or '(no items)'
+        logger.warning(
+            'contract %s | "%s" | issuer=%s | %s | %s',
+            cid, c.get('title') or '', issuer_name, price_str, items_str,
+        )
         contracts_out.append({
             'contract_id': cid,
             'title': c.get('title') or '',
-            'price': c.get('price'),
+            'price': price,
             'availability': c.get('availability'),
             'assignee_id': c.get('assignee_id'),
             'issuer_id': c.get('issuer_id'),
-            'issuer_name': issuer_names.get(int(c.get('issuer_id') or 0), ''),
+            'issuer_name': issuer_name,
             'issuer_corporation_id': c.get('issuer_corporation_id'),
             'date_issued': c.get('date_issued'),
             'date_expired': c.get('date_expired'),
