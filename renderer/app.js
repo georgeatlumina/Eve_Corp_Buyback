@@ -3161,6 +3161,10 @@ async function runContractsScan() {
       fill.style.width = '100%';
       setTimeout(() => { progress.hidden = true; }, 600);
       prefetchHullPrices(evt.payload.quotas || []);
+      const failedItems = (evt.payload.contracts || []).filter(c => c.items_error).length;
+      if (failedItems > 0) {
+        status.textContent = `⚠ Items could not be fetched for ${failedItems} contract(s) due to ESI errors — those ships may show a lower count than expected. Try re-scanning.`;
+      }
     }
   });
 }
