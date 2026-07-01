@@ -3368,9 +3368,7 @@ function renderContractsDashboard(payload) {
   if (!quotas.length) {
     root.innerHTML = '<p class="muted">No quotas configured. Add some in Config.</p>';
   } else {
-    for (const q of quotas) {
-      root.appendChild(renderQuotaBar(q));
-    }
+    quotas.forEach((q, i) => root.appendChild(renderQuotaBar(q, i)));
     sortQuotaDashboard();
   }
 
@@ -3450,9 +3448,12 @@ async function prefetchHullPrices(quotas) {
 function sortQuotaDashboard() {
   const root = $('#contracts-quota-dashboard');
   if (!root) return;
-  const order = ($('#contracts-sort')?.value) || 'default';
+  const order = ($('#contracts-sort')?.value) || 'priority';
   const bars = [...root.querySelectorAll('.quota-bar')];
   bars.sort((a, b) => {
+    if (order === 'priority') {
+      return Number(a.dataset.priority) - Number(b.dataset.priority);
+    }
     if (order === 'under-quota') {
       const aEmpty = a.classList.contains('quota-empty') ? 0 : 1;
       const bEmpty = b.classList.contains('quota-empty') ? 0 : 1;
@@ -3472,7 +3473,7 @@ function sortQuotaDashboard() {
 
 $('#contracts-sort')?.addEventListener('change', sortQuotaDashboard);
 
-function renderQuotaBar(q) {
+function renderQuotaBar(q, priority = 0) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
   const missing = Number(q.missing) || 0;
@@ -3480,6 +3481,7 @@ function renderQuotaBar(q) {
   const state = required === 0 ? 'unset' : available >= required ? 'ok' : available > 0 ? 'partial' : 'empty';
   const div = document.createElement('div');
   div.className = `quota-bar quota-${state}`;
+  div.dataset.priority = priority;
   div.dataset.shipName = (q.ship_name || q.name || '').toLowerCase();
   div.dataset.shipTypeId = q.ship_type_id || '';
   div.dataset.titleFilter = (q.title_filter || '').toLowerCase();
@@ -3807,11 +3809,12 @@ async function exportForDiscord() {
   }
   const quotas = lastContractsScan.quotas || [];
   const header = ['Ship / Fit name', 'Quota', 'On hand'];
-  const rows = quotas.map((q) => [
-    q.name || q.ship_name || `type ${q.ship_type_id}`,
-    String(q.required || 0),
-    String(q.available || 0),
-  ]);
+  const rows = quotas.map((q) => {
+    const ship = q.ship_name || '';
+    const fit = q.name || '';
+    const label = ship && fit ? `${ship} ${fit}` : ship || fit || `type ${q.ship_type_id}`;
+    return [label, String(q.required || 0), String(q.available || 0)];
+  });
   const w0 = Math.max(header[0].length, ...rows.map((r) => r[0].length));
   const w1 = Math.max(header[1].length, ...rows.map((r) => r[1].length));
   const w2 = Math.max(header[2].length, ...rows.map((r) => r[2].length));
