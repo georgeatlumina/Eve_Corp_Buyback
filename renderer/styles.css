@@ -375,6 +375,12 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .quota-table .q-tid, .quota-table .q-req { min-width: 100px; }
 .quota-table .q-remove { padding: 0.3em 0.6em; font-size: 0.85em; min-width: 2.4em; }
 .quota-table tr.quota-row:hover { background: #232323; }
+.quota-table th.q-drag-th { width: 1.2em; padding: 0; }
+.quota-table td.q-drag { cursor: grab; color: #555; user-select: none; text-align: center; padding: 0 0.3em; font-size: 1.1em; }
+.quota-table td.q-drag:hover { color: #999; }
+.quota-table tr.quota-row.dragging { opacity: 0.35; }
+.quota-table tr.quota-row.drag-over-top { box-shadow: inset 0 2px 0 #4a9; }
+.quota-table tr.quota-row.drag-over-bottom { box-shadow: inset 0 -2px 0 #4a9; }
 
 /* ===== Alliance toggle (Contracts tab) ===== */
 .alliance-toggle { display: inline-flex; margin: 0 0 0.8em; }

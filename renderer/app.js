@@ -2469,6 +2469,7 @@ function quotaRow(q) {
   const tr = document.createElement('tr');
   tr.className = 'quota-row';
   tr.innerHTML = `
+    <td class="q-drag" title="Drag to reorder">⠿</td>
     <td><input type="text" class="q-name" value="${escapeAttr(q.name || '')}" placeholder="e.g. Cerberus Shield" /></td>
     <td><input type="text" inputmode="numeric" list="ships-datalist" class="q-tid" value="${q.ship_type_id || ''}" placeholder="type or pick…" /></td>
     <td><input type="text" list="ship-names-datalist" class="q-sname" value="${escapeAttr(q.ship_name || '')}" placeholder="e.g. Cerberus" /></td>
@@ -2478,6 +2479,10 @@ function quotaRow(q) {
     <td><button type="button" class="q-remove secondary" title="Remove row">✕</button></td>
   `;
   tr.querySelector('.q-remove').addEventListener('click', () => tr.remove());
+  // Only allow drag to begin from the handle cell, so clicking inputs works normally.
+  tr.addEventListener('mousedown', (e) => {
+    tr.draggable = !!e.target.closest('.q-drag');
+  });
   return tr;
 }
 
@@ -2663,6 +2668,48 @@ function bindQuotaSection(tbodyId, { addBtnId, importCsvBtnId, importJsonBtnId, 
         tbody.appendChild(quotaRow(rowFromCells(cells)));
       }
     });
+  });
+
+  // Drag-and-drop row reordering
+  let _dragSrc = null;
+  const _tbody = getTbody();
+  _tbody?.addEventListener('dragstart', (e) => {
+    _dragSrc = e.target.closest('.quota-row');
+    if (_dragSrc) {
+      e.dataTransfer.effectAllowed = 'move';
+      _dragSrc.classList.add('dragging');
+    }
+  });
+  _tbody?.addEventListener('dragend', () => {
+    _dragSrc?.classList.remove('dragging');
+    _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    _dragSrc = null;
+  });
+  _tbody?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.target.closest('.quota-row');
+    _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    if (!target || target === _dragSrc) return;
+    const { top, height } = target.getBoundingClientRect();
+    target.classList.add(e.clientY < top + height / 2 ? 'drag-over-top' : 'drag-over-bottom');
+  });
+  _tbody?.addEventListener('dragleave', (e) => {
+    if (!_tbody.contains(e.relatedTarget)) {
+      _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    }
+  });
+  _tbody?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.quota-row');
+    _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    if (!target || target === _dragSrc || !_dragSrc) return;
+    const { top, height } = target.getBoundingClientRect();
+    if (e.clientY < top + height / 2) {
+      _tbody.insertBefore(_dragSrc, target);
+    } else {
+      target.after(_dragSrc);
+    }
   });
 }
 
@@ -3110,6 +3157,7 @@ document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
 
 $('#btn-contracts-scan')?.addEventListener('click', runContractsScan);
 $('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
+$('#btn-contracts-export-discord')?.addEventListener('click', exportForDiscord);
 $('#btn-contracts-export-csv')?.addEventListener('click', exportGapCsv);
 $('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
 
@@ -3750,6 +3798,34 @@ function renderContractRow(c) {
   });
 
   return div;
+}
+
+async function exportForDiscord() {
+  if (!lastContractsScan) {
+    alert('Run a scan first.');
+    return;
+  }
+  const quotas = lastContractsScan.quotas || [];
+  const header = ['Ship / Fit name', 'Quota', 'On hand'];
+  const rows = quotas.map((q) => [
+    q.name || q.ship_name || `type ${q.ship_type_id}`,
+    String(q.required || 0),
+    String(q.available || 0),
+  ]);
+  const w0 = Math.max(header[0].length, ...rows.map((r) => r[0].length));
+  const w1 = Math.max(header[1].length, ...rows.map((r) => r[1].length));
+  const w2 = Math.max(header[2].length, ...rows.map((r) => r[2].length));
+  const fmt = ([name, quota, onhand]) =>
+    `${name.padEnd(w0)} | ${quota.padStart(w1)} | ${onhand.padStart(w2)}`;
+  const divider = `${'-'.repeat(w0)}-+-${'-'.repeat(w1)}-+-${'-'.repeat(w2)}`;
+  const lines = ['```', fmt(header), divider, ...rows.map(fmt), '```'];
+  const text = lines.join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    $('#contracts-status').textContent = `Copied Discord table (${rows.length} rows) to clipboard.`;
+  } catch (e) {
+    alert(text);
+  }
 }
 
 function exportGapCsv() {
