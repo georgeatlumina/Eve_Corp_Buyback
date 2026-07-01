@@ -3111,65 +3111,100 @@ $('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
 $('#btn-contracts-export-csv')?.addEventListener('click', exportGapCsv);
 $('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
 
+// Show a status message when the user clicks/hovers a disabled scan button.
+const _SCAN_BUSY_MSG = 'A scan is already running — please wait for it to finish.';
+$('#btn-contracts-scan')?.closest('.contract-btn-wrap')?.addEventListener('click', () => {
+  if ($('#btn-contracts-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+});
+$('#btn-contracts-sold-scan')?.closest('.contract-btn-wrap')?.addEventListener('click', () => {
+  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+});
+$('#btn-contracts-scan')?.closest('.contract-btn-wrap')?.addEventListener('mouseenter', () => {
+  if ($('#btn-contracts-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+});
+$('#btn-contracts-sold-scan')?.closest('.contract-btn-wrap')?.addEventListener('mouseenter', () => {
+  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+});
+
 async function runContractsScan() {
+  const btnScan = $('#btn-contracts-scan');
+  const btnSold = $('#btn-contracts-sold-scan');
   const status = $('#contracts-status');
   const progress = $('#contracts-progress');
   const step = progress.querySelector('.progress-step');
   const fill = progress.querySelector('.progress-fill');
   $('#contracts-hint').hidden = true;
   status.textContent = '';
+  status.style.color = '';
+  status.style.fontWeight = '';
   progress.hidden = false;
   step.textContent = 'starting…';
   fill.style.width = '5%';
   $('#contracts-quota-dashboard').innerHTML = '';
   $('#contracts-list').innerHTML = '';
   $('#contracts-count').textContent = '0';
+  if (btnScan) btnScan.disabled = true;
+  if (btnSold) btnSold.disabled = true;
 
-  let res;
   try {
-    res = await fetch(`${API}/api/contracts/scan?alliance=${activeContractsAlliance}`);
-  } catch (e) {
-    status.textContent = `Network error: ${e}`;
-    progress.hidden = true;
-    return;
-  }
-  if (!res.ok) {
-    status.textContent = `HTTP ${res.status}: ${await res.text()}`;
-    progress.hidden = true;
-    return;
-  }
-
-  let setupTicks = 0;
-  await readNdjson(res, (evt) => {
-    if (evt.event === 'progress') {
-      step.textContent = evt.step || '';
-      let pct;
-      if (evt.phase === 'items' && evt.total > 0) {
-        pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
-      } else {
-        setupTicks += 1;
-        pct = Math.min(23, 5 + setupTicks * 4); // 5%→23% for setup
-      }
-      fill.style.width = pct + '%';
-    } else if (evt.event === 'error') {
-      status.textContent = `Error: ${evt.message}`;
-    } else if (evt.event === 'done') {
-      lastContractsScan = evt.payload;
-      contractsScanCache[activeContractsAlliance] = evt.payload;
-      renderContractsDashboard(evt.payload);
-      step.textContent = 'done';
-      fill.style.width = '100%';
-      setTimeout(() => { progress.hidden = true; }, 600);
-      prefetchHullPrices(evt.payload.quotas || []);
-      const failedItems = (evt.payload.contracts || []).filter(c => c.items_error).length;
-      if (failedItems > 0) {
-        status.textContent = `⚠ Items could not be fetched for ${failedItems} contract(s) due to ESI errors — those ships may show a lower count than expected. Try re-scanning.`;
-      }
+    let res;
+    try {
+      res = await fetch(`${API}/api/contracts/scan?alliance=${activeContractsAlliance}`);
+    } catch (e) {
+      status.textContent = `Network error: ${e}`;
+      progress.hidden = true;
+      return;
     }
-  });
+    if (!res.ok) {
+      status.textContent = `HTTP ${res.status}: ${await res.text()}`;
+      progress.hidden = true;
+      return;
+    }
+
+    let setupTicks = 0;
+    await readNdjson(res, (evt) => {
+      if (evt.event === 'progress') {
+        step.textContent = evt.step || '';
+        let pct;
+        if (evt.phase === 'items' && evt.total > 0) {
+          pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
+        } else {
+          setupTicks += 1;
+          pct = Math.min(23, 5 + setupTicks * 4); // 5%→23% for setup
+        }
+        fill.style.width = pct + '%';
+      } else if (evt.event === 'error') {
+        status.textContent = `Error: ${evt.message}`;
+      } else if (evt.event === 'done') {
+        lastContractsScan = evt.payload;
+        contractsScanCache[activeContractsAlliance] = evt.payload;
+        renderContractsDashboard(evt.payload);
+        step.textContent = 'done';
+        fill.style.width = '100%';
+        setTimeout(() => { progress.hidden = true; }, 600);
+        prefetchHullPrices(evt.payload.quotas || []);
+        const failedItems = (evt.payload.contracts || []).filter(c => c.items_error).length;
+        if (failedItems > 0) {
+          status.textContent = `⚠ ESI errors: items could not be fetched for ${failedItems} contract(s) — ship counts may be lower than actual. Try re-scanning.`;
+          status.style.color = '#e8a838';
+          status.style.fontWeight = 'bold';
+        } else {
+          status.style.color = '';
+          status.style.fontWeight = '';
+        }
+      }
+    });
+  } finally {
+    if (btnScan) btnScan.disabled = false;
+    if (btnSold) btnSold.disabled = false;
+    const _st = $('#contracts-status');
+    if (_st && _st.textContent === _SCAN_BUSY_MSG) _st.textContent = '';
+  }
 }
 
 async function runSold30dScan() {
+  const btnScan = $('#btn-contracts-scan');
+  const btnSold = $('#btn-contracts-sold-scan');
   const status = $('#contracts-status');
   const progress = $('#contracts-sold-progress');
   const step = progress.querySelector('.progress-step');
@@ -3179,57 +3214,66 @@ async function runSold30dScan() {
   progress.hidden = false;
   step.textContent = 'starting…';
   fill.style.width = '5%';
+  if (btnScan) btnScan.disabled = true;
+  if (btnSold) btnSold.disabled = true;
 
-  let res;
   try {
-    res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${activeContractsAlliance}`);
-  } catch (e) {
-    status.textContent = `Network error: ${e}`;
-    progress.hidden = true;
-    return;
-  }
-  if (!res.ok) {
-    status.textContent = `HTTP ${res.status}: ${await res.text()}`;
-    progress.hidden = true;
-    return;
-  }
+    let res;
+    try {
+      res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${activeContractsAlliance}`);
+    } catch (e) {
+      status.textContent = `Network error: ${e}`;
+      progress.hidden = true;
+      return;
+    }
+    if (!res.ok) {
+      status.textContent = `HTTP ${res.status}: ${await res.text()}`;
+      progress.hidden = true;
+      return;
+    }
 
-  let setupTicks = 0;
-  await readNdjson(res, (evt) => {
-    if (evt.event === 'progress') {
-      step.textContent = evt.step || '';
-      let pct;
-      if (evt.phase === 'items' && evt.total > 0) {
-        pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
-      } else {
-        setupTicks += 1;
-        pct = Math.min(23, 5 + setupTicks * 4);
-      }
-      fill.style.width = pct + '%';
-    } else if (evt.event === 'error') {
-      status.textContent = `Error: ${evt.message}`;
-    } else if (evt.event === 'done') {
-      const quotas = evt.payload?.quotas || [];
-      for (const q of quotas) {
-        const bars = document.querySelectorAll(
-          `.quota-bar[data-ship-type-id="${q.ship_type_id}"]`
-        );
-        for (const bar of bars) {
-          const tf = (q.title_filter || '').toLowerCase();
-          if (bar.dataset.titleFilter !== tf) continue;
-          const soldEl = bar.querySelector('.quota-sold-count');
-          if (soldEl) {
-            soldEl.textContent = q.sold_30d ?? '—';
-            if ((q.sold_30d ?? 0) > 0) soldEl.classList.remove('muted');
-            else soldEl.classList.add('muted');
+    let setupTicks = 0;
+    await readNdjson(res, (evt) => {
+      if (evt.event === 'progress') {
+        step.textContent = evt.step || '';
+        let pct;
+        if (evt.phase === 'items' && evt.total > 0) {
+          pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
+        } else {
+          setupTicks += 1;
+          pct = Math.min(23, 5 + setupTicks * 4);
+        }
+        fill.style.width = pct + '%';
+      } else if (evt.event === 'error') {
+        status.textContent = `Error: ${evt.message}`;
+      } else if (evt.event === 'done') {
+        const quotas = evt.payload?.quotas || [];
+        for (const q of quotas) {
+          const bars = document.querySelectorAll(
+            `.quota-bar[data-ship-type-id="${q.ship_type_id}"]`
+          );
+          for (const bar of bars) {
+            const tf = (q.title_filter || '').toLowerCase();
+            if (bar.dataset.titleFilter !== tf) continue;
+            const soldEl = bar.querySelector('.quota-sold-count');
+            if (soldEl) {
+              soldEl.textContent = q.sold_30d ?? '—';
+              if ((q.sold_30d ?? 0) > 0) soldEl.classList.remove('muted');
+              else soldEl.classList.add('muted');
+            }
           }
         }
+        step.textContent = 'done';
+        fill.style.width = '100%';
+        setTimeout(() => { progress.hidden = true; }, 600);
       }
-      step.textContent = 'done';
-      fill.style.width = '100%';
-      setTimeout(() => { progress.hidden = true; }, 600);
-    }
-  });
+    });
+  } finally {
+    if (btnScan) btnScan.disabled = false;
+    if (btnSold) btnSold.disabled = false;
+    const _st = $('#contracts-status');
+    if (_st && _st.textContent === _SCAN_BUSY_MSG) _st.textContent = '';
+  }
 }
 
 async function readNdjson(response, onEvent) {
@@ -3347,6 +3391,9 @@ function sortQuotaDashboard() {
   const bars = [...root.querySelectorAll('.quota-bar')];
   bars.sort((a, b) => {
     if (order === 'under-quota') {
+      const aEmpty = a.classList.contains('quota-empty') ? 0 : 1;
+      const bEmpty = b.classList.contains('quota-empty') ? 0 : 1;
+      if (aEmpty !== bEmpty) return aEmpty - bEmpty;
       return Number(b.dataset.missing) - Number(a.dataset.missing);
     }
     if (order === 'value') {

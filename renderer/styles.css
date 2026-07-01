@@ -384,6 +384,11 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .alliance-btn:not(:first-child):not(:last-child) { border-left: 0; }
 .alliance-btn.active { background: #4a8; color: #111; border-color: #4a8; }
 
+/* ===== Contracts scan buttons ===== */
+.contract-btn-wrap { display: inline-block; }
+.contract-btn-wrap button:disabled { opacity: 0.45; pointer-events: none; }
+.contract-btn-wrap:has(button:disabled) { cursor: not-allowed; }
+
 /* ===== Contracts tab ===== */
 #contracts-quota-dashboard { display: grid; gap: 0.6em; margin: 1em 0; }
 .quota-bar { background: #262626; border: 1px solid #3a3a3a; border-left: 4px solid #555; border-radius: 4px; padding: 0.55em 0.8em; }
