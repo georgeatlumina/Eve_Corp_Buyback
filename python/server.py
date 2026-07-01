@@ -2276,10 +2276,10 @@ def scan_contracts(alliance: str = 'all'):
 def _sold_30d_scan_stream(alliance: str = 'all'):
     """Stream sold-contract item fetching for all quotas.
 
-    Fetches corp contracts for every authed slot, filters for finished
-    item-exchange contracts at the home structure in the last 30 days,
-    fetches their items (with progress events), then emits a done event
-    with per-quota sold_30d counts.
+    Fetches corporation contracts for every authed slot, filters for finished
+    item-exchange contracts issued by that corp at the home structure in the
+    last 30 days, fetches their items, then emits a done event with per-quota
+    sold_30d counts.
 
     alliance: 'all' | 'main' | 'institute' — filters to slots in that alliance.
     """
@@ -2336,14 +2336,14 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
             yield _emit('progress', step=f'{slot}: corp {corp_id} already fetched — skipping')
             continue
 
-        yield _emit('progress', step=f'{slot}: fetching contracts visible to char {char_id}…')
+        yield _emit('progress', step=f'{slot}: fetching corp {corp_id} contracts…')
         try:
-            char_contracts = fetch_character_contracts(char_id, token, ua)
+            corp_contracts = fetch_corp_contracts(corp_id, token, ua)
         except Exception as e:
             yield _emit('progress', step=f'{slot}: contract fetch failed — {e}')
             continue
 
-        for c in _filter_sold_contracts(char_contracts, corp_id, structure_id, cutoff_30d):
+        for c in _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
             cid = int(c.get('contract_id') or 0)
             if cid not in sold_found:
                 sold_found[cid] = {'contract': c, 'char_id': char_id, 'corp_id': corp_id, 'token': token}
@@ -2361,7 +2361,7 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
         last_err = None
         for attempt in range(3):
             try:
-                return cid, fetch_character_contract_items(rec['char_id'], cid, rec['token'], ua), None
+                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
             except Exception as e:
                 last_err = e
                 if attempt < 2:

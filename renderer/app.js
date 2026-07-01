@@ -3100,6 +3100,8 @@ document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
   if (btn.dataset.alliance === activeContractsAlliance) return;
   activeContractsAlliance = btn.dataset.alliance;
   document.querySelectorAll('.alliance-btn').forEach((b) => b.classList.toggle('active', b === btn));
+  const _btnSold = $('#btn-contracts-sold-scan');
+  if (_btnSold && !_contractsScanRunning) _btnSold.disabled = !contractsScanCache[activeContractsAlliance];
   if (contractsScanCache[activeContractsAlliance]) {
     lastContractsScan = contractsScanCache[activeContractsAlliance];
     renderContractsDashboard(lastContractsScan);
@@ -3113,17 +3115,27 @@ $('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
 
 // Show a status message when the user clicks/hovers a disabled scan button.
 const _SCAN_BUSY_MSG = 'A scan is already running — please wait for it to finish.';
+const _SCAN_FIRST_MSG = 'Run "Scan contracts" first before fetching sold counts.';
+let _contractsScanRunning = false;
+
+// Sold button is disabled until the first contracts scan completes for the active alliance.
+$('#btn-contracts-sold-scan').disabled = true;
+
+function _soldBtnDisabledMsg() {
+  return _contractsScanRunning ? _SCAN_BUSY_MSG : _SCAN_FIRST_MSG;
+}
+
 $('#btn-contracts-scan')?.closest('.contract-btn-wrap')?.addEventListener('click', () => {
   if ($('#btn-contracts-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
 });
 $('#btn-contracts-sold-scan')?.closest('.contract-btn-wrap')?.addEventListener('click', () => {
-  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _soldBtnDisabledMsg();
 });
 $('#btn-contracts-scan')?.closest('.contract-btn-wrap')?.addEventListener('mouseenter', () => {
   if ($('#btn-contracts-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
 });
 $('#btn-contracts-sold-scan')?.closest('.contract-btn-wrap')?.addEventListener('mouseenter', () => {
-  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _soldBtnDisabledMsg();
 });
 
 async function runContractsScan() {
@@ -3145,6 +3157,7 @@ async function runContractsScan() {
   $('#contracts-count').textContent = '0';
   if (btnScan) btnScan.disabled = true;
   if (btnSold) btnSold.disabled = true;
+  _contractsScanRunning = true;
 
   try {
     let res;
@@ -3195,10 +3208,12 @@ async function runContractsScan() {
       }
     });
   } finally {
+    _contractsScanRunning = false;
     if (btnScan) btnScan.disabled = false;
-    if (btnSold) btnSold.disabled = false;
+    // Enable sold button only if a scan result exists for this alliance.
+    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
     const _st = $('#contracts-status');
-    if (_st && _st.textContent === _SCAN_BUSY_MSG) _st.textContent = '';
+    if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
   }
 }
 
@@ -3270,9 +3285,9 @@ async function runSold30dScan() {
     });
   } finally {
     if (btnScan) btnScan.disabled = false;
-    if (btnSold) btnSold.disabled = false;
+    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
     const _st = $('#contracts-status');
-    if (_st && _st.textContent === _SCAN_BUSY_MSG) _st.textContent = '';
+    if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
   }
 }
 
