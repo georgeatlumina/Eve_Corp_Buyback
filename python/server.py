@@ -1,5 +1,6 @@
 import gzip
 import json
+import logging
 import os
 import secrets
 import sys
@@ -17,6 +18,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+logger = logging.getLogger(__name__)
 
 from auth import (
     DEFAULT_SLOT,
@@ -135,6 +138,9 @@ class ConfigUpdate(BaseModel):
     home_structure_id: Optional[int] = None
     home_region_id: Optional[int] = None
     quotas: Optional[list[dict]] = None
+    quotas_institute: Optional[list[dict]] = None
+    alliance_id_main: Optional[int] = None
+    alliance_id_institute: Optional[int] = None
     alliance_quota_url: Optional[str] = None
     alliance_quota_auto_sync: Optional[bool] = None
     alliance_quota_pat_read: Optional[str] = None
@@ -578,7 +584,7 @@ def _github_contents_get(owner, repo, branch, path, pat, user_agent):
     if resp.status_code == 401 or resp.status_code == 403:
         raise PermissionError(
             f'{resp.status_code} {resp.reason} — '
-            f'{"PAT was rejected (expired, wrong scope, or no access to this repo?)" if pat else "private repo — set a read PAT in Config"}'
+            f'{"GitHub rejected the PAT — it may be expired, lack read access to this repo, or be missing the Contents: read scope" if pat else "private repo — set a read PAT in Config"}'
         )
     if resp.status_code == 404:
         raise FileNotFoundError(
@@ -624,8 +630,9 @@ def _github_contents_put(owner, repo, branch, path, text, sha, pat, user_agent, 
     resp = requests.put(api, headers=headers, json=body, timeout=20)
     if resp.status_code == 401 or resp.status_code == 403:
         raise PermissionError(
-            f'{resp.status_code} {resp.reason} — write PAT was rejected '
-            '(does it have `Contents: read+write` permission on this repo?)'
+            f'{resp.status_code} {resp.reason} — GitHub rejected the write PAT. '
+            'Check that alliance_quota_pat_write in Config has Contents: read+write permission on this repo. '
+            '("Allow push from this machine" is a separate app toggle and does not grant GitHub access.)'
         )
     if resp.status_code == 409:
         raise RuntimeError(
@@ -1746,6 +1753,8 @@ def get_amarr_sell_price(type_id: int, bust: bool = False):
 
 # Module-scope cache so repeat scans don't re-download the same items.
 _contract_items_cache: dict[int, list] = {}
+# Sold (finished) contracts collected during the most recent scan; used by the lazy sold-30d endpoint.
+_sold_contracts_cache: dict[str, dict[int, dict]] = {}  # alliance -> {contract_id -> rec}
 
 
 def _matches_quota(quota: dict, items_named: list[dict], contract: dict) -> int:
@@ -1797,7 +1806,7 @@ def _filter_sold_contracts(contracts: list[dict], corp_id: int, structure_id: in
     return result
 
 
-def _scan_contracts_stream():
+def _scan_contracts_stream(alliance: str = 'all'):
     """Stream outstanding item-exchange contracts that ANY authed slot's corp
     has posted at the configured home structure.
 
@@ -1813,10 +1822,18 @@ def _scan_contracts_stream():
     The availability field is ignored — corp-posted alliance fits come back
     as availability=personal with assignee_id=alliance_id, not availability=
     alliance.
+
+    alliance: 'all' | 'main' | 'institute' — restricts slots to those whose
+    character's alliance_id matches the configured alliance_id_main or
+    alliance_id_institute (if those IDs are set).
     """
     cfg = load_config()
     structure_id = int(cfg.get('home_structure_id') or 0)
-    quotas = list(cfg.get('quotas') or [])
+    quotas_key = 'quotas_institute' if alliance == 'institute' else 'quotas'
+    quotas = list(cfg.get(quotas_key) or [])
+    target_alliance_id = 0
+    if alliance in ('main', 'institute'):
+        target_alliance_id = int(cfg.get(f'alliance_id_{alliance}') or 0)
     if not structure_id:
         yield _emit('error', message='Set home_structure_id in Config first')
         return
@@ -1829,13 +1846,12 @@ def _scan_contracts_stream():
     ua = get_user_agent()
     client_id, secret_key = get_app_credentials()
 
-    # contract_id -> {'contract': record, 'corp_id': int, 'token': str, 'source_corps': set}
+    # contract_id -> {'contract': record, 'char_id': int, 'corp_id': int, 'token': str, 'source_corps': set}
     found: dict[int, dict] = {}
     # Finished item-exchange contracts at home, completed within the last 30 days.
     sold_found: dict[int, dict] = {}
     cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    # Tally per corp_id: how many outstanding-item_exchange-at-home we kept,
-    # so the UI can show a per-corp summary line.
+    # Tally per corp_id: how many new contracts we kept per slot's corp (for UI summary).
     per_corp_kept: dict[int, int] = {}
 
     for slot in slots:
@@ -1859,6 +1875,12 @@ def _scan_contracts_stream():
             yield _emit('progress', step=f'{slot}: character has no corporation')
             continue
 
+        if target_alliance_id:
+            slot_alliance_id = int(cinfo.get('alliance_id') or 0)
+            if slot_alliance_id != target_alliance_id:
+                yield _emit('progress', step=f'{slot}: skipping — not in selected alliance')
+                continue
+
         if corp_id in per_corp_kept:
             yield _emit(
                 'progress',
@@ -1871,7 +1893,6 @@ def _scan_contracts_stream():
             corp_contracts = fetch_corp_contracts(corp_id, token, ua)
         except Exception as e:
             msg = str(e)
-            # Surface 403 plainly — most common cause is missing director role.
             if '403' in msg or 'Forbidden' in msg:
                 yield _emit(
                     'progress',
@@ -1896,6 +1917,10 @@ def _scan_contracts_stream():
                 continue
             entry = found.get(cid)
             if entry is None:
+                logger.warning(
+                    'found contract %s | title="%s" | availability=%s | price=%s',
+                    cid, c.get('title') or '', c.get('availability'), c.get('price'),
+                )
                 found[cid] = {
                     'contract': c,
                     'corp_id': corp_id,
@@ -1910,13 +1935,15 @@ def _scan_contracts_stream():
         for c in _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
             cid = int(c.get('contract_id') or 0)
             if cid not in sold_found:
-                sold_found[cid] = {'contract': c, 'corp_id': corp_id, 'token': token}
+                sold_found[cid] = {'contract': c, 'char_id': char_id, 'corp_id': corp_id, 'token': token}
 
         yield _emit(
             'progress',
-            step=f'{slot}: corp {corp_id} posted {kept} matching '
-                 f'(of {len(corp_contracts)} corp contracts total)',
+            step=f'{slot}: corp {corp_id} — {kept} matching at home structure '
+                 f'(of {len(corp_contracts)} total)',
         )
+
+    _sold_contracts_cache[alliance] = sold_found
 
     if not found:
         yield _emit('done', payload={
@@ -1924,7 +1951,7 @@ def _scan_contracts_stream():
             'corps_scanned': sorted(per_corp_kept.keys()),
             'contracts': [],
             'quotas': [
-                {**q, 'available': 0, 'missing': int(q.get('required') or 0), 'contracts': [], 'sold_30d': 0}
+                {**q, 'available': 0, 'missing': int(q.get('required') or 0), 'contracts': []}
                 for q in quotas
             ],
         })
@@ -1968,26 +1995,6 @@ def _scan_contracts_stream():
                 done += 1
                 yield _emit('progress', step=f'Items: {done}/{total}', current=done, total=total, phase='items')
 
-    # ---- Fetch items for sold (finished) contracts ----
-    sold_items_by_id: dict[int, list] = {}
-    sold_uncached = {cid: rec for cid, rec in sold_found.items() if _contract_items_cache.get(cid) is None}
-    for cid in sold_found:
-        if cid not in sold_uncached:
-            sold_items_by_id[cid] = _contract_items_cache[cid]
-    if sold_uncached:
-        sold_total = len(sold_uncached)
-        sold_done = 0
-        yield _emit('progress', step=f'Fetching items for {sold_total} sold contract(s)…')
-        with ThreadPoolExecutor(max_workers=5) as pool:
-            futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in sold_uncached.items()}
-            for future in as_completed(futures):
-                cid, items, err = future.result()
-                sold_items_by_id[cid] = items
-                if not err:
-                    _contract_items_cache[cid] = items
-                sold_done += 1
-                yield _emit('progress', step=f'Sold items: {sold_done}/{sold_total}', current=sold_done, total=sold_total, phase='sold_items')
-
     # ---- Resolve type and issuer names ----
     type_ids = sorted({int(i.get('type_id') or 0) for items in items_by_id.values() for i in items})
     try:
@@ -2020,14 +2027,25 @@ def _scan_contracts_stream():
             label = f'assigned→{c.get("assignee_id")}'
         else:
             label = avail or '?'
+        issuer_name = issuer_names.get(int(c.get('issuer_id') or 0), '')
+        price = c.get('price')
+        price_str = f'{price:,.0f} ISK' if price is not None else 'no price'
+        included = [i for i in items_named if i.get('is_included', True)]
+        items_str = ', '.join(
+            f'{i["name"] or i["type_id"]} x{i["quantity"]}' for i in included
+        ) or '(no items)'
+        logger.warning(
+            'contract %s | "%s" | issuer=%s | %s | %s',
+            cid, c.get('title') or '', issuer_name, price_str, items_str,
+        )
         contracts_out.append({
             'contract_id': cid,
             'title': c.get('title') or '',
-            'price': c.get('price'),
+            'price': price,
             'availability': c.get('availability'),
             'assignee_id': c.get('assignee_id'),
             'issuer_id': c.get('issuer_id'),
-            'issuer_name': issuer_names.get(int(c.get('issuer_id') or 0), ''),
+            'issuer_name': issuer_name,
             'issuer_corporation_id': c.get('issuer_corporation_id'),
             'date_issued': c.get('date_issued'),
             'date_expired': c.get('date_expired'),
@@ -2048,24 +2066,11 @@ def _scan_contracts_stream():
                 matched_ids.append({'contract_id': co['contract_id'], 'count': n})
                 available += n
         missing = max(0, required - available)
-        sold_30d = 0
-        for cid, rec in sold_found.items():
-            items_named_sold = [
-                {
-                    'type_id': int(i.get('type_id') or 0),
-                    'quantity': int(i.get('quantity') or 0),
-                    'is_included': bool(i.get('is_included', True)),
-                    'name': '',
-                }
-                for i in sold_items_by_id.get(cid, [])
-            ]
-            sold_30d += _matches_quota(q, items_named_sold, rec['contract'])
         quotas_out.append({
             **q,
             'available': available,
             'missing': missing,
             'contracts': matched_ids,
-            'sold_30d': sold_30d,
         })
 
     yield _emit('done', payload={
@@ -2256,22 +2261,221 @@ def appraise_pinned(contract_id: int, req: PinAppraise):
 
 
 @app.get('/api/contracts/scan')
-def scan_contracts():
+def scan_contracts(alliance: str = 'all'):
     """NDJSON stream of outstanding item-exchange contracts posted by any
     authed slot's corporation at the configured home structure, plus
     per-quota aggregation.
 
-    Limitation: ESI doesn't expose other corps' alliance-availability contracts
-    unless someone with director/Contract Manager role in those corps is logged
-    in. Add more slots to cover more corps.
-
-    Emits ``progress`` events while fetching, then one ``done`` event with the
-    full payload. The payload's quotas list mirrors the configured quotas with
-    ``available``/``missing``/``contracts`` fields appended.
+    alliance: 'all' | 'main' | 'institute' — filters to slots in that alliance.
     """
     return StreamingResponse(
-        _scan_contracts_stream(), media_type='application/x-ndjson',
+        _scan_contracts_stream(alliance=alliance), media_type='application/x-ndjson',
     )
+
+
+def _sold_30d_scan_stream(alliance: str = 'all'):
+    """Stream sold-contract item fetching for all quotas.
+
+    Fetches corporation contracts for every authed slot, filters for finished
+    item-exchange contracts issued by that corp at the home structure in the
+    last 30 days, fetches their items, then emits a done event with per-quota
+    sold_30d counts.
+
+    alliance: 'all' | 'main' | 'institute' — filters to slots in that alliance.
+    """
+    cfg = load_config()
+    structure_id = int(cfg.get('home_structure_id') or 0)
+    quotas_key = 'quotas_institute' if alliance == 'institute' else 'quotas'
+    quotas = list(cfg.get(quotas_key) or [])
+    target_alliance_id = 0
+    if alliance in ('main', 'institute'):
+        target_alliance_id = int(cfg.get(f'alliance_id_{alliance}') or 0)
+    if not structure_id:
+        yield _emit('error', message='Set home_structure_id in Config first')
+        return
+
+    slots = list_authenticated_slots()
+    if not slots:
+        yield _emit('error', message='Log in at least one slot on the Auth tab')
+        return
+
+    ua = get_user_agent()
+    client_id, secret_key = get_app_credentials()
+    cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    sold_found: dict[int, dict] = {}
+    per_corp_done: set[int] = set()
+
+    for slot in slots:
+        yield _emit('progress', step=f'Resolving corp for {slot}…')
+        try:
+            token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+        except Exception as e:
+            yield _emit('progress', step=f'{slot}: token unusable — {e}')
+            continue
+        char_id = character_id_from_access_token(token)
+        if not char_id:
+            yield _emit('progress', step=f'{slot}: could not extract character_id')
+            continue
+        try:
+            cinfo = fetch_character_info(char_id, ua)
+        except Exception as e:
+            yield _emit('progress', step=f'{slot}: character info failed — {e}')
+            continue
+        corp_id = int(cinfo.get('corporation_id') or 0)
+        if not corp_id:
+            yield _emit('progress', step=f'{slot}: character has no corporation')
+            continue
+
+        if target_alliance_id:
+            slot_alliance_id = int(cinfo.get('alliance_id') or 0)
+            if slot_alliance_id != target_alliance_id:
+                yield _emit('progress', step=f'{slot}: skipping — not in selected alliance')
+                continue
+
+        if corp_id in per_corp_done:
+            yield _emit('progress', step=f'{slot}: corp {corp_id} already fetched — skipping')
+            continue
+
+        yield _emit('progress', step=f'{slot}: fetching corp {corp_id} contracts…')
+        try:
+            corp_contracts = fetch_corp_contracts(corp_id, token, ua)
+        except Exception as e:
+            yield _emit('progress', step=f'{slot}: contract fetch failed — {e}')
+            continue
+
+        for c in _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
+            cid = int(c.get('contract_id') or 0)
+            if cid not in sold_found:
+                sold_found[cid] = {'contract': c, 'char_id': char_id, 'corp_id': corp_id, 'token': token}
+        per_corp_done.add(corp_id)
+        yield _emit('progress', step=f'{slot}: {len(sold_found)} sold contract(s) so far')
+
+    _sold_contracts_cache[alliance] = sold_found
+
+    if not sold_found:
+        yield _emit('done', payload={'quotas': [{**q, 'sold_30d': 0} for q in quotas]})
+        return
+
+    def _fetch_items(cid_rec):
+        cid, rec = cid_rec
+        last_err = None
+        for attempt in range(3):
+            try:
+                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    time.sleep(1.5 ** attempt)
+        return cid, [], str(last_err)
+
+    sold_items_by_id: dict[int, list] = {}
+    uncached = {cid: rec for cid, rec in sold_found.items() if _contract_items_cache.get(cid) is None}
+    for cid in sold_found:
+        if cid not in uncached:
+            sold_items_by_id[cid] = _contract_items_cache[cid]
+
+    if uncached:
+        total = len(sold_found)
+        done_count = total - len(uncached)
+        yield _emit('progress', step=f'Fetching items for {len(uncached)} sold contract(s)…')
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
+            for future in as_completed(futures):
+                cid, items, err = future.result()
+                sold_items_by_id[cid] = items
+                if not err:
+                    _contract_items_cache[cid] = items
+                done_count += 1
+                yield _emit('progress', step=f'Items: {done_count}/{total}', current=done_count, total=total, phase='items')
+
+    quotas_out = []
+    for q in quotas:
+        sold_30d = 0
+        for cid, rec in sold_found.items():
+            items_named = [
+                {
+                    'type_id': int(i.get('type_id') or 0),
+                    'quantity': int(i.get('quantity') or 0),
+                    'is_included': bool(i.get('is_included', True)),
+                    'name': '',
+                }
+                for i in sold_items_by_id.get(cid, [])
+            ]
+            sold_30d += _matches_quota(q, items_named, rec['contract'])
+        quotas_out.append({**q, 'sold_30d': sold_30d})
+
+    yield _emit('done', payload={'quotas': quotas_out})
+
+
+@app.get('/api/contracts/sold-30d/scan')
+def sold_30d_scan(alliance: str = 'all'):
+    """NDJSON stream: fetch all sold contracts from the last 30 days and
+    compute per-quota sold counts.  Populates the sold-contracts cache so
+    subsequent per-quota lookups are instant.
+
+    alliance: 'all' | 'main' | 'institute' — filters to slots in that alliance.
+    """
+    return StreamingResponse(_sold_30d_scan_stream(alliance=alliance), media_type='application/x-ndjson')
+
+
+@app.get('/api/contracts/sold-30d')
+def contracts_sold_30d(ship_type_id: int, title_filter: str = '', alliance: str = 'all'):
+    """Return the number of contracts matching a quota that were sold in the
+    last 30 days.  Uses the sold-contract list captured during the most recent
+    scan so no extra ESI calls are needed for the contract listing itself.
+    Items are fetched on demand (and cached) the first time each contract is
+    requested.
+
+    alliance: 'all' | 'main' | 'institute' — must match the alliance used in the scan.
+    """
+    cache = _sold_contracts_cache.get(alliance, {})
+    if not cache:
+        return {'sold_30d': None}
+
+    ua = get_user_agent()
+    quota = {'ship_type_id': ship_type_id, 'title_filter': title_filter}
+
+    def _fetch_one(cid_rec):
+        cid, rec = cid_rec
+        last_err = None
+        for attempt in range(3):
+            try:
+                return cid, fetch_character_contract_items(rec['char_id'], cid, rec['token'], ua), None
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    time.sleep(1.5 ** attempt)
+        return cid, [], str(last_err)
+
+    sold_items_by_id: dict[int, list] = {}
+    uncached = {cid: rec for cid, rec in cache.items() if _contract_items_cache.get(cid) is None}
+    for cid in cache:
+        if cid not in uncached:
+            sold_items_by_id[cid] = _contract_items_cache[cid]
+
+    if uncached:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(_fetch_one, (cid, rec)): cid for cid, rec in uncached.items()}
+            for future in as_completed(futures):
+                cid, items, err = future.result()
+                sold_items_by_id[cid] = items
+                if not err:
+                    _contract_items_cache[cid] = items
+
+    sold_30d = 0
+    for cid, rec in cache.items():
+        items_named = [
+            {
+                'type_id': int(i.get('type_id') or 0),
+                'quantity': int(i.get('quantity') or 0),
+                'is_included': bool(i.get('is_included', True)),
+                'name': '',
+            }
+            for i in sold_items_by_id.get(cid, [])
+        ]
+        sold_30d += _matches_quota(quota, items_named, rec['contract'])
+
+    return {'sold_30d': sold_30d}
 
 
 # Sov-structure type IDs. ESI returns structure_type_id on each sov record.
