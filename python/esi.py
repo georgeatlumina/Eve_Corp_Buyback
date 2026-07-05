@@ -1,6 +1,28 @@
+import logging
+import re
+
 import requests
 
 ESI_BASE = 'https://esi.evetech.net/latest'
+
+logger = logging.getLogger(__name__)
+
+
+def _redact_url(url: str) -> str:
+    return re.sub(r'([?&])token=[^&]*', r'\1token=***', str(url))
+
+
+def _log_response(resp, *args, **kwargs):
+    elapsed = resp.elapsed.total_seconds() if resp.elapsed else -1
+    url = _redact_url(resp.url)
+    if resp.status_code >= 400:
+        logger.warning('ESI %s %s → %s (%.2fs)', resp.request.method, url, resp.status_code, elapsed)
+    else:
+        logger.info('ESI %s %s → %s (%.2fs)', resp.request.method, url, resp.status_code, elapsed)
+
+
+_session = requests.Session()
+_session.hooks['response'].append(_log_response)
 
 
 def resolve_names(ids, user_agent):
@@ -11,7 +33,7 @@ def resolve_names(ids, user_agent):
     out = {}
     for i in range(0, len(unique), 1000):
         chunk = unique[i:i + 1000]
-        resp = requests.post(
+        resp = _session.post(
             f'{ESI_BASE}/universe/names/',
             headers={
                 'Accept': 'application/json',
@@ -35,7 +57,7 @@ def resolve_ids(names, user_agent):
         return out
     for i in range(0, len(cleaned), 500):
         chunk = cleaned[i:i + 500]
-        resp = requests.post(
+        resp = _session.post(
             f'{ESI_BASE}/universe/ids/',
             headers={
                 'Accept': 'application/json',
@@ -64,7 +86,7 @@ def send_evemail(character_id, recipient_id, subject, body, access_token, user_a
         'recipients': [{'recipient_id': int(recipient_id), 'recipient_type': 'character'}],
         'subject': subject,
     }
-    resp = requests.post(
+    resp = _session.post(
         url,
         headers={
             'Accept': 'application/json',
@@ -86,7 +108,7 @@ def send_evemail(character_id, recipient_id, subject, body, access_token, user_a
 
 def fetch_corp_wallets(corp_id, access_token, user_agent):
     """Returns list of all 7 corp wallet division balances."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/corporations/{corp_id}/wallets/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility', 'token': access_token},
@@ -98,7 +120,7 @@ def fetch_corp_wallets(corp_id, access_token, user_agent):
 def fetch_contract_items(corp_id, contract_id, access_token, user_agent):
     """Fetch the items in a single corporation contract."""
     url = f'{ESI_BASE}/corporations/{corp_id}/contracts/{contract_id}/items/'
-    resp = requests.get(
+    resp = _session.get(
         url,
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility', 'token': access_token},
@@ -116,7 +138,7 @@ def fetch_type_info(type_id, user_agent):
     cached = _TYPE_INFO_CACHE.get(type_id)
     if cached is not None:
         return cached
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/types/{type_id}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -132,7 +154,7 @@ def fetch_group_info(group_id, user_agent):
     cached = _GROUP_INFO_CACHE.get(group_id)
     if cached is not None:
         return cached
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/groups/{group_id}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -145,7 +167,7 @@ def fetch_group_info(group_id, user_agent):
 
 def fetch_category_info(category_id, user_agent):
     """Fetch ESI universe category info. Returns dict with name, groups, etc."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/categories/{int(category_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -199,7 +221,7 @@ def fetch_zkill_meta(kill_id, user_agent):
 
     Returns {'hash': str, 'npc': bool} or None if zKill has no record.
     """
-    resp = requests.get(
+    resp = _session.get(
         f'{ZKILL_BASE}/killID/{int(kill_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
     )
@@ -218,7 +240,7 @@ def fetch_killmail(kill_id, kill_hash, user_agent):
     """Fetch a full killmail from ESI (victim hull + fitted items, system, etc.).
     Public endpoint — the (id, hash) pair is the access token. Killmails are
     immutable, so callers should cache the result."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/killmails/{int(kill_id)}/{kill_hash}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -233,7 +255,7 @@ def fetch_region_market_orders(region_id, type_id, user_agent, order_type='sell'
     out = []
     page = 1
     while True:
-        resp = requests.get(
+        resp = _session.get(
             url,
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'order_type': order_type,
@@ -262,7 +284,7 @@ def fetch_structure_orders_paged(structure_id, access_token, user_agent):
     url = f'{ESI_BASE}/markets/structures/{structure_id}/'
     page = 1
     while True:
-        resp = requests.get(
+        resp = _session.get(
             url,
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'token': access_token, 'page': page},
@@ -294,7 +316,7 @@ def fetch_corp_contracts(corp_id, access_token, user_agent):
     all_contracts = []
     page = 1
     while True:
-        resp = requests.get(
+        resp = _session.get(
             url,
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'token': access_token, 'page': page},
@@ -327,7 +349,7 @@ def fetch_corp_structures(corp_id, access_token, user_agent):
     all_structures = []
     page = 1
     while True:
-        resp = requests.get(
+        resp = _session.get(
             url,
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'token': access_token, 'page': page},
@@ -356,7 +378,7 @@ def fetch_public_contracts_paged(region_id, user_agent):
     url = f'{ESI_BASE}/contracts/public/{int(region_id)}/'
     page = 1
     while True:
-        resp = requests.get(
+        resp = _session.get(
             url,
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'page': page},
@@ -380,7 +402,7 @@ def fetch_public_contract_items(contract_id, user_agent):
     out = []
     page = 1
     while True:
-        resp = requests.get(
+        resp = _session.get(
             url,
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'page': page},
@@ -405,7 +427,7 @@ def fetch_character_contracts(character_id, access_token, user_agent):
     out = []
     page = 1
     while True:
-        resp = requests.get(
+        resp = _session.get(
             url,
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'token': access_token, 'page': page},
@@ -427,7 +449,7 @@ def fetch_character_contracts(character_id, access_token, user_agent):
 def fetch_character_contract_items(character_id, contract_id, access_token, user_agent):
     """Fetch items for one contract visible to a character."""
     url = f'{ESI_BASE}/characters/{int(character_id)}/contracts/{int(contract_id)}/items/'
-    resp = requests.get(
+    resp = _session.get(
         url,
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility', 'token': access_token},
@@ -440,7 +462,7 @@ def fetch_character_contract_items(character_id, contract_id, access_token, user
 
 def fetch_station_info(station_id, user_agent):
     """Public NPC station lookup — used to derive region_id from a station id."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/stations/{int(station_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -450,7 +472,7 @@ def fetch_station_info(station_id, user_agent):
 
 
 def fetch_system_info(system_id, user_agent):
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/systems/{int(system_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -460,7 +482,7 @@ def fetch_system_info(system_id, user_agent):
 
 
 def fetch_constellation_info(constellation_id, user_agent):
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/constellations/{int(constellation_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -470,7 +492,7 @@ def fetch_constellation_info(constellation_id, user_agent):
 
 
 def fetch_region_info(region_id, user_agent):
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/regions/{int(region_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -481,7 +503,7 @@ def fetch_region_info(region_id, user_agent):
 
 def fetch_character_info(character_id, user_agent):
     """Public character info: name, corporation_id, alliance_id (if any), security_status."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/characters/{int(character_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -492,7 +514,7 @@ def fetch_character_info(character_id, user_agent):
 
 def fetch_corporation_info(corp_id, user_agent):
     """Public corp info: name, ticker, alliance_id, member_count, tax_rate, war_eligible."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/corporations/{int(corp_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -503,7 +525,7 @@ def fetch_corporation_info(corp_id, user_agent):
 
 def fetch_alliance_info(alliance_id, user_agent):
     """Public alliance info: name, ticker, creator_corporation_id, executor_corporation_id, date_founded."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/alliances/{int(alliance_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -514,7 +536,7 @@ def fetch_alliance_info(alliance_id, user_agent):
 
 def fetch_sovereignty_structures(user_agent):
     """All sov structures (TCU/IHUB) in the cluster. Public, returns ~5k entries."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/sovereignty/structures/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -525,7 +547,7 @@ def fetch_sovereignty_structures(user_agent):
 
 def fetch_sovereignty_map(user_agent):
     """System → owning alliance/corp mapping for all sov-claimable space."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/sovereignty/map/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -536,7 +558,7 @@ def fetch_sovereignty_map(user_agent):
 
 def fetch_sovereignty_campaigns(user_agent):
     """Active sov campaigns (TCU/IHUB/station defense or freeport events)."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/sovereignty/campaigns/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -547,7 +569,7 @@ def fetch_sovereignty_campaigns(user_agent):
 
 def fetch_system_kills(user_agent):
     """Last-hour kill counts (ship_kills, npc_kills, pod_kills) for every system."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/system_kills/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -558,7 +580,7 @@ def fetch_system_kills(user_agent):
 
 def fetch_system_jumps(user_agent):
     """Last-hour jump counts for every system."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/universe/system_jumps/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
@@ -569,7 +591,7 @@ def fetch_system_jumps(user_agent):
 
 def fetch_incursions(user_agent):
     """Active Sansha incursions across the cluster."""
-    resp = requests.get(
+    resp = _session.get(
         f'{ESI_BASE}/incursions/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},

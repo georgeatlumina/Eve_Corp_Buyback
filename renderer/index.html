@@ -92,12 +92,19 @@
             <button type="button" id="btn-lookup-region" class="secondary">Lookup region (NPC stations only)</button>
             <span id="region-lookup-status" class="muted"></span>
           </div>
-          <h4 class="quota-h4">Ship/doctrine quotas</h4>
+          <div class="hs-row">
+            <label>NLDF (Main Alliance) ID <input name="alliance_id_main" type="number" placeholder="e.g. 99011978" /></label>
+            <label>NLDO alliance ID <input name="alliance_id_institute" type="number" placeholder="e.g. 99011979" /></label>
+          </div>
+          <p class="muted">Set the EVE alliance IDs above so the <strong>NLDF / NLDO</strong> selector on the Contracts tab knows which authenticated slots belong to each alliance.</p>
+
+          <h4 class="quota-h4">NLDF (Main Alliance) — Ship/doctrine quotas</h4>
           <p class="muted">Spreadsheet-style: tab/arrow between cells, click <em>+ Row</em> to add. Tip: paste rows directly from Excel/Sheets (tab- or comma-separated). CSV header: <code>name,ship_type_id,ship_name,required,title_filter</code>.</p>
           <div class="quota-table-wrap">
             <table id="quotas-table" class="quota-table">
               <thead>
                 <tr>
+                  <th class="q-drag-th"></th>
                   <th>Fit name</th>
                   <th>Ship type ID</th>
                   <th>Ship name</th>
@@ -120,7 +127,36 @@
             <span id="quota-io-status" class="muted"></span>
           </div>
 
-          <h4 class="quota-h4">Alliance quota sync</h4>
+          <h4 class="quota-h4">NLDO — Ship/doctrine quotas</h4>
+          <p class="muted">Same format as NLDF quotas above — used when <strong>NLDO</strong> is selected on the Contracts tab.</p>
+          <div class="quota-table-wrap">
+            <table id="quotas-institute-table" class="quota-table">
+              <thead>
+                <tr>
+                  <th class="q-drag-th"></th>
+                  <th>Fit name</th>
+                  <th>Ship type ID</th>
+                  <th>Ship name</th>
+                  <th>Required</th>
+                  <th>Title filter (optional)</th>
+                  <th>Auth fit ID</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="quotas-institute-tbody"></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button type="button" id="btn-add-quota-institute" class="secondary">+ Row</button>
+            <button type="button" id="btn-quota-institute-import-csv" class="secondary">Import CSV…</button>
+            <button type="button" id="btn-quota-institute-import-json" class="secondary">Import JSON…</button>
+            <button type="button" id="btn-quota-institute-export-csv" class="secondary">Export CSV</button>
+            <button type="button" id="btn-quota-institute-export-json" class="secondary">Export JSON</button>
+            <input type="file" id="quota-institute-import-file" hidden accept=".csv,.json,text/csv,application/json" />
+            <span id="quota-institute-io-status" class="muted"></span>
+          </div>
+
+          <h4 class="quota-h4">NLDF alliance quota sync</h4>
           <p class="muted">Pull quotas from a single source of truth — a <strong>private GitHub repo</strong> holding a <code>quotas.json</code> file. Paste the URL of the file (<code>https://github.com/&lt;owner&gt;/&lt;repo&gt;/blob/&lt;branch&gt;/quotas.json</code>). Every alliance member fills the <em>Read PAT</em> with a fine-grained token that has <code>Contents: read</code> on this repo. The admin additionally fills the <em>Write PAT</em> + ticks <em>Allow push</em> and uses the <strong>Push to repo</strong> button to commit changes. Sync also accepts the raw URL or the Contents API URL of the same file.</p>
           <!--
             Gist transport is still wired in the sidecar (see _resolve_gist_page_url
@@ -344,18 +380,30 @@
     <section id="tab-contracts" class="tab">
       <h2>Contracts &amp; quotas</h2>
       <p class="muted">Scans every outstanding item-exchange contract posted at the configured home structure by <strong>any corp that a logged-in slot is a Contract Manager / Director of</strong>. Add more slots on the Auth tab to cover more corps — each one widens the visible set. <strong>ESI limitation:</strong> corps you don't have a director token for stay invisible, even if their contracts show in the in-game alliance tab.</p>
+      <div class="alliance-toggle" role="group" aria-label="Alliance filter">
+        <button type="button" class="alliance-btn active" data-alliance="main">NLDF (Main Alliance)</button>
+        <button type="button" class="alliance-btn" data-alliance="institute">NLDO (Experimental)</button>
+      </div>
       <div class="actions">
-        <button id="btn-contracts-scan" type="button">Scan contracts</button>
+        <span class="contract-btn-wrap"><button id="btn-contracts-scan" type="button">Scan contracts</button></span>
+        <span class="contract-btn-wrap"><button id="btn-contracts-sold-scan" type="button">Sold 30 days</button></span>
         <select id="contracts-sort" class="secondary">
+          <option value="priority">Sort by priority</option>
           <option value="default">Sort by ship name</option>
           <option value="under-quota">Sort by under quota</option>
           <option value="value">Sort by value</option>
         </select>
+        <button id="btn-contracts-export-discord" type="button" class="secondary">Export for Discord</button>
         <button id="btn-contracts-export-csv" type="button" class="secondary">Export gap CSV</button>
         <button id="btn-contracts-export-text" type="button" class="secondary">Copy shopping list</button>
       </div>
+      <p id="contracts-hint" class="muted">Click <strong>Scan contracts</strong> to find contracts set up by the corporation, and <strong>Sold 30 days</strong> to get a count of contracts sold in the last 30 days for each ship.</p>
       <p id="contracts-status" class="muted"></p>
       <div class="progress-area" id="contracts-progress" hidden>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-step muted">starting…</div>
+      </div>
+      <div class="progress-area" id="contracts-sold-progress" hidden>
         <div class="progress-bar"><div class="progress-fill"></div></div>
         <div class="progress-step muted">starting…</div>
       </div>

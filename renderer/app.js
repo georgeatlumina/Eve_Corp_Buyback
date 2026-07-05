@@ -246,6 +246,9 @@ async function loadConfig() {
   if ($('[name=home_structure_id]')) $('[name=home_structure_id]').value = cfg.home_structure_id || '';
   if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
   renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
+  renderQuotas(Array.isArray(cfg.quotas_institute) ? cfg.quotas_institute : [], $('#quotas-institute-tbody'));
+  if ($('[name=alliance_id_main]')) $('[name=alliance_id_main]').value = cfg.alliance_id_main || '';
+  if ($('[name=alliance_id_institute]')) $('[name=alliance_id_institute]').value = cfg.alliance_id_institute || '';
   if ($('[name=alliance_quota_url]')) {
     $('[name=alliance_quota_url]').value = cfg.alliance_quota_url || '';
   }
@@ -380,6 +383,9 @@ function collectConfigForm() {
     home_structure_id: parseInt(fd.get('home_structure_id')) || 0,
     home_region_id: parseInt(fd.get('home_region_id')) || 0,
     quotas: collectQuotas(),
+    quotas_institute: collectQuotas($('#quotas-institute-tbody')),
+    alliance_id_main: parseInt(fd.get('alliance_id_main')) || 0,
+    alliance_id_institute: parseInt(fd.get('alliance_id_institute')) || 0,
     alliance_quota_url: (fd.get('alliance_quota_url') || '').toString().trim(),
     alliance_quota_auto_sync: $('[name=alliance_quota_auto_sync]')?.checked || false,
     alliance_quota_pat_read: (fd.get('alliance_quota_pat_read') || '').toString().trim(),
@@ -2463,6 +2469,7 @@ function quotaRow(q) {
   const tr = document.createElement('tr');
   tr.className = 'quota-row';
   tr.innerHTML = `
+    <td class="q-drag" title="Drag to reorder">⠿</td>
     <td><input type="text" class="q-name" value="${escapeAttr(q.name || '')}" placeholder="e.g. Cerberus Shield" /></td>
     <td><input type="text" inputmode="numeric" list="ships-datalist" class="q-tid" value="${q.ship_type_id || ''}" placeholder="type or pick…" /></td>
     <td><input type="text" list="ship-names-datalist" class="q-sname" value="${escapeAttr(q.ship_name || '')}" placeholder="e.g. Cerberus" /></td>
@@ -2472,6 +2479,10 @@ function quotaRow(q) {
     <td><button type="button" class="q-remove secondary" title="Remove row">✕</button></td>
   `;
   tr.querySelector('.q-remove').addEventListener('click', () => tr.remove());
+  // Only allow drag to begin from the handle cell, so clicking inputs works normally.
+  tr.addEventListener('mousedown', (e) => {
+    tr.draggable = !!e.target.closest('.q-drag');
+  });
   return tr;
 }
 
@@ -2560,16 +2571,14 @@ document.addEventListener('change', (ev) => {
   }
 });
 
-function renderQuotas(list) {
-  const tbody = $('#quotas-tbody');
+function renderQuotas(list, tbody = $('#quotas-tbody')) {
   if (!tbody) return;
   tbody.innerHTML = '';
   const rows = (list && list.length) ? list : [{}];
   rows.forEach((q) => tbody.appendChild(quotaRow(q || {})));
 }
 
-function collectQuotas() {
-  const tbody = $('#quotas-tbody');
+function collectQuotas(tbody = $('#quotas-tbody')) {
   if (!tbody) return [];
   return [...tbody.querySelectorAll('.quota-row')]
     .map((r) => ({
@@ -2583,34 +2592,153 @@ function collectQuotas() {
     .filter((q) => q.ship_type_id || q.name);
 }
 
-const addQuotaBtn = $('#btn-add-quota');
-if (addQuotaBtn) {
-  addQuotaBtn.addEventListener('click', () => {
-    $('#quotas-tbody').appendChild(quotaRow({}));
+// Bind all interactive controls for one quota table section.
+function bindQuotaSection(tbodyId, { addBtnId, importCsvBtnId, importJsonBtnId, exportCsvBtnId, exportJsonBtnId, importFileId, ioStatusId, exportFilename = 'quotas' }) {
+  const getTbody = () => document.getElementById(tbodyId);
+  let importMode = 'csv';
+
+  function setStatus(msg) {
+    const el = document.getElementById(ioStatusId);
+    if (!el) return;
+    el.textContent = msg;
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
+  }
+
+  document.getElementById(addBtnId)?.addEventListener('click', () => {
+    getTbody()?.appendChild(quotaRow({}));
+  });
+
+  document.getElementById(exportCsvBtnId)?.addEventListener('click', () => {
+    const data = collectQuotas(getTbody());
+    downloadBlob(`${exportFilename}.csv`, 'text/csv', quotasToCsv(data));
+    setStatus(`Exported ${data.length} rows as CSV.`);
+  });
+
+  document.getElementById(exportJsonBtnId)?.addEventListener('click', () => {
+    const data = collectQuotas(getTbody());
+    downloadBlob(`${exportFilename}.json`, 'application/json', JSON.stringify(data, null, 2));
+    setStatus(`Exported ${data.length} rows as JSON.`);
+  });
+
+  document.getElementById(importCsvBtnId)?.addEventListener('click', () => {
+    importMode = 'csv';
+    document.getElementById(importFileId)?.click();
+  });
+
+  document.getElementById(importJsonBtnId)?.addEventListener('click', () => {
+    importMode = 'json';
+    document.getElementById(importFileId)?.click();
+  });
+
+  document.getElementById(importFileId)?.addEventListener('change', async (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    ev.target.value = '';
+    try {
+      const text = await file.text();
+      let imported;
+      if (importMode === 'json') {
+        const parsed = JSON.parse(text);
+        imported = Array.isArray(parsed) ? parsed : (parsed.quotas || []);
+      } else {
+        imported = quotasFromCsvText(text);
+      }
+      if (!imported.length) { setStatus('No rows parsed from file.'); return; }
+      const replace = confirm(`Imported ${imported.length} quota rows. OK = replace current list. Cancel = append.`);
+      const current = replace ? [] : collectQuotas(getTbody());
+      renderQuotas([...current, ...imported], getTbody());
+      setStatus(`${replace ? 'Replaced with' : 'Appended'} ${imported.length} rows. Click "Save" to persist.`);
+    } catch (e) {
+      alert(`Import failed: ${e.message || e}`);
+    }
+  });
+
+  getTbody()?.addEventListener('paste', (ev) => {
+    const text = ev.clipboardData?.getData('text') || '';
+    if (!text.includes('\n') && !text.includes('\t')) return;
+    ev.preventDefault();
+    const rows = parseDelimited(text);
+    if (!rows.length) return;
+    const tbody = getTbody();
+    const targetRow = ev.target.closest('tr.quota-row');
+    rows.forEach((cells, i) => {
+      if (i === 0 && targetRow) {
+        fillQuotaRowFromCells(targetRow, cells, ev.target);
+      } else {
+        tbody.appendChild(quotaRow(rowFromCells(cells)));
+      }
+    });
+  });
+
+  // Drag-and-drop row reordering
+  let _dragSrc = null;
+  const _tbody = getTbody();
+  _tbody?.addEventListener('dragstart', (e) => {
+    _dragSrc = e.target.closest('.quota-row');
+    if (_dragSrc) {
+      e.dataTransfer.effectAllowed = 'move';
+      _dragSrc.classList.add('dragging');
+    }
+  });
+  _tbody?.addEventListener('dragend', () => {
+    _dragSrc?.classList.remove('dragging');
+    _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    _dragSrc = null;
+  });
+  _tbody?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.target.closest('.quota-row');
+    _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    if (!target || target === _dragSrc) return;
+    const { top, height } = target.getBoundingClientRect();
+    target.classList.add(e.clientY < top + height / 2 ? 'drag-over-top' : 'drag-over-bottom');
+  });
+  _tbody?.addEventListener('dragleave', (e) => {
+    if (!_tbody.contains(e.relatedTarget)) {
+      _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    }
+  });
+  _tbody?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.quota-row');
+    _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    if (!target || target === _dragSrc || !_dragSrc) return;
+    const { top, height } = target.getBoundingClientRect();
+    if (e.clientY < top + height / 2) {
+      _tbody.insertBefore(_dragSrc, target);
+    } else {
+      target.after(_dragSrc);
+    }
   });
 }
+
+bindQuotaSection('quotas-tbody', {
+  addBtnId: 'btn-add-quota',
+  importCsvBtnId: 'btn-quota-import-csv',
+  importJsonBtnId: 'btn-quota-import-json',
+  exportCsvBtnId: 'btn-quota-export-csv',
+  exportJsonBtnId: 'btn-quota-export-json',
+  importFileId: 'quota-import-file',
+  ioStatusId: 'quota-io-status',
+  exportFilename: 'quotas-nldo',
+});
+
+bindQuotaSection('quotas-institute-tbody', {
+  addBtnId: 'btn-add-quota-institute',
+  importCsvBtnId: 'btn-quota-institute-import-csv',
+  importJsonBtnId: 'btn-quota-institute-import-json',
+  exportCsvBtnId: 'btn-quota-institute-export-csv',
+  exportJsonBtnId: 'btn-quota-institute-export-json',
+  importFileId: 'quota-institute-import-file',
+  ioStatusId: 'quota-institute-io-status',
+  exportFilename: 'quotas-nldf',
+});
 
 // Paste-from-spreadsheet support: if the user pastes multi-line tab-separated
 // data into ANY quota input, expand into one row per line, mapping columns
 // left-to-right (name, type_id, ship_name, required, title_filter).
-$('#quotas-tbody')?.addEventListener('paste', (ev) => {
-  const text = ev.clipboardData?.getData('text') || '';
-  if (!text.includes('\n') && !text.includes('\t')) return; // single-cell paste — let the browser handle it
-  ev.preventDefault();
-  const rows = parseDelimited(text);
-  if (!rows.length) return;
-  const tbody = $('#quotas-tbody');
-  const targetRow = ev.target.closest('tr.quota-row');
-  // First parsed row replaces the cell-and-rightward of the target row, the rest are appended.
-  rows.forEach((cells, i) => {
-    if (i === 0 && targetRow) {
-      fillQuotaRowFromCells(targetRow, cells, ev.target);
-    } else {
-      const tr = quotaRow(rowFromCells(cells));
-      tbody.appendChild(tr);
-    }
-  });
-});
+// (handled per-section by bindQuotaSection above)
 
 function rowFromCells(cells) {
   return {
@@ -2688,13 +2816,6 @@ function quotasFromCsvText(text) {
   return dataRows.map(rowFromCells).filter((q) => q.ship_type_id || q.name);
 }
 
-function setQuotaIoStatus(msg) {
-  const el = $('#quota-io-status');
-  if (el) {
-    el.textContent = msg;
-    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
-  }
-}
 
 function downloadBlob(filename, mime, content) {
   const blob = new Blob([content], { type: mime });
@@ -2708,64 +2829,6 @@ function downloadBlob(filename, mime, content) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-$('#btn-quota-export-csv')?.addEventListener('click', () => {
-  const data = collectQuotas();
-  downloadBlob('quotas.csv', 'text/csv', quotasToCsv(data));
-  setQuotaIoStatus(`Exported ${data.length} rows as CSV.`);
-});
-
-$('#btn-quota-export-json')?.addEventListener('click', () => {
-  const data = collectQuotas();
-  downloadBlob('quotas.json', 'application/json', JSON.stringify(data, null, 2));
-  setQuotaIoStatus(`Exported ${data.length} rows as JSON.`);
-});
-
-let _quotaImportMode = 'csv';
-$('#btn-quota-import-csv')?.addEventListener('click', () => {
-  _quotaImportMode = 'csv';
-  $('#quota-import-file').click();
-});
-$('#btn-quota-import-json')?.addEventListener('click', () => {
-  _quotaImportMode = 'json';
-  $('#quota-import-file').click();
-});
-
-$('#quota-import-file')?.addEventListener('change', async (ev) => {
-  const file = ev.target.files?.[0];
-  if (!file) return;
-  ev.target.value = '';
-  try {
-    const text = await file.text();
-    const mode = (_quotaImportMode === 'json' || file.name.toLowerCase().endsWith('.json'))
-      ? 'json' : 'csv';
-    let imported;
-    if (mode === 'json') {
-      const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) throw new Error('JSON root must be an array');
-      imported = parsed.map((q) => ({
-        name: String(q.name || ''),
-        ship_type_id: parseInt(q.ship_type_id) || 0,
-        ship_name: String(q.ship_name || ''),
-        required: parseInt(q.required) || 0,
-        title_filter: String(q.title_filter || ''),
-      }));
-    } else {
-      imported = quotasFromCsvText(text);
-    }
-    if (!imported.length) {
-      setQuotaIoStatus('No rows parsed from file.');
-      return;
-    }
-    const replace = confirm(
-      `Imported ${imported.length} quota rows. OK = replace current list. Cancel = append.`
-    );
-    const current = replace ? [] : collectQuotas();
-    renderQuotas([...current, ...imported]);
-    setQuotaIoStatus(`${replace ? 'Replaced with' : 'Appended'} ${imported.length} rows. Click "Save" to persist.`);
-  } catch (e) {
-    alert(`Import failed: ${e.message || e}`);
-  }
-});
 
 // --- Whole-config export / import ---
 // Exports every saved key on the Config tab (corp ID, structures, refining
@@ -3075,63 +3138,205 @@ $('#btn-lookup-region')?.addEventListener('click', async () => {
 
 // --- Contracts scan ---
 let lastContractsScan = null;
+const contractsScanCache = {};
+let activeContractsAlliance = 'main';
+
+document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-alliance]');
+  if (!btn) return;
+  if (btn.dataset.alliance === activeContractsAlliance) return;
+  activeContractsAlliance = btn.dataset.alliance;
+  document.querySelectorAll('.alliance-btn').forEach((b) => b.classList.toggle('active', b === btn));
+  const _btnSold = $('#btn-contracts-sold-scan');
+  if (_btnSold && !_contractsScanRunning) _btnSold.disabled = !contractsScanCache[activeContractsAlliance];
+  if (contractsScanCache[activeContractsAlliance]) {
+    lastContractsScan = contractsScanCache[activeContractsAlliance];
+    renderContractsDashboard(lastContractsScan);
+  }
+});
 
 $('#btn-contracts-scan')?.addEventListener('click', runContractsScan);
+$('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
+$('#btn-contracts-export-discord')?.addEventListener('click', exportForDiscord);
 $('#btn-contracts-export-csv')?.addEventListener('click', exportGapCsv);
 $('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
 
+// Show a status message when the user clicks/hovers a disabled scan button.
+const _SCAN_BUSY_MSG = 'A scan is already running — please wait for it to finish.';
+const _SCAN_FIRST_MSG = 'Run "Scan contracts" first before fetching sold counts.';
+let _contractsScanRunning = false;
+
+// Sold button is disabled until the first contracts scan completes for the active alliance.
+$('#btn-contracts-sold-scan').disabled = true;
+
+function _soldBtnDisabledMsg() {
+  return _contractsScanRunning ? _SCAN_BUSY_MSG : _SCAN_FIRST_MSG;
+}
+
+$('#btn-contracts-scan')?.closest('.contract-btn-wrap')?.addEventListener('click', () => {
+  if ($('#btn-contracts-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+});
+$('#btn-contracts-sold-scan')?.closest('.contract-btn-wrap')?.addEventListener('click', () => {
+  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _soldBtnDisabledMsg();
+});
+$('#btn-contracts-scan')?.closest('.contract-btn-wrap')?.addEventListener('mouseenter', () => {
+  if ($('#btn-contracts-scan')?.disabled) $('#contracts-status').textContent = _SCAN_BUSY_MSG;
+});
+$('#btn-contracts-sold-scan')?.closest('.contract-btn-wrap')?.addEventListener('mouseenter', () => {
+  if ($('#btn-contracts-sold-scan')?.disabled) $('#contracts-status').textContent = _soldBtnDisabledMsg();
+});
+
 async function runContractsScan() {
+  const btnScan = $('#btn-contracts-scan');
+  const btnSold = $('#btn-contracts-sold-scan');
   const status = $('#contracts-status');
   const progress = $('#contracts-progress');
   const step = progress.querySelector('.progress-step');
   const fill = progress.querySelector('.progress-fill');
+  $('#contracts-hint').hidden = true;
   status.textContent = '';
+  status.style.color = '';
+  status.style.fontWeight = '';
   progress.hidden = false;
   step.textContent = 'starting…';
   fill.style.width = '5%';
   $('#contracts-quota-dashboard').innerHTML = '';
   $('#contracts-list').innerHTML = '';
   $('#contracts-count').textContent = '0';
+  if (btnScan) btnScan.disabled = true;
+  if (btnSold) btnSold.disabled = true;
+  _contractsScanRunning = true;
 
-  let res;
   try {
-    res = await fetch(`${API}/api/contracts/scan`);
-  } catch (e) {
-    status.textContent = `Network error: ${e}`;
-    progress.hidden = true;
-    return;
-  }
-  if (!res.ok) {
-    status.textContent = `HTTP ${res.status}: ${await res.text()}`;
-    progress.hidden = true;
-    return;
-  }
-
-  let setupTicks = 0;
-  await readNdjson(res, (evt) => {
-    if (evt.event === 'progress') {
-      step.textContent = evt.step || '';
-      let pct;
-      if (evt.phase === 'items' && evt.total > 0) {
-        pct = 25 + (evt.current / evt.total) * 60; // 25%→85%
-      } else if (evt.phase === 'sold_items' && evt.total > 0) {
-        pct = 85 + (evt.current / evt.total) * 10; // 85%→95%
-      } else {
-        setupTicks += 1;
-        pct = Math.min(23, 5 + setupTicks * 4); // 5%→23% for setup
-      }
-      fill.style.width = pct + '%';
-    } else if (evt.event === 'error') {
-      status.textContent = `Error: ${evt.message}`;
-    } else if (evt.event === 'done') {
-      lastContractsScan = evt.payload;
-      renderContractsDashboard(evt.payload);
-      step.textContent = 'done';
-      fill.style.width = '100%';
-      setTimeout(() => { progress.hidden = true; }, 600);
-      prefetchHullPrices(evt.payload.quotas || []);
+    let res;
+    try {
+      res = await fetch(`${API}/api/contracts/scan?alliance=${activeContractsAlliance}`);
+    } catch (e) {
+      status.textContent = `Network error: ${e}`;
+      progress.hidden = true;
+      return;
     }
-  });
+    if (!res.ok) {
+      status.textContent = `HTTP ${res.status}: ${await res.text()}`;
+      progress.hidden = true;
+      return;
+    }
+
+    let setupTicks = 0;
+    await readNdjson(res, (evt) => {
+      if (evt.event === 'progress') {
+        step.textContent = evt.step || '';
+        let pct;
+        if (evt.phase === 'items' && evt.total > 0) {
+          pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
+        } else {
+          setupTicks += 1;
+          pct = Math.min(23, 5 + setupTicks * 4); // 5%→23% for setup
+        }
+        fill.style.width = pct + '%';
+      } else if (evt.event === 'error') {
+        status.textContent = `Error: ${evt.message}`;
+      } else if (evt.event === 'done') {
+        lastContractsScan = evt.payload;
+        contractsScanCache[activeContractsAlliance] = evt.payload;
+        renderContractsDashboard(evt.payload);
+        step.textContent = 'done';
+        fill.style.width = '100%';
+        setTimeout(() => { progress.hidden = true; }, 600);
+        prefetchHullPrices(evt.payload.quotas || []);
+        const failedItems = (evt.payload.contracts || []).filter(c => c.items_error).length;
+        if (failedItems > 0) {
+          status.textContent = `⚠ ESI errors: items could not be fetched for ${failedItems} contract(s) — ship counts may be lower than actual. Try re-scanning.`;
+          status.style.color = '#e8a838';
+          status.style.fontWeight = 'bold';
+        } else {
+          status.style.color = '';
+          status.style.fontWeight = '';
+        }
+      }
+    });
+  } finally {
+    _contractsScanRunning = false;
+    if (btnScan) btnScan.disabled = false;
+    // Enable sold button only if a scan result exists for this alliance.
+    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
+    const _st = $('#contracts-status');
+    if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
+  }
+}
+
+async function runSold30dScan() {
+  const btnScan = $('#btn-contracts-scan');
+  const btnSold = $('#btn-contracts-sold-scan');
+  const status = $('#contracts-status');
+  const progress = $('#contracts-sold-progress');
+  const step = progress.querySelector('.progress-step');
+  const fill = progress.querySelector('.progress-fill');
+  $('#contracts-hint').hidden = true;
+  status.textContent = '';
+  progress.hidden = false;
+  step.textContent = 'starting…';
+  fill.style.width = '5%';
+  if (btnScan) btnScan.disabled = true;
+  if (btnSold) btnSold.disabled = true;
+
+  try {
+    let res;
+    try {
+      res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${activeContractsAlliance}`);
+    } catch (e) {
+      status.textContent = `Network error: ${e}`;
+      progress.hidden = true;
+      return;
+    }
+    if (!res.ok) {
+      status.textContent = `HTTP ${res.status}: ${await res.text()}`;
+      progress.hidden = true;
+      return;
+    }
+
+    let setupTicks = 0;
+    await readNdjson(res, (evt) => {
+      if (evt.event === 'progress') {
+        step.textContent = evt.step || '';
+        let pct;
+        if (evt.phase === 'items' && evt.total > 0) {
+          pct = 25 + (evt.current / evt.total) * 70; // 25%→95%
+        } else {
+          setupTicks += 1;
+          pct = Math.min(23, 5 + setupTicks * 4);
+        }
+        fill.style.width = pct + '%';
+      } else if (evt.event === 'error') {
+        status.textContent = `Error: ${evt.message}`;
+      } else if (evt.event === 'done') {
+        const quotas = evt.payload?.quotas || [];
+        for (const q of quotas) {
+          const bars = document.querySelectorAll(
+            `.quota-bar[data-ship-type-id="${q.ship_type_id}"]`
+          );
+          for (const bar of bars) {
+            const tf = (q.title_filter || '').toLowerCase();
+            if (bar.dataset.titleFilter !== tf) continue;
+            const soldEl = bar.querySelector('.quota-sold-count');
+            if (soldEl) {
+              soldEl.textContent = q.sold_30d ?? '—';
+              if ((q.sold_30d ?? 0) > 0) soldEl.classList.remove('muted');
+              else soldEl.classList.add('muted');
+            }
+          }
+        }
+        step.textContent = 'done';
+        fill.style.width = '100%';
+        setTimeout(() => { progress.hidden = true; }, 600);
+      }
+    });
+  } finally {
+    if (btnScan) btnScan.disabled = false;
+    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
+    const _st = $('#contracts-status');
+    if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
+  }
 }
 
 async function readNdjson(response, onEvent) {
@@ -3163,9 +3368,7 @@ function renderContractsDashboard(payload) {
   if (!quotas.length) {
     root.innerHTML = '<p class="muted">No quotas configured. Add some in Config.</p>';
   } else {
-    for (const q of quotas) {
-      root.appendChild(renderQuotaBar(q));
-    }
+    quotas.forEach((q, i) => root.appendChild(renderQuotaBar(q, i)));
     sortQuotaDashboard();
   }
 
@@ -3245,10 +3448,16 @@ async function prefetchHullPrices(quotas) {
 function sortQuotaDashboard() {
   const root = $('#contracts-quota-dashboard');
   if (!root) return;
-  const order = ($('#contracts-sort')?.value) || 'default';
+  const order = ($('#contracts-sort')?.value) || 'priority';
   const bars = [...root.querySelectorAll('.quota-bar')];
   bars.sort((a, b) => {
+    if (order === 'priority') {
+      return Number(a.dataset.priority) - Number(b.dataset.priority);
+    }
     if (order === 'under-quota') {
+      const aEmpty = a.classList.contains('quota-empty') ? 0 : 1;
+      const bEmpty = b.classList.contains('quota-empty') ? 0 : 1;
+      if (aEmpty !== bEmpty) return aEmpty - bEmpty;
       return Number(b.dataset.missing) - Number(a.dataset.missing);
     }
     if (order === 'value') {
@@ -3264,7 +3473,7 @@ function sortQuotaDashboard() {
 
 $('#contracts-sort')?.addEventListener('change', sortQuotaDashboard);
 
-function renderQuotaBar(q) {
+function renderQuotaBar(q, priority = 0) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
   const missing = Number(q.missing) || 0;
@@ -3272,7 +3481,10 @@ function renderQuotaBar(q) {
   const state = required === 0 ? 'unset' : available >= required ? 'ok' : available > 0 ? 'partial' : 'empty';
   const div = document.createElement('div');
   div.className = `quota-bar quota-${state}`;
+  div.dataset.priority = priority;
   div.dataset.shipName = (q.ship_name || q.name || '').toLowerCase();
+  div.dataset.shipTypeId = q.ship_type_id || '';
+  div.dataset.titleFilter = (q.title_filter || '').toLowerCase();
   div.dataset.missing = missing;
   div.dataset.price = '';
   div.innerHTML = `
@@ -3291,7 +3503,7 @@ function renderQuotaBar(q) {
       </div>
       <div class="quota-expand-row">
         <span class="quota-expand-label">Sold last 30 days</span>
-        <span class="${(q.sold_30d ?? 0) > 0 ? '' : 'muted'}">${q.sold_30d ?? 0}</span>
+        <span class="quota-sold-count muted">—</span>
       </div>
     </div>
   `;
@@ -3471,6 +3683,26 @@ function renderQuotaBar(q) {
     }
   }
 
+  async function loadSold30d() {
+    const soldEl = div.querySelector('.quota-sold-count');
+    if (!soldEl || !q.ship_type_id) return;
+    soldEl.textContent = '…';
+    try {
+      const params = new URLSearchParams({ ship_type_id: q.ship_type_id, alliance: activeContractsAlliance });
+      if (q.title_filter) params.set('title_filter', q.title_filter);
+      const res = await fetch(`${API}/api/contracts/sold-30d?${params}`);
+      const data = await res.json();
+      if (data.sold_30d != null) {
+        soldEl.textContent = data.sold_30d;
+        if (data.sold_30d > 0) soldEl.classList.remove('muted');
+      } else {
+        soldEl.textContent = '—';
+      }
+    } catch {
+      soldEl.textContent = '—';
+    }
+  }
+
   expandRow.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (e.target === refreshBtn) return; // handled by its own listener
@@ -3482,6 +3714,17 @@ function renderQuotaBar(q) {
   refreshBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await loadQuotaPrice(true);
+  });
+
+  const soldRow = div.querySelectorAll('.quota-expand-row')[1];
+  let soldLoaded = false;
+  soldRow.style.cursor = 'pointer';
+  soldRow.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (soldLoaded) return;
+    soldLoaded = true;
+    soldRow.style.cursor = 'default';
+    await loadSold30d();
   });
 
   return div;
@@ -3557,6 +3800,35 @@ function renderContractRow(c) {
   });
 
   return div;
+}
+
+async function exportForDiscord() {
+  if (!lastContractsScan) {
+    alert('Run a scan first.');
+    return;
+  }
+  const quotas = lastContractsScan.quotas || [];
+  const header = ['Ship / Fit name', 'Quota', 'On hand'];
+  const rows = quotas.map((q) => {
+    const ship = q.ship_name || '';
+    const fit = q.name || '';
+    const label = ship && fit ? `${ship} ${fit}` : ship || fit || `type ${q.ship_type_id}`;
+    return [label, String(q.required || 0), String(q.available || 0)];
+  });
+  const w0 = Math.max(header[0].length, ...rows.map((r) => r[0].length));
+  const w1 = Math.max(header[1].length, ...rows.map((r) => r[1].length));
+  const w2 = Math.max(header[2].length, ...rows.map((r) => r[2].length));
+  const fmt = ([name, quota, onhand]) =>
+    `${name.padEnd(w0)} | ${quota.padStart(w1)} | ${onhand.padStart(w2)}`;
+  const divider = `${'-'.repeat(w0)}-+-${'-'.repeat(w1)}-+-${'-'.repeat(w2)}`;
+  const lines = ['```', fmt(header), divider, ...rows.map(fmt), '```'];
+  const text = lines.join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    $('#contracts-status').textContent = `Copied Discord table (${rows.length} rows) to clipboard.`;
+  } catch (e) {
+    alert(text);
+  }
 }
 
 function exportGapCsv() {
