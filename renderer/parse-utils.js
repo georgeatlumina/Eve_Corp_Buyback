@@ -182,7 +182,11 @@ function parseSrpRequests(html) {
     const zkillUrl = zkillA ? (zkillA.getAttribute('href') || '') : '';
     const km = /\/kill\/(\d+)\//.exec(zkillUrl);
     const srpTd = tds[5];
-    const pk = srpTd.getAttribute('data-pk') || null;
+    // Alliance Auth moved the request pk + update-url onto the editable payout
+    // element inside this cell; older markup had them as <td> attributes. Try
+    // the inner element first, fall back to the <td>.
+    const payoutEl = srpTd.querySelector('[data-pk]') || srpTd.querySelector('.srp-payout-amount');
+    const pk = (payoutEl && payoutEl.getAttribute('data-pk')) || srpTd.getAttribute('data-pk') || null;
     const lossSort = tds[4].getAttribute('data-sort');
     const lossAmt = (lossSort != null && lossSort !== '')
       ? Number(lossSort)
@@ -198,7 +202,7 @@ function parseSrpRequests(html) {
       lossAmt,
       srpCost: (srpTd.textContent || '').trim(),
       srpCostNum: Number((srpTd.textContent || '').replace(/[^\d]/g, '')) || 0,
-      updateUrl: srpTd.getAttribute('data-url') || (pk ? `/srp/request/${pk}/update/` : ''),
+      updateUrl: (payoutEl && payoutEl.getAttribute('data-url')) || srpTd.getAttribute('data-url') || (pk ? `/srp/request/${pk}/update/` : ''),
       postTime: (tds[6].textContent || '').trim(),
       status: (tds[7].textContent || '').trim().replace(/\s+/g, ' '),
     });
