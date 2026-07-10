@@ -3677,6 +3677,9 @@ function sortQuotaDashboard() {
       if (aEmpty !== bEmpty) return aEmpty - bEmpty;
       return Number(b.dataset.missing) - Number(a.dataset.missing);
     }
+    if (order === 'under-quota-pct') {
+      return Number(a.dataset.missingPct) - Number(b.dataset.missingPct);
+    }
     if (order === 'value') {
       const av = a.dataset.price !== '' ? Number(a.dataset.price) : -1;
       const bv = b.dataset.price !== '' ? Number(b.dataset.price) : -1;
@@ -3703,6 +3706,7 @@ function renderQuotaBar(q, priority = 0) {
   div.dataset.shipTypeId = q.ship_type_id || '';
   div.dataset.titleFilter = (q.title_filter || '').toLowerCase();
   div.dataset.missing = missing;
+  div.dataset.missingPct = required > 0 ? (available / required) * 100 : 0;
   div.dataset.price = '';
   div.innerHTML = `
     <div class="quota-bar-head">

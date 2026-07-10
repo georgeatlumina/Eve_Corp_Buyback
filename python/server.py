@@ -3168,7 +3168,7 @@ def _scan_contracts_stream(alliance: str = 'all'):
     if uncached:
         yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
 
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
             done = len(found) - len(uncached)
             for future in as_completed(futures):
@@ -3564,7 +3564,7 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
         total = len(sold_found)
         done_count = total - len(uncached)
         yield _emit('progress', step=f'Fetching items for {len(uncached)} sold contract(s)…')
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
             for future in as_completed(futures):
                 cid, items, err = future.result()
@@ -3640,7 +3640,7 @@ def contracts_sold_30d(ship_type_id: int, title_filter: str = '', alliance: str 
             sold_items_by_id[cid] = _contract_items_cache[cid]
 
     if uncached:
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(_fetch_one, (cid, rec)): cid for cid, rec in uncached.items()}
             for future in as_completed(futures):
                 cid, items, err = future.result()
