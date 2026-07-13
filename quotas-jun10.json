@@ -12,7 +12,7 @@
     "ship_type_id": 72872,
     "ship_name": "Prophecy Navy Issue",
     "required": 10,
-    "title_filter": "Mk3",
+    "title_filter": "",
     "fit_id": 0
   },
   {
@@ -76,7 +76,7 @@
     "ship_type_id": 34828,
     "ship_name": "Jackdaw",
     "required": 10,
-    "title_filter": "Mk3",
+    "title_filter": "",
     "fit_id": 0
   },
   {
@@ -100,7 +100,7 @@
     "ship_type_id": 632,
     "ship_name": "Blackbird",
     "required": 2,
-    "title_filter": "Mk3",
+    "title_filter": "",
     "fit_id": 0
   },
   {
@@ -116,7 +116,7 @@
     "ship_type_id": 49710,
     "ship_name": "Kikimora",
     "required": 10,
-    "title_filter": "Mk3",
+    "title_filter": "",
     "fit_id": 0
   },
   {
@@ -124,7 +124,7 @@
     "ship_type_id": 37457,
     "ship_name": "Deacon",
     "required": 4,
-    "title_filter": "Mk3",
+    "title_filter": "",
     "fit_id": 0
   },
   {
@@ -228,7 +228,7 @@
     "ship_type_id": 634,
     "ship_name": "Exequror",
     "required": 5,
-    "title_filter": "Mk3",
+    "title_filter": "",
     "fit_id": 0
   },
   {
