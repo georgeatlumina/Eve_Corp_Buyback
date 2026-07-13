@@ -4,209 +4,231 @@
     "ship_type_id": 584,
     "ship_name": "Griffin",
     "required": 15,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Skirmish Dictor Mk3",
     "ship_type_id": 22464,
     "ship_name": "Flycatcher",
     "required": 10,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Tackle Mk3",
     "ship_type_id": 11186,
     "ship_name": "Malediction",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Damage Mk2",
     "ship_type_id": 11393,
     "ship_name": "Retribution",
     "required": 5,
-    "title_filter": "Mk2"
+    "title_filter": "Mk2",
+    "fit_id": 0
   },
   {
     "name": "Navy Damage Mk3",
     "ship_type_id": 11393,
     "ship_name": "Retribution",
     "required": 5,
-    "title_filter": "Mk3"
+    "title_filter": "Mk3",
+    "fit_id": 0
   },
   {
     "name": "Navy Logi Mk2",
     "ship_type_id": 37457,
     "ship_name": "Deacon",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Logi Mk3",
     "ship_type_id": 37457,
     "ship_name": "Deacon",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "NAVY QRF DREK",
     "ship_type_id": 49711,
     "ship_name": "Drekavac",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "NAVY QRF ENI",
     "ship_type_id": 29344,
     "ship_name": "Exequror Navy Issue",
     "required": 10,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Skirmish Damage Mk3",
     "ship_type_id": 11999,
     "ship_name": "Vagabond",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Damage Mk2",
     "ship_type_id": 72872,
     "ship_name": "Prophecy Navy Issue",
     "required": 3,
-    "title_filter": "Mk2"
+    "title_filter": "Mk2",
+    "fit_id": 0
   },
   {
     "name": "Navy Damage Mk2",
     "ship_type_id": 34828,
     "ship_name": "Jackdaw",
     "required": 3,
-    "title_filter": "Mk2"
+    "title_filter": "Mk2",
+    "fit_id": 0
   },
   {
     "name": "Navy Damage Mk3",
     "ship_type_id": 34828,
     "ship_name": "Jackdaw",
     "required": 3,
-    "title_filter": "Mk3"
+    "title_filter": "Mk3",
+    "fit_id": 0
   },
   {
     "name": "Hookbill Mk2",
     "ship_type_id": 17619,
     "ship_name": "Caldari Navy Hookbill",
     "required": 3,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Logi Mk3",
     "ship_type_id": 634,
     "ship_name": "Exequror",
     "required": 5,
-    "title_filter": "Mk3"
+    "title_filter": "Mk3",
+    "fit_id": 0
   },
   {
     "name": "Navy Logi Mk3",
     "ship_type_id": 11987,
     "ship_name": "Guardian",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Skirmish Logi Mk3",
     "ship_type_id": 11978,
     "ship_name": "Scimitar",
     "required": 3,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Logi Mk2",
     "ship_type_id": 37458,
     "ship_name": "Kirin",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Mk3",
     "ship_type_id": 12019,
     "ship_name": "Sacrilege",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Ewar Mk2",
     "ship_type_id": 632,
     "ship_name": "Blackbird",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Skirmish Links Mk3",
     "ship_type_id": 37480,
     "ship_name": "Bifrost",
     "required": 2,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Links Mk3",
     "ship_type_id": 22474,
     "ship_name": "Damnation",
     "required": 1,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Tackle Mk3",
     "ship_type_id": 11971,
     "ship_name": "Lachesis",
     "required": 1,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Ewar Mk3",
     "ship_type_id": 640,
     "ship_name": "Scorpion",
     "required": 1,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Fixit Mk2",
     "ship_type_id": 620,
     "ship_name": "Osprey",
     "required": 5,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Damage Mk3",
     "ship_type_id": 72872,
     "ship_name": "Prophecy Navy Issue",
     "required": 3,
-    "title_filter": "Mk3"
+    "title_filter": "Mk3",
+    "fit_id": 0
   },
   {
     "name": "Navy Damage Mk2",
     "ship_type_id": 49710,
     "ship_name": "Kikimora",
     "required": 3,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Bubble Mk2",
     "ship_type_id": 22452,
     "ship_name": "Heretic",
     "required": 10,
-    "title_filter": ""
-  },
-  {
-    "name": "Navy Neut Mk3",
-    "ship_type_id": 17920,
-    "ship_name": "Bhaalgorn",
-    "required": 1,
-    "title_filter": ""
+    "title_filter": "",
+    "fit_id": 0
   },
   {
     "name": "Navy Logi Mk2",
     "ship_type_id": 634,
     "ship_name": "Exequror",
     "required": 5,
-    "title_filter": "Mk2"
+    "title_filter": "Mk2",
+    "fit_id": 0
   }
 ]
