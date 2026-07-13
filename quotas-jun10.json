@@ -131,7 +131,7 @@
     "name": "Navy Skirmish Logi Mk3",
     "ship_type_id": 11978,
     "ship_name": "Scimitar",
-    "required": 3,
+    "required": 4,
     "title_filter": "",
     "fit_id": 0
   },
@@ -147,7 +147,7 @@
     "name": "Navy Skirmish Tackle Mk3",
     "ship_type_id": 11400,
     "ship_name": "Jaguar",
-    "required": 0,
+    "required": 2,
     "title_filter": "",
     "fit_id": 0
   },
@@ -155,7 +155,7 @@
     "name": "Navy Skirmish Mk2",
     "ship_type_id": 631,
     "ship_name": "Scythe",
-    "required": 0,
+    "required": 2,
     "title_filter": "",
     "fit_id": 0
   },
@@ -163,7 +163,15 @@
     "name": "Navy Skirmish Mk2",
     "ship_type_id": 29340,
     "ship_name": "Osprey Navy Issue",
-    "required": 0,
+    "required": 2,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy Skirmish Links Mk3",
+    "ship_type_id": 37480,
+    "ship_name": "Bifrost",
+    "required": 2,
     "title_filter": "",
     "fit_id": 0
   },
@@ -188,14 +196,6 @@
     "ship_type_id": 37458,
     "ship_name": "Kirin",
     "required": 5,
-    "title_filter": "",
-    "fit_id": 0
-  },
-  {
-    "name": "Navy Skirmish Links Mk3",
-    "ship_type_id": 37480,
-    "ship_name": "Bifrost",
-    "required": 2,
     "title_filter": "",
     "fit_id": 0
   },
@@ -229,6 +229,38 @@
     "ship_name": "Exequror",
     "required": 5,
     "title_filter": "Mk2",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy ESS Damage Mk3",
+    "ship_type_id": 12015,
+    "ship_name": "Muninn",
+    "required": 10,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy ESS Logi Mk3",
+    "ship_type_id": 11978,
+    "ship_name": "Scimitar",
+    "required": 2,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy ESS Damage Mk3",
+    "ship_type_id": 630,
+    "ship_name": "Bellicose",
+    "required": 1,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy ESS Webs",
+    "ship_type_id": 11961,
+    "ship_name": "Huginn",
+    "required": 1,
+    "title_filter": "",
     "fit_id": 0
   }
 ]
