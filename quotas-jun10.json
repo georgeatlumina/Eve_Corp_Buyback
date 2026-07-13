@@ -75,7 +75,7 @@
     "name": "Navy Damage Mk3",
     "ship_type_id": 34828,
     "ship_name": "Jackdaw",
-    "required": 3,
+    "required": 10,
     "title_filter": "Mk3",
     "fit_id": 0
   },
@@ -83,7 +83,7 @@
     "name": "Hookbill Mk2",
     "ship_type_id": 17619,
     "ship_name": "Caldari Navy Hookbill",
-    "required": 3,
+    "required": 5,
     "title_filter": "",
     "fit_id": 0
   },
