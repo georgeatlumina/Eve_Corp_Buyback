@@ -8,6 +8,54 @@
     "fit_id": 0
   },
   {
+    "name": "Navy Damage Mk3",
+    "ship_type_id": 72872,
+    "ship_name": "Prophecy Navy Issue",
+    "required": 10,
+    "title_filter": "Mk3",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy Logi Mk3",
+    "ship_type_id": 11987,
+    "ship_name": "Guardian",
+    "required": 10,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy Links Mk3",
+    "ship_type_id": 22474,
+    "ship_name": "Damnation",
+    "required": 2,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy Tackle Mk3",
+    "ship_type_id": 12017,
+    "ship_name": "Devoter",
+    "required": 2,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "NAVY QRF DREK",
+    "ship_type_id": 49711,
+    "ship_name": "Drekavac",
+    "required": 10,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy Damage Mk3",
+    "ship_type_id": 11393,
+    "ship_name": "Retribution",
+    "required": 5,
+    "title_filter": "Mk3",
+    "fit_id": 0
+  },
+  {
     "name": "Navy Skirmish Dictor Mk3",
     "ship_type_id": 22464,
     "ship_name": "Flycatcher",
@@ -32,14 +80,6 @@
     "fit_id": 0
   },
   {
-    "name": "Navy Damage Mk3",
-    "ship_type_id": 11393,
-    "ship_name": "Retribution",
-    "required": 5,
-    "title_filter": "Mk3",
-    "fit_id": 0
-  },
-  {
     "name": "Navy Logi Mk2",
     "ship_type_id": 37457,
     "ship_name": "Deacon",
@@ -51,14 +91,6 @@
     "name": "Navy Logi Mk3",
     "ship_type_id": 37457,
     "ship_name": "Deacon",
-    "required": 5,
-    "title_filter": "",
-    "fit_id": 0
-  },
-  {
-    "name": "NAVY QRF DREK",
-    "ship_type_id": 49711,
-    "ship_name": "Drekavac",
     "required": 5,
     "title_filter": "",
     "fit_id": 0
@@ -77,14 +109,6 @@
     "ship_name": "Vagabond",
     "required": 5,
     "title_filter": "",
-    "fit_id": 0
-  },
-  {
-    "name": "Navy Damage Mk2",
-    "ship_type_id": 72872,
-    "ship_name": "Prophecy Navy Issue",
-    "required": 3,
-    "title_filter": "Mk2",
     "fit_id": 0
   },
   {
@@ -117,14 +141,6 @@
     "ship_name": "Exequror",
     "required": 5,
     "title_filter": "Mk3",
-    "fit_id": 0
-  },
-  {
-    "name": "Navy Logi Mk3",
-    "ship_type_id": 11987,
-    "ship_name": "Guardian",
-    "required": 5,
-    "title_filter": "",
     "fit_id": 0
   },
   {
@@ -168,14 +184,6 @@
     "fit_id": 0
   },
   {
-    "name": "Navy Links Mk3",
-    "ship_type_id": 22474,
-    "ship_name": "Damnation",
-    "required": 1,
-    "title_filter": "",
-    "fit_id": 0
-  },
-  {
     "name": "Navy Tackle Mk3",
     "ship_type_id": 11971,
     "ship_name": "Lachesis",
@@ -197,14 +205,6 @@
     "ship_name": "Osprey",
     "required": 5,
     "title_filter": "",
-    "fit_id": 0
-  },
-  {
-    "name": "Navy Damage Mk3",
-    "ship_type_id": 72872,
-    "ship_name": "Prophecy Navy Issue",
-    "required": 3,
-    "title_filter": "Mk3",
     "fit_id": 0
   },
   {
