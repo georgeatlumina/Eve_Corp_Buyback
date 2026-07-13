@@ -167,7 +167,7 @@ $$('.tab-btn').forEach((btn) => {
 const VIEW_MODE_KEY = 'viewMode';
 // Tabs hidden in Member view (the Operations group). The General group and the
 // Settings cluster (top bar) stay visible in both modes.
-const ADMIN_ONLY_TABS = ['buybacks', 'working', 'contracts', 'srp', 'hooks-hubs'];
+const ADMIN_ONLY_TABS = ['buybacks', 'working', 'contracts', 'srp', 'liquidation', 'hooks-hubs'];
 
 function getViewMode() {
   return localStorage.getItem(VIEW_MODE_KEY) === 'admin' ? 'admin' : 'member';

@@ -54,6 +54,14 @@ and a one-line description.
 | `GET /api/structures/fuel` | `structures_fuel` | [server.py](python/server.py) | Hooks & Hubs fuel: enumerates authenticated slots' corps (slot 4 = Director), fetches `/corporations/{id}/structures/`, dedupes, classifies skyhook/hub/other by resolved type name, returns per-structure `seconds_remaining` + per-type summaries. Per-slot/corp failures (missing scope/role) surface in `auth_errors`. |
 | `GET /api/workforce-plan` | `get_workforce_plan` | [server.py](python/server.py) | Return the manual Hooks & Hubs planner document (`workforce_plan.load_plan`). |
 | `PUT /api/workforce-plan` | `put_workforce_plan` | [server.py](python/server.py) | Replace the whole planner document (`workforce_plan.save_plan`). |
+| `POST /api/liquidation/analyze` | `liquidation_analyze` | [server.py](python/server.py) | NDJSON stream. Analyze a courier contract from `paste_text` **or** a `janice_url` (the contract title). Appraises items at Jita via Janice (type_ids + volumes), overrides sell/buy with the **live ESI order book**, pulls Amarr buy (Janice) for cost basis, gathers ESI signals concurrently, computes courier cost, then `liquidation.analyze_items`. Echoes `contract_id`. |
+| `GET /api/liquidation/item-history` | `liquidation_item_history` | [server.py](python/server.py) | ESI daily price/volume history (The Forge) + live book signal for one `type_id` — powers the slide-out detail chart. |
+| `GET /api/liquidation/shipments` | `liquidation_shipments` | [server.py](python/server.py) | The shipment board (GitHub-repo-backed, local fallback) + courier accept/deliver days. |
+| `POST /api/liquidation/shipments` | `liquidation_add_shipment` | [server.py](python/server.py) | Add a tracked shipment (via `_liq_mutate_store` → `liquidation.apply_add`). |
+| `PATCH /api/liquidation/shipments/{id}` | `liquidation_patch_shipment` | [server.py](python/server.py) | Patch status/label/notes/delivered_at (`apply_update`). |
+| `DELETE /api/liquidation/shipments/{id}` | `liquidation_delete_shipment` | [server.py](python/server.py) | Remove a shipment (`apply_remove`). |
+| `GET /api/liquidation/corp-orders` | `liquidation_corp_orders` | [server.py](python/server.py) | Live corp Jita **sell** orders enriched with cost basis, best-sell/undercut, days-to-sell, window time-left, STALE flag. Needs `esi-markets.read_corporation_orders.v1` (returns `{configured:false, reason}` otherwise). |
+| `GET /api/liquidation/courier-contracts` | `liquidation_courier_contracts` | [server.py](python/server.py) | Corp ESI **courier** contracts bucketed active/completed/problem, assignee + route names resolved, configured provider flagged. Needs `esi-contracts.read_corporation_contracts.v1`. |
 
 ### Helpers / internals
 
@@ -130,6 +138,23 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 
 ---
 
+## `python/liquidation.py` — Liquidation store + decision engine (~300 LOC)
+
+[python/liquidation.py](python/liquidation.py). Pure (no network IO) — like `validate.py`. The store is one JSON doc `{shipments: [...]}`; mutations are pure functions so `server.py` can persist to the GitHub repo or the local cache.
+
+| Function | Purpose |
+|---|---|
+| `empty_store()` / `normalize(data)` | Default doc + shape coercion (drops shipments without an id). |
+| `load_store_local()` / `save_store_local(store)` | Local cache copy at `<AUTH_DIR>/liquidation.json` (chmod 600, atomic replace). |
+| `apply_add(store, shipment)` | Prepend a shipment (assigns id + created_at). Returns `(new_store, shipment)`. |
+| `apply_update(store, id, fields)` | Patch an allowlisted subset (`label/status/delivered_at/notes/rush`). Returns `(new_store, updated_or_None)`. |
+| `apply_remove(store, id)` | Returns `(new_store, removed_bool)`. |
+| `courier_cost(collateral, volume_m3, rush, cfg)` | PushX rate card: base + one step-fee per collateral step over the free ceiling + rush fee; flags `over_volume`. |
+| `analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units, courier_alloc_unit, cfg)` | Per-item margins (list vs dump, net of broker+tax), days-to-sell, annualized ROI, `low_confidence` (near-zero cost basis), and a recommended `action` (`list`/`dump`/`underwater`/`no_data`) + `window_days`. |
+| `analyze_items(rows, amarr_buy, history, depth, courier_total, cfg)` | Allocates courier across rows by Jita sell value, runs `analyze_row` for each, returns `{items, totals}` (totals include `by_action` counts). |
+
+---
+
 ## `python/esi.py` — ESI wrappers (~458 LOC)
 
 [python/esi.py](python/esi.py)
@@ -146,6 +171,8 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 | `fetch_all_ship_types(user_agent)` | [131](python/esi.py#L131) | Walks category 6 → groups → type ids → bulk `resolve_names`. Returns `[{type_id, name, group_id, group_name}]` for every published ship hull (~560 entries). Cached to disk server-side; used by the quota-editor dropdown. |
 | `fetch_structure_orders_paged(structure_id, access_token, user_agent)` | [167](python/esi.py#L167) | **Generator** yielding `(page, max_pages, batch)`. Used for SSE progress. |
 | `fetch_structure_orders(structure_id, access_token, user_agent)` | [196](python/esi.py#L196) | Convenience wrapper that consumes the generator. |
+| `fetch_region_market_history(region_id, type_id, user_agent)` | [esi.py](python/esi.py) | Daily traded price/volume history (`{date, average, highest, lowest, order_count, volume}`, ~13 months). Real *traded* liquidity — the Liquidation days-to-sell + detail chart. Public. |
+| `fetch_corp_orders(corp_id, access_token, user_agent)` | [esi.py](python/esi.py) | All pages of a corp's open market orders. Needs `esi-markets.read_corporation_orders.v1` + Accountant/Trader role. Powers the Liquidation open-orders view. |
 | `fetch_corp_contracts(corp_id, access_token, user_agent)` | [204](python/esi.py#L204) | Paginated corp contracts. Used by Buyback validation, Moon processing, and the Contracts scan. |
 | `fetch_corp_structures(corp_id, access_token, user_agent)` | [esi.py](python/esi.py) | Paginated corp-owned structures (skyhooks, sov hubs, citadels) with `fuel_expires` / `services` / `state`. Needs `esi-corporations.read_structures.v1` + Director. Drives the Hooks & Hubs fuel dashboard. |
 | `fetch_public_contracts_paged(region_id, user_agent)` | [229](python/esi.py#L229) | Generator over public contracts in a region. (Available for future region-wide use; not currently called.) |
@@ -181,6 +208,9 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 | `_normalize(code, data, source)` | Map raw Janice response → `{percentage, effective_offer, total_buy_price, market_name, items, source, raw}` consumed by `validate.py`. **Single source of truth for the appraisal shape.** |
 | `create_appraisal(items, market_name, api_key=None)` | Build a new appraisal from a list of `{name, quantity}` items. Used for moon Janice references. |
 | `create_appraisal_from_text(input_text, market_name, api_key=None, persist=False)` | Used by the Working tab and Appraisal tab. Takes raw EVE-format paste text (skipping the items→text serialization). Set `persist=True` to ask Janice to save the appraisal so the returned `code` can be turned into a shareable `janice.e-351.com/a/<code>` URL. |
+| `fetch_buy_prices(type_ids, market_name='Jita 4-4', api_key=None, user_agent=None)` | Bulk per-unit immediate **buy** prices via the pricer (concurrent). Requires an API key. Used for Liquidation's Amarr cost basis and moon refining. |
+| `appraise_items(paste_text, market_name='Jita 4-4', api_key=None)` | Liquidation helper: create an appraisal and return normalized rows `{type_id, name, quantity, unit_volume_m3, sell_unit, buy_unit}` (immediate prices at `market_name`), dropping unresolved types. |
+| `items_from_appraisal(url, api_key=None)` | Liquidation helper: pull `[{name, quantity}]` from an existing appraisal URL/code — lets a courier contract analyze straight from its Janice-link title. |
 | `fetch_type_sell_price(type_id, market_name='Amarr', api_key=None)` | Janice's pricer endpoint for one type at one market — used by `/api/market/amarr-sell`. Returns `None` if no API key is set (since pricer requires auth). |
 | `_create_via_rpc(input_text, market_id, persist=False)` | Anonymous appraisal-create. |
 | `_create_via_api(input_text, market_id, api_key, persist=False)` | Authenticated appraisal-create. |
@@ -554,6 +584,27 @@ client-side over one cached payload.
 | `filteredSortedRows()` / `renderThead()` / `renderMarketTable()` | Column-driven render for the active mode (`MARKET_COLS` vs `LENS_COLS`); filters by search/category + mode-specific (numeric vs status); nulls always sort last. |
 | `marketSortBy(key)` / `setLens(on)` | Header-click sort toggle; lens on/off (swaps columns, default sort, and which filters show). |
 | `populateMarketCategories()` / `renderMarketTiles()` | Category dropdown + totals tiles. |
+
+---
+
+## `renderer/liquidation.js` — Liquidation tab (~640 LOC)
+
+[renderer/liquidation.js](renderer/liquidation.js). Self-contained IIFE loaded after `app.js` (reuses `$`/`$$`/`API`/`formatIsk`/`escapeHtml`/`readNdjson`). Three sub-views + a slide-out item-detail chart.
+
+| Function | Purpose |
+|---|---|
+| `initLiquidationTab()` | Lazy first load (shipments + KPIs) on tab open. |
+| `setSub(name)` | Switch Analyze / Shipments / Open-orders sub-view. |
+| `runAnalyze()` / `analyzeFromContract(contractId, code)` | POST `/api/liquidation/analyze` from paste text or a courier contract's Janice code; consume the NDJSON stream. |
+| `renderAnalyze()` / `renderAnalyzeTable()` / `analyzeRows()` | Summary tiles + clickable action pills, sortable table (default sort = net ISK), search + action filter, row-click copy, ⓘ detail button. |
+| `exportRows(fmt)` / `download(...)` | Export the filtered+sorted rows to CSV/TXT (Blob download). |
+| `createShipment()` | POST a tracked shipment from the current analysis. |
+| `loadShipments()` / `renderShipments()` / `shipmentAction(act, id)` | Local tracked-shipment board + deliver/cancel/delete. |
+| `loadCourier()` / `renderCourier()` | Live ESI courier contracts, provider-only by default (`liq-courier-all-providers` toggle), per-row Analyze. |
+| `loadOrders()` / `renderOrders()` | Live corp Jita sell orders with fill %, undercut/STALE flags. |
+| `openDetail(typeId, name)` / `loadDetail()` / `renderDetail()` / `buildChart(hist, sig)` | Slide-out market-detail panel: inline-SVG price+volume chart (30/90/365d) + live book stats. |
+| `renderKpis()` | Capital-at-risk KPI strip (in-flight value/courier, listed value, stale capital). |
+| `copyName(name)` / `toast(msg)` | Clipboard copy + transient confirmation. |
 
 ---
 

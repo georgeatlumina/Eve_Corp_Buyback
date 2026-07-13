@@ -52,7 +52,9 @@ from esi import (
     fetch_corporation_info,
     fetch_incursions,
     fetch_region_info,
+    fetch_region_market_history,
     fetch_region_market_orders,
+    fetch_corp_orders,
     fetch_sovereignty_campaigns,
     fetch_sovereignty_map,
     fetch_sovereignty_structures,
@@ -66,7 +68,15 @@ from esi import (
     resolve_ids,
     send_evemail,
 )
-from janice import create_appraisal, create_appraisal_from_text, fetch_type_sell_price
+from janice import (
+    appraise_items,
+    create_appraisal,
+    create_appraisal_from_text,
+    fetch_buy_prices,
+    fetch_type_sell_price,
+    items_from_appraisal,
+)
+import liquidation
 from market import enrich as enrich_types, missing_ids as meta_missing_ids
 from pinned import (
     append_appraisal,
@@ -1747,6 +1757,597 @@ def get_amarr_sell_price(type_id: int, bust: bool = False):
     result = {'type_id': type_id, 'min_sell': min_sell, 'source': 'janice' if api_key else 'esi'}
     _amarr_price_cache[type_id] = {'fetched_at': now, 'result': result}
     return result
+
+
+# ----------------------- Liquidation page -----------------------
+# Buyback items are shipped Amarr -> Jita (PushX courier) and sold. This block
+# powers the three views: an analyzer (paste a courier contract -> per-item
+# margin + dump/list recommendation), courier-shipment tracking, and live
+# open Jita sell orders pulled from the corp's ESI market orders.
+
+_liq_signal_cache: dict[int, dict] = {}
+_LIQ_SIGNAL_TTL = 300  # 5 min per-type ESI signal cache
+
+
+def _market_signal(type_id, cfg, ua):
+    """Live Jita signals for one type, straight from the ESI order book:
+    best sell + on-book sell units + the sorted sell book (price, units) at the
+    sell station, the best *buy* order reachable from Jita 4-4, and the trailing
+    average daily *traded* volume. Cached 5 min. Never raises (best-effort)."""
+    now = time.time()
+    cached = _liq_signal_cache.get(type_id)
+    if cached and (now - cached['fetched_at']) < _LIQ_SIGNAL_TTL:
+        return cached['signal']
+    region = int(cfg.get('liquidation_sell_region_id') or 10000002)
+    station = int(cfg.get('liquidation_sell_station_id') or 60003760)
+    system = int(cfg.get('liquidation_sell_system_id') or 30000142)
+    days = int(cfg.get('liquidation_vol_window_days') or 20)
+    book = []
+    on_book = 0
+    best_sell = None
+    try:
+        orders = fetch_region_market_orders(region, type_id, ua, order_type='sell')
+        for o in orders:
+            if int(o.get('location_id') or 0) != station:
+                continue
+            price = float(o.get('price') or 0)
+            vol = int(o.get('volume_remain') or 0)
+            on_book += vol
+            book.append((price, vol))
+            if best_sell is None or price < best_sell:
+                best_sell = price
+    except Exception:
+        pass
+    # Best buy order a seller standing in Jita 4-4 can immediately hit: any buy
+    # order at that station, anywhere in the Jita system, or region-wide range.
+    # (Full jump-range math is overkill — region + same-system covers Jita's
+    # real buy wall.)
+    best_buy = None
+    try:
+        buys = fetch_region_market_orders(region, type_id, ua, order_type='buy')
+        for o in buys:
+            rng = o.get('range')
+            reachable = (
+                int(o.get('location_id') or 0) == station
+                or rng == 'region'
+                or int(o.get('system_id') or 0) == system
+            )
+            if not reachable:
+                continue
+            price = float(o.get('price') or 0)
+            if best_buy is None or price > best_buy:
+                best_buy = price
+    except Exception:
+        pass
+    avg_vol = 0.0
+    try:
+        hist = fetch_region_market_history(region, type_id, ua)
+        recent = hist[-days:] if days and len(hist) > days else hist
+        vols = [float(h.get('volume') or 0) for h in recent]
+        avg_vol = (sum(vols) / len(vols)) if vols else 0.0
+    except Exception:
+        pass
+    book.sort()
+    signal = {'best_sell': best_sell, 'best_buy': best_buy, 'on_book': on_book,
+              'avg_daily_vol': avg_vol, 'book': book}
+    _liq_signal_cache[type_id] = {'fetched_at': now, 'signal': signal}
+    return signal
+
+
+def _depth_ahead(book, reference_price):
+    """Units on the sell book priced at/below ``reference_price`` (competition
+    that clears before ours if we list at ``reference_price``)."""
+    if reference_price is None:
+        return None
+    return sum(v for p, v in book if p <= reference_price + 1e-6)
+
+
+def _fetch_signals(type_ids, cfg, ua, on_progress=None):
+    """Concurrently gather `_market_signal` for many types. Returns
+    ``{type_id: signal}`` and calls ``on_progress(done, total)`` as it goes."""
+    ids = sorted({int(t) for t in type_ids if t})
+    out = {}
+    done = 0
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        futs = {ex.submit(_market_signal, t, cfg, ua): t for t in ids}
+        for fut in as_completed(futs):
+            t = futs[fut]
+            try:
+                out[t] = fut.result()
+            except Exception:
+                out[t] = {'best_sell': None, 'on_book': 0, 'avg_daily_vol': 0.0, 'book': []}
+            done += 1
+            if on_progress and (done % 3 == 0 or done == len(ids)):
+                on_progress(done, len(ids))
+    return out
+
+
+class LiquidationAnalyzeRequest(BaseModel):
+    paste_text: Optional[str] = None
+    janice_url: Optional[str] = None   # analyze straight from a contract's Janice title
+    contract_id: Optional[int] = None  # echoed back so the UI can link the result
+    rush: bool = False
+    include_courier: bool = True
+
+
+@app.post('/api/liquidation/analyze')
+def liquidation_analyze(req: LiquidationAnalyzeRequest):
+    """Analyze a courier contract: per-item margin (list vs dump), liquidity
+    (days-to-sell from real traded volume), competition depth, and a recommended
+    action + listing window. Accepts pasted text or a Janice appraisal URL (the
+    courier contract title). Streams NDJSON progress then a `done`."""
+    cfg = load_config()
+    ua = get_user_agent()
+    api_key = cfg.get('janice_api_key') or None
+    sell_market = cfg.get('liquidation_sell_market') or 'Jita 4-4'
+    cost_market = cfg.get('liquidation_cost_market') or 'Amarr'
+
+    def gen():
+        try:
+            paste_text = req.paste_text
+            if not paste_text and req.janice_url:
+                yield _emit('progress', message='Reading the contract’s Janice appraisal…')
+                try:
+                    items = items_from_appraisal(req.janice_url, api_key=api_key)
+                except Exception as e:
+                    yield _emit('error', message=f'Could not read Janice appraisal: {e}')
+                    return
+                if not items:
+                    yield _emit('error', message='The linked Janice appraisal had no items.')
+                    return
+                paste_text = '\n'.join(f'{i["name"]}\t{i["quantity"]}' for i in items)
+            if not paste_text or not paste_text.strip():
+                yield _emit('error', message='Nothing to analyze — paste items or give a Janice link.')
+                return
+            yield _emit('progress', message='Appraising items via Janice…')
+            appraisal = appraise_items(paste_text, sell_market, api_key=api_key)
+            rows = appraisal['items']
+            if not rows:
+                yield _emit('error', message='No priceable items found in the paste.')
+                return
+            type_ids = [r['type_id'] for r in rows]
+
+            yield _emit('progress', message='Fetching Amarr buy (cost basis)…')
+            try:
+                amarr_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua)
+            except Exception as e:
+                yield _emit('error', message=f'Amarr price lookup failed: {e}')
+                return
+
+            signals_holder = {}
+
+            def on_prog(done, total):
+                signals_holder['last'] = (done, total)
+
+            # Gather live ESI order-book signals concurrently.
+            yield _emit('progress', message=f'Pulling live Jita order book for {len(type_ids)} items…')
+            signals = _fetch_signals(type_ids, cfg, ua, on_progress=on_prog)
+
+            # Prices come from the live ESI order book (best sell / best buy);
+            # Janice's immediate prices are only a fallback when a side has no
+            # orders on the book right now.
+            for r in rows:
+                sig = signals.get(r['type_id'], {})
+                if sig.get('best_sell') is not None:
+                    r['sell_unit'] = sig['best_sell']
+                if sig.get('best_buy') is not None:
+                    r['buy_unit'] = sig['best_buy']
+
+            # Courier cost from this shipment's own Jita sell value.
+            total_sell_value = sum(r['sell_unit'] * r['quantity'] for r in rows)
+            total_vol = sum(r['unit_volume_m3'] * r['quantity'] for r in rows)
+            courier = liquidation.courier_cost(total_sell_value, total_vol, req.rush, cfg)
+            courier_total = courier['cost'] if req.include_courier else 0.0
+
+            depth = {}
+            history = {}
+            for r in rows:
+                sig = signals.get(r['type_id'], {})
+                history[r['type_id']] = sig.get('avg_daily_vol', 0.0)
+                depth[r['type_id']] = {
+                    'ahead': _depth_ahead(sig.get('book', []), r['sell_unit']),
+                    'on_book': sig.get('on_book', 0),
+                }
+
+            result = liquidation.analyze_items(rows, amarr_buy, history, depth, courier_total, cfg)
+            result['courier'] = courier
+            result['rush'] = req.rush
+            result['contract_id'] = req.contract_id
+            result['appraisal'] = {
+                'code': appraisal.get('code'),
+                'market_name': appraisal.get('market_name'),
+                'source': appraisal.get('source'),
+            }
+            yield _emit('done', payload=result)
+        except Exception as e:
+            yield _emit('error', message=str(e))
+
+    return StreamingResponse(gen(), media_type='application/x-ndjson')
+
+
+@app.get('/api/liquidation/item-history')
+def liquidation_item_history(type_id: int, days: int = 365):
+    """Daily price/volume history + the current live order book for one type —
+    powers the slide-out market-detail chart. History is real ESI market
+    history for The Forge; the book snapshot is the live cached signal."""
+    cfg = load_config()
+    ua = get_user_agent()
+    region = int(cfg.get('liquidation_sell_region_id') or 10000002)
+    try:
+        hist = fetch_region_market_history(region, type_id, ua)
+    except Exception as e:
+        raise HTTPException(502, f'History fetch failed: {e}')
+    if days and len(hist) > days:
+        hist = hist[-days:]
+    sig = _market_signal(type_id, cfg, ua)
+    meta = enrich_types([type_id], user_agent=ua).get(type_id, {})
+    return {
+        'type_id': type_id,
+        'name': meta.get('name') or f'type {type_id}',
+        'group_name': meta.get('group_name') or '',
+        'history': hist,
+        'signal': {
+            'best_sell': sig.get('best_sell'),
+            'best_buy': sig.get('best_buy'),
+            'on_book': sig.get('on_book'),
+            'avg_daily_vol': sig.get('avg_daily_vol'),
+        },
+    }
+
+
+# The shipment board is stored as one JSON doc on the *market-history* GitHub
+# repo (shared across admins) with the local file as cache/fallback. Reads
+# prefer the repo; writes push to it and cache locally, retrying once on a 409
+# so a concurrent edit merges instead of clobbering.
+_LIQ_STORE_PATH = 'liquidation/shipments.json'
+
+
+def _liq_remote_cfg(cfg):
+    """Resolve the GitHub location for the shipment store from the
+    market-history repo config, or None if not configured/parseable."""
+    url = (cfg.get('market_history_repo_url') or '').strip()
+    if not url:
+        return None
+    parsed = _parse_github_blob_url(url)
+    if not parsed:
+        return None
+    owner, repo, branch, _path = parsed
+    return {
+        'owner': owner, 'repo': repo, 'branch': branch, 'path': _LIQ_STORE_PATH,
+        'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
+        'write_pat': cfg.get('market_history_pat_write') or None,
+    }
+
+
+def _liq_read_store():
+    """Return ``(store, sha, rc)``. Prefers the GitHub repo; on any remote
+    failure falls back to the local cache (sha None)."""
+    cfg = load_config()
+    rc = _liq_remote_cfg(cfg)
+    if not rc:
+        return liquidation.load_store_local(), None, None
+    ua = get_user_agent()
+    try:
+        text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                         rc['path'], rc['read_pat'], ua)
+        store = liquidation.normalize(json.loads(text))
+        liquidation.save_store_local(store)  # refresh cache
+        return store, sha, rc
+    except FileNotFoundError:
+        return liquidation.empty_store(), None, rc  # first write creates the file
+    except Exception:
+        return liquidation.load_store_local(), None, rc
+
+
+def _liq_mutate_store(mutate_fn):
+    """Load the latest store, apply ``mutate_fn(store) -> (new_store, result)``,
+    persist it, and return ``result``. Pushes to GitHub when a write PAT is set
+    (retry once on 409), always writing the local cache."""
+    cfg = load_config()
+    rc = _liq_remote_cfg(cfg)
+    if not rc or not rc.get('write_pat'):
+        store = liquidation.load_store_local()
+        new_store, result = mutate_fn(store)
+        liquidation.save_store_local(new_store)
+        return result
+    ua = get_user_agent()
+    result = None
+    for attempt in range(2):
+        try:
+            text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                             rc['path'], rc['read_pat'], ua)
+            store = liquidation.normalize(json.loads(text))
+        except FileNotFoundError:
+            store, sha = liquidation.empty_store(), None
+        except Exception:
+            # Remote unreadable — degrade to local-only for this write.
+            store = liquidation.load_store_local()
+            new_store, result = mutate_fn(store)
+            liquidation.save_store_local(new_store)
+            return result
+        new_store, result = mutate_fn(store)
+        try:
+            _github_contents_put(rc['owner'], rc['repo'], rc['branch'], rc['path'],
+                                 json.dumps(new_store, indent=2), sha, rc['write_pat'],
+                                 ua, 'liquidation: update shipments')
+            liquidation.save_store_local(new_store)
+            return result
+        except RuntimeError as e:
+            if '409' in str(e) and attempt == 0:
+                continue  # someone else pushed — re-read latest sha and reapply
+            liquidation.save_store_local(new_store)  # cache locally at least
+            raise HTTPException(502, f'GitHub push failed: {e}')
+    return result
+
+
+@app.get('/api/liquidation/shipments')
+def liquidation_shipments():
+    cfg = load_config()
+    store, _sha, rc = _liq_read_store()
+    return {
+        'shipments': store['shipments'],
+        'storage': 'github' if rc else 'local',
+        'accept_days': cfg.get('courier_accept_days', 3),
+        'deliver_days': cfg.get('courier_deliver_days', 3),
+    }
+
+
+class ShipmentCreate(BaseModel):
+    label: Optional[str] = ''
+    rush: bool = False
+    notes: Optional[str] = ''
+    items: list = []
+    totals: dict = {}
+    courier: dict = {}
+
+
+@app.post('/api/liquidation/shipments')
+def liquidation_add_shipment(req: ShipmentCreate):
+    shipment = req.model_dump()
+    shipment['status'] = 'in_flight'
+    return _liq_mutate_store(lambda store: liquidation.apply_add(store, shipment))
+
+
+class ShipmentPatch(BaseModel):
+    label: Optional[str] = None
+    status: Optional[str] = None       # 'in_flight' | 'delivered' | 'cancelled'
+    delivered_at: Optional[float] = None
+    notes: Optional[str] = None
+
+
+@app.patch('/api/liquidation/shipments/{shipment_id}')
+def liquidation_patch_shipment(shipment_id: str, req: ShipmentPatch):
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    updated = _liq_mutate_store(lambda store: liquidation.apply_update(store, shipment_id, fields))
+    if not updated:
+        raise HTTPException(404, f'No shipment {shipment_id!r}')
+    return updated
+
+
+@app.delete('/api/liquidation/shipments/{shipment_id}')
+def liquidation_delete_shipment(shipment_id: str):
+    removed = _liq_mutate_store(lambda store: liquidation.apply_remove(store, shipment_id))
+    if not removed:
+        raise HTTPException(404, f'No shipment {shipment_id!r}')
+    return {'ok': True}
+
+
+@app.get('/api/liquidation/corp-orders')
+def liquidation_corp_orders():
+    """Live open Jita sell orders for the corp, enriched with cost basis (live
+    90% Amarr buy), current best sell (are we undercut?), days-to-sell, time
+    remaining in the order window, and a STALE flag when it has sat too long."""
+    cfg = load_config()
+    ua = get_user_agent()
+    token, corp_id, reason = _scope_token('esi-markets.read_corporation_orders.v1')
+    if reason:
+        return {'configured': False, 'reason': reason}
+    try:
+        orders = fetch_corp_orders(corp_id, token, ua)
+    except Exception as e:
+        return {'configured': False, 'reason': 'fetch_failed', 'detail': str(e)}
+
+    station = int(cfg.get('liquidation_sell_station_id') or 60003760)
+    sells = [o for o in orders
+             if not o.get('is_buy_order') and int(o.get('location_id') or 0) == station]
+    if not sells:
+        return {'configured': True, 'orders': [], 'totals': {'orders': 0}}
+
+    type_ids = [int(o['type_id']) for o in sells]
+    api_key = cfg.get('janice_api_key') or None
+    cost_market = cfg.get('liquidation_cost_market') or 'Amarr'
+    frac = float(cfg.get('liquidation_buyback_fraction') or 0.90)
+    broker = float(cfg.get('liquidation_broker_fee_pct') or 0) / 100.0
+    tax = float(cfg.get('liquidation_sales_tax_pct') or 0) / 100.0
+    safety = float(cfg.get('liquidation_window_safety') or 1.3)
+    stale_factor = float(cfg.get('liquidation_stale_factor') or 1.5)
+
+    try:
+        amarr_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua) if api_key else {}
+    except Exception:
+        amarr_buy = {}
+    signals = _fetch_signals(type_ids, cfg, ua)
+
+    now = datetime.now(timezone.utc)
+    enriched = []
+    for o in sells:
+        tid = int(o['type_id'])
+        sig = signals.get(tid, {})
+        meta = enrich_types([tid]).get(tid, {})
+        price = float(o.get('price') or 0)
+        remain = int(o.get('volume_remain') or 0)
+        total = int(o.get('volume_total') or 0)
+        avg_vol = sig.get('avg_daily_vol') or 0
+        cost_basis = frac * float(amarr_buy.get(tid, 0) or 0)
+        net_unit = price * (1 - broker - tax) - cost_basis if cost_basis else None
+        days_to_sell = (remain / avg_vol) if avg_vol > 0 else None
+        best_sell = sig.get('best_sell')
+        undercut = bool(best_sell is not None and best_sell < price - 1e-6)
+        # Time remaining from ESI issued + duration (days).
+        issued = o.get('issued')
+        duration = int(o.get('duration') or 0)
+        days_remaining = None
+        age_days = None
+        if issued:
+            try:
+                issued_dt = datetime.fromisoformat(issued.replace('Z', '+00:00'))
+                age_days = (now - issued_dt).total_seconds() / 86400.0
+                days_remaining = duration - age_days
+            except Exception:
+                pass
+        stale = bool(days_to_sell is not None and age_days is not None
+                     and age_days > days_to_sell * safety * stale_factor)
+        enriched.append({
+            'order_id': o.get('order_id'),
+            'type_id': tid,
+            'name': meta.get('name') or f'type {tid}',
+            'price': price,
+            'volume_remain': remain,
+            'volume_total': total,
+            'filled': total - remain,
+            'fill_pct': round((total - remain) / total * 100, 1) if total else 0,
+            'cost_basis_unit': cost_basis or None,
+            'net_unit': net_unit,
+            'net_value_remaining': (net_unit * remain) if net_unit is not None else None,
+            'best_sell': best_sell,
+            'undercut': undercut,
+            'avg_daily_vol': avg_vol,
+            'days_to_sell': days_to_sell,
+            'duration': duration,
+            'age_days': age_days,
+            'days_remaining': days_remaining,
+            'stale': stale,
+        })
+
+    totals = {
+        'orders': len(enriched),
+        'listed_value': sum(o['price'] * o['volume_remain'] for o in enriched),
+        'net_value_remaining': sum((o['net_value_remaining'] or 0) for o in enriched),
+        'stale_count': sum(1 for o in enriched if o['stale']),
+        'undercut_count': sum(1 for o in enriched if o['undercut']),
+    }
+    return {'configured': True, 'orders': enriched, 'totals': totals}
+
+
+def _scope_token(scope):
+    """Return ``(token, corp_id, reason)`` for the first authed slot carrying
+    ``scope``. Shared by the corp-orders and courier-contracts views."""
+    cfg = load_config()
+    corp_id = cfg.get('corp_id')
+    if not corp_id:
+        return None, None, 'no_corp_id'
+    try:
+        client_id, secret_key = get_app_credentials()
+    except Exception:
+        return None, corp_id, 'no_credentials'
+    ua = get_user_agent()
+    for slot in list_authenticated_slots():
+        try:
+            token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            payload = decode_jwt_payload(token)
+        except Exception:
+            continue
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        if scope in scope_list:
+            return token, corp_id, None
+    return None, corp_id, 'missing_scope'
+
+
+# Group ESI contract statuses into the three buckets the Shipments view shows.
+_COURIER_ACTIVE = {'outstanding', 'in_progress'}
+_COURIER_DONE = {'finished'}
+_COURIER_PROBLEM = {'failed', 'rejected', 'deleted', 'reversed'}
+
+
+@app.get('/api/liquidation/courier-contracts')
+def liquidation_courier_contracts():
+    """The corp's ESI courier contracts (the real PushX shipments): active,
+    completed and recently failed, with assignee + route names resolved. The
+    provider configured in `courier_provider_name` is flagged per row."""
+    cfg = load_config()
+    ua = get_user_agent()
+    token, corp_id, reason = _scope_token('esi-contracts.read_corporation_contracts.v1')
+    if reason:
+        return {'configured': False, 'reason': reason}
+    try:
+        contracts = fetch_corp_contracts(corp_id, token, ua)
+    except Exception as e:
+        return {'configured': False, 'reason': 'fetch_failed', 'detail': str(e)}
+
+    couriers = [c for c in contracts if c.get('type') == 'courier']
+    if not couriers:
+        return {'configured': True, 'contracts': [], 'totals': {'active': 0, 'completed': 0, 'problem': 0}}
+
+    # Resolve names for assignees/acceptors/issuers and NPC-station endpoints.
+    # Player structures (id > 1e12) don't resolve via /universe/names — label
+    # the configured home structure, else show a short 'Citadel …' tag.
+    id_set = set()
+    for c in couriers:
+        for k in ('assignee_id', 'acceptor_id', 'issuer_id', 'start_location_id', 'end_location_id'):
+            v = c.get(k)
+            if v and int(v) < 1_000_000_000_000:
+                id_set.add(int(v))
+    names = {}
+    if id_set:
+        try:
+            names = resolve_names(sorted(id_set), ua)
+        except Exception:
+            names = {}
+    home_id = cfg.get('home_structure_id')
+
+    def loc_name(loc_id):
+        if not loc_id:
+            return None
+        loc_id = int(loc_id)
+        if loc_id >= 1_000_000_000_000:
+            return 'Home structure' if home_id and loc_id == int(home_id) else f'Citadel {loc_id}'
+        return names.get(loc_id) or str(loc_id)
+
+    provider = (cfg.get('courier_provider_name') or '').strip().lower()
+    out = []
+    for c in couriers:
+        assignee = names.get(int(c['assignee_id'])) if c.get('assignee_id') else None
+        status = c.get('status') or ''
+        if status in _COURIER_ACTIVE:
+            bucket = 'active'
+        elif status in _COURIER_DONE:
+            bucket = 'completed'
+        elif status in _COURIER_PROBLEM:
+            bucket = 'problem'
+        else:
+            bucket = 'other'
+        out.append({
+            'contract_id': c.get('contract_id'),
+            'status': status,
+            'bucket': bucket,
+            'title': c.get('title') or '',
+            'assignee': assignee,
+            'is_provider': bool(provider and assignee and provider in assignee.lower()),
+            'acceptor': names.get(int(c['acceptor_id'])) if c.get('acceptor_id') else None,
+            'start': loc_name(c.get('start_location_id')),
+            'end': loc_name(c.get('end_location_id')),
+            'volume': c.get('volume'),
+            'collateral': c.get('collateral'),
+            'reward': c.get('reward'),
+            'days_to_complete': c.get('days_to_complete'),
+            'date_issued': c.get('date_issued'),
+            'date_expired': c.get('date_expired'),
+            'date_accepted': c.get('date_accepted'),
+            'date_completed': c.get('date_completed'),
+        })
+    # Newest first by whichever date is most relevant.
+    out.sort(key=lambda x: (x.get('date_completed') or x.get('date_accepted')
+                            or x.get('date_issued') or ''), reverse=True)
+    totals = {
+        'active': sum(1 for c in out if c['bucket'] == 'active'),
+        'completed': sum(1 for c in out if c['bucket'] == 'completed'),
+        'problem': sum(1 for c in out if c['bucket'] == 'problem'),
+        'active_collateral': sum((c['collateral'] or 0) for c in out if c['bucket'] == 'active'),
+        'active_reward': sum((c['reward'] or 0) for c in out if c['bucket'] == 'active'),
+    }
+    return {'configured': True, 'contracts': out, 'totals': totals,
+            'provider_name': cfg.get('courier_provider_name') or ''}
 
 
 # ----------------------- Contracts scan (alliance + public) -----------------------

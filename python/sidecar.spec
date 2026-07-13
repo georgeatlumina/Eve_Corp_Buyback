@@ -38,6 +38,7 @@ hidden_imports = [
     'config',
     'esi',
     'janice',
+    'liquidation',
     'market',
     'pinned',
     'refining',

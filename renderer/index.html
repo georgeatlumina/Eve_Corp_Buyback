@@ -37,6 +37,7 @@
         <button class="tab-btn" data-tab="working">Working</button>
         <button class="tab-btn" data-tab="contracts">Contracts</button>
         <button class="tab-btn" data-tab="srp">SRP</button>
+        <button class="tab-btn" data-tab="liquidation">Liquidation</button>
         <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
       </div>
     </nav>
@@ -508,6 +509,105 @@
       </div>
     </section>
 
+    <section id="tab-liquidation" class="tab">
+      <h2>Liquidation</h2>
+      <p class="muted">Ship buyback Amarr&nbsp;→&nbsp;Jita (PushX courier) and sell it for more than the <strong>90% Amarr buy</strong> we paid. Paste a courier contract to see per-item margin, liquidity and a dump-vs-list recommendation; track shipments in flight; and watch live Jita sell orders. Ranked by <strong>annualized ROI</strong> so ISK isn't locked into orders that aren't moving. <span class="muted">Shipments stored locally; orders live from ESI.</span></p>
+
+      <div id="liq-kpis" class="market-tiles"></div>
+
+      <div class="liq-subnav">
+        <button class="liq-subtab-btn active" data-sub="analyze" type="button">Analyze / Plan</button>
+        <button class="liq-subtab-btn" data-sub="shipments" type="button">Shipments</button>
+        <button class="liq-subtab-btn" data-sub="orders" type="button">Open orders</button>
+      </div>
+
+      <!-- Analyze / Plan -->
+      <div class="liq-sub active" data-sub="analyze">
+        <p class="muted small">Paste the contents of a courier contract (EVE inventory format, one item per line). Sell/buy prices come from the <strong>live Jita ESI order book</strong>, cost basis from Amarr buy, and days-to-sell from real traded volume.</p>
+        <textarea id="liq-paste" rows="6" placeholder="Tritanium	1000000&#10;Vagabond	3&#10;…"></textarea>
+        <div class="actions">
+          <button id="liq-analyze-btn" type="button">Analyze</button>
+          <label class="market-chk"><input id="liq-rush" type="checkbox" /> Rush courier (+200m)</label>
+          <label class="market-chk"><input id="liq-include-courier" type="checkbox" checked /> Include courier in cost basis</label>
+          <button id="liq-create-shipment" type="button" class="secondary" disabled>Create shipment from this →</button>
+          <span id="liq-analyze-status" class="muted"></span>
+        </div>
+        <div class="progress-area" id="liq-progress" hidden>
+          <div class="progress-bar indeterminate"><div class="progress-fill"></div></div>
+          <div class="progress-step muted">starting…</div>
+        </div>
+        <div id="liq-analyze-summary" class="liq-summary"></div>
+        <div class="market-filters">
+          <input id="liq-search" type="search" placeholder="Search item…" autocomplete="off" />
+          <select id="liq-action-filter">
+            <option value="">All actions</option>
+            <option value="list">List</option>
+            <option value="dump">Dump now</option>
+            <option value="underwater">Underwater</option>
+            <option value="no_data">No data</option>
+          </select>
+          <button id="liq-export-csv" type="button" class="secondary">Export CSV</button>
+          <button id="liq-export-txt" type="button" class="secondary">Export TXT</button>
+          <span id="liq-analyze-count" class="muted"></span>
+          <span id="liq-copy-toast" class="liq-toast" hidden></span>
+        </div>
+        <div class="market-table-wrap">
+          <table id="liq-analyze-table" class="market-table">
+            <thead id="liq-analyze-thead"></thead>
+            <tbody id="liq-analyze-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Shipments -->
+      <div class="liq-sub" data-sub="shipments" hidden>
+        <h3>Courier contracts <span class="muted small">— live from ESI (NLDO → provider)</span></h3>
+        <div class="actions">
+          <button id="liq-courier-refresh" type="button">Refresh contracts</button>
+          <select id="liq-courier-filter">
+            <option value="active">Active</option>
+            <option value="completed">Recently completed</option>
+            <option value="problem">Failed / rejected</option>
+            <option value="">All</option>
+          </select>
+          <label class="market-chk"><input id="liq-courier-all-providers" type="checkbox" /> Show all providers</label>
+          <span id="liq-courier-status" class="muted"></span>
+        </div>
+        <div id="liq-courier-note" class="market-status" hidden></div>
+        <div id="liq-courier-tiles" class="market-tiles"></div>
+        <div class="market-table-wrap">
+          <table id="liq-courier-table" class="market-table">
+            <thead id="liq-courier-thead"></thead>
+            <tbody id="liq-courier-tbody"></tbody>
+          </table>
+        </div>
+
+        <h3>Tracked shipments <span class="muted small">— your pasted contracts with item-level analysis</span></h3>
+        <div class="actions">
+          <button id="liq-shipments-refresh" type="button" class="secondary">Refresh</button>
+          <span id="liq-shipments-status" class="muted"></span>
+        </div>
+        <div id="liq-shipments-list"></div>
+      </div>
+
+      <!-- Open orders -->
+      <div class="liq-sub" data-sub="orders" hidden>
+        <div class="actions">
+          <button id="liq-orders-refresh" type="button">Refresh from ESI</button>
+          <label class="market-chk"><input id="liq-orders-stale-only" type="checkbox" /> Stale / attention only</label>
+          <span id="liq-orders-status" class="muted"></span>
+        </div>
+        <div id="liq-orders-note" class="market-status" hidden></div>
+        <div id="liq-orders-tiles" class="market-tiles"></div>
+        <div class="market-table-wrap">
+          <table id="liq-orders-table" class="market-table">
+            <thead id="liq-orders-thead"></thead>
+            <tbody id="liq-orders-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-hooks-hubs" class="tab">
       <h2>Hooks &amp; Hubs</h2>
       <p class="muted">Skyhook &amp; sovereignty-hub <strong>fuel</strong> is read live from ESI via <strong>slot&nbsp;4</strong> (a Director character — set it up on the Auth tab). Power, workforce, installed upgrades and skyhook collection contents are <strong>not exposed by ESI</strong>, so the upgrade/workforce planner below is driven by manual data you maintain here.</p>
@@ -547,6 +647,26 @@
     </div>
   </div>
 
+  <!-- Liquidation item detail: slide-out market chart (price + volume + book) -->
+  <div id="liq-detail-panel" class="liq-detail-panel" hidden>
+    <div class="liq-detail-head">
+      <div>
+        <div id="liq-detail-name" class="liq-detail-name">—</div>
+        <div id="liq-detail-group" class="muted small"></div>
+      </div>
+      <button id="liq-detail-close" class="link-panel-btn" type="button" title="Close">✕</button>
+    </div>
+    <div class="liq-detail-windows">
+      <button class="liq-win-btn" data-days="30" type="button">30d</button>
+      <button class="liq-win-btn active" data-days="90" type="button">90d</button>
+      <button class="liq-win-btn" data-days="365" type="button">1y</button>
+      <button id="liq-detail-refresh" class="liq-win-btn" type="button" title="Refresh live book">↻</button>
+    </div>
+    <div id="liq-detail-stats" class="liq-detail-stats"></div>
+    <div id="liq-detail-chart" class="liq-detail-chart"></div>
+    <div id="liq-detail-status" class="muted small"></div>
+  </div>
+
   <!-- In-app link viewer: docks on the right, can pop out into its own window -->
   <div id="link-panel" class="link-panel" hidden>
     <div class="link-panel-head">
@@ -562,6 +682,7 @@
   <script src="calculator.js"></script>
   <script src="app.js"></script>
   <script src="hooks-hubs.js"></script>
+  <script src="liquidation.js"></script>
   <script src="market.js"></script>
 </body>
 </html>

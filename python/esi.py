@@ -273,6 +273,53 @@ def fetch_region_market_orders(region_id, type_id, user_agent, order_type='sell'
     return out
 
 
+def fetch_region_market_history(region_id, type_id, user_agent):
+    """Fetch daily traded-volume history for a type in a region. Public endpoint.
+
+    Returns ESI's list of ``{date, average, highest, lowest, order_count,
+    volume}`` daily records (oldest first, ~13 months). ``volume`` is the real
+    number of units *traded* that day — the true liquidity signal, distinct from
+    the on-book ``volume_remain`` the order endpoints expose.
+    """
+    resp = _session.get(
+        f'{ESI_BASE}/markets/{int(region_id)}/history/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'type_id': int(type_id)},
+    )
+    resp.raise_for_status()
+    return resp.json() or []
+
+
+def fetch_corp_orders(corp_id, access_token, user_agent):
+    """Fetch all pages of a corporation's open market orders from ESI.
+
+    Requires the ``esi-markets.read_corporation_orders.v1`` scope and an
+    Accountant or Trader role on the authed character. Each order carries
+    ``type_id, location_id, region_id, price, volume_total, volume_remain,
+    is_buy_order, issued, duration, order_id`` (sell orders have no
+    ``is_buy_order`` key or ``is_buy_order=False``).
+    """
+    url = f'{ESI_BASE}/corporations/{int(corp_id)}/orders/'
+    out = []
+    page = 1
+    while True:
+        resp = _session.get(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'token': access_token, 'page': page},
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        out.extend(batch)
+        max_page = int(resp.headers.get('x-pages', page))
+        if page >= max_page:
+            break
+        page += 1
+    return out
+
+
 def fetch_structure_orders_paged(structure_id, access_token, user_agent):
     """Generator that fetches structure market orders one page at a time.
 

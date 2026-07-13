@@ -190,6 +190,72 @@ def fetch_buy_prices(type_ids, market_name='Jita 4-4', api_key=None, user_agent=
     return out
 
 
+def items_from_appraisal(url, api_key=None):
+    """Return ``[{name, quantity}]` from an existing Janice appraisal URL/code.
+
+    Used to auto-analyze a courier contract straight from its title (which is a
+    Janice appraisal link). The original appraisal is priced at the buyback
+    market (Amarr); callers re-appraise these items at Jita for the sell side."""
+    appraisal = fetch_appraisal(url, api_key=api_key)
+    out = []
+    for it in appraisal.get('items', []):
+        name = (it.get('name') or '').strip()
+        amount = int(it.get('amount') or 0)
+        if name and amount:
+            out.append({'name': name, 'quantity': amount})
+    return out
+
+
+def _item_field(item, *names, default=None):
+    """First present key among ``names`` on a Janice per-item dict."""
+    for n in names:
+        if n in item and item[n] is not None:
+            return item[n]
+    return default
+
+
+def appraise_items(paste_text, market_name='Jita 4-4', api_key=None):
+    """Create a Janice appraisal and return normalized per-item rows.
+
+    Each row: ``{type_id, name, quantity, unit_volume_m3, sell_unit, buy_unit}``
+    where ``sell_unit`` / ``buy_unit`` are the *immediate* per-unit prices at
+    ``market_name`` (i.e. sell into an existing buy order = ``buy_unit``; list a
+    sell order at ``sell_unit``). Rows with an unresolved type are dropped —
+    they can't be matched to ESI market data. Requires the Janice input to
+    resolve item names; the API key is preferred but not required (RPC fallback).
+    """
+    result = create_appraisal_from_text(paste_text, market_name, api_key=api_key)
+    raw = result.get('raw') or {}
+    raw_items = raw.get('items') or []
+    rows = []
+    for it in raw_items:
+        itype = it.get('itemType') or {}
+        type_id = _item_field(itype, 'eid', 'id', 'typeId', 'type_id', default=0)
+        try:
+            type_id = int(type_id or 0)
+        except (TypeError, ValueError):
+            type_id = 0
+        if not type_id:
+            continue
+        immediate = it.get('immediatePrices') or {}
+        rows.append({
+            'type_id': type_id,
+            'name': _item_field(itype, 'name', default='') or f'type {type_id}',
+            'quantity': int(_item_field(it, 'amount', 'quantity', default=0) or 0),
+            'unit_volume_m3': float(_item_field(
+                itype, 'packagedVolume', 'volume', default=0) or 0),
+            'sell_unit': float(_item_field(immediate, 'sellPrice', default=0) or 0),
+            'buy_unit': float(_item_field(immediate, 'buyPrice', default=0) or 0),
+        })
+    return {
+        'code': result.get('code'),
+        'market_name': result.get('market_name') or market_name,
+        'source': result.get('source'),
+        'api_fallback_reason': result.get('api_fallback_reason'),
+        'items': rows,
+    }
+
+
 def create_appraisal(items, market_name, api_key=None):
     """Create a Janice appraisal from a list of {name, quantity} items.
 

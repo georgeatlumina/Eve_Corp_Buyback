@@ -766,3 +766,96 @@ body.link-panel-open main { margin-right: 46vw; }
 .turnover-delta { font-weight: 600; }
 .turnover-delta.pos { color: #6c6; }
 .turnover-delta.neg { color: #f88; }
+
+/* ===================== Liquidation tab ===================== */
+#liq-paste {
+  width: 100%; box-sizing: border-box; background: #232323; color: #eee;
+  border: 1px solid #3a3a3a; border-radius: 4px; padding: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; resize: vertical;
+}
+.liq-subnav { display: flex; gap: 4px; margin: 14px 0 10px; border-bottom: 1px solid #3a3a3a; }
+.liq-subtab-btn {
+  background: transparent; color: #aaa; border: none; border-bottom: 2px solid transparent;
+  padding: 7px 14px; cursor: pointer; font-size: 13px;
+}
+.liq-subtab-btn:hover { color: #eee; }
+.liq-subtab-btn.active { color: #cfd; border-bottom-color: #4a8; }
+
+.liq-pos { color: #6c6; }
+.liq-neg { color: #f88; }
+.liq-warn { color: #e8c84a; font-size: 11px; }
+
+.liq-pill {
+  display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+  font-weight: 600; white-space: nowrap;
+}
+.liq-list, .liq-status-delivered { background: #1f3a2a; color: #7d9; border: 1px solid #2f5a40; }
+.liq-dump, .liq-status-in_flight { background: #3a2f1a; color: #e8c84a; border: 1px solid #5a4a2a; }
+.liq-underwater, .liq-status-cancelled { background: #3a1f1f; color: #f88; border: 1px solid #5a2f2f; }
+.liq-no_data { background: #2a2a2a; color: #999; border: 1px solid #444; }
+
+.liq-summary { margin: 12px 0; }
+.liq-summary-tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.liq-action-breakdown { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+.liq-row-underwater td { background: rgba(120, 40, 40, 0.12); }
+.liq-row-dump td { background: rgba(120, 100, 40, 0.08); }
+
+.liq-ship-card {
+  background: #232323; border: 1px solid #3a3a3a; border-left: 3px solid #5a4a2a;
+  border-radius: 5px; padding: 10px 12px; margin-bottom: 8px;
+}
+.liq-ship-delivered { border-left-color: #2f5a40; }
+.liq-ship-cancelled { border-left-color: #5a2f2f; opacity: 0.7; }
+.liq-ship-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.liq-ship-label { font-weight: 600; }
+.liq-ship-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #ccc; margin-bottom: 8px; }
+.liq-ship-actions { display: flex; gap: 6px; }
+.liq-danger { color: #f88; }
+
+/* Liquidation: use the full window width (the wide analysis table needs it). */
+body.liq-full main { max-width: none; }
+
+/* Clickable action-breakdown pills (filter the table). */
+.liq-action-breakdown .liq-pill { cursor: pointer; user-select: none; opacity: 0.85; }
+.liq-action-breakdown .liq-pill:hover { opacity: 1; }
+.liq-action-breakdown .liq-pill.active { outline: 2px solid #cfd; opacity: 1; }
+
+.liq-row-clickable td { cursor: pointer; }
+.liq-info-btn {
+  background: transparent; border: 1px solid #3a3a3a; color: #8bd; border-radius: 3px;
+  cursor: pointer; font-size: 11px; padding: 0 5px; margin-left: 6px; line-height: 1.4;
+}
+.liq-info-btn:hover { background: #223; border-color: #4a8; }
+
+.liq-toast {
+  background: #1f3a2a; color: #7d9; border: 1px solid #2f5a40; border-radius: 4px;
+  padding: 2px 8px; font-size: 12px;
+}
+
+/* Slide-out item detail panel (market chart). */
+.liq-detail-panel {
+  position: fixed; top: 0; right: 0; width: min(520px, 92vw); height: 100vh;
+  background: #191919; border-left: 1px solid #3a3a3a; box-shadow: -8px 0 32px rgba(0,0,0,0.6);
+  z-index: 600; padding: 14px 16px; box-sizing: border-box; overflow-y: auto;
+}
+.liq-detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.liq-detail-name { font-size: 16px; font-weight: 600; color: #eee; }
+.liq-detail-windows { display: flex; gap: 4px; margin: 12px 0; }
+.liq-win-btn {
+  background: #2a2a2a; color: #aaa; border: 1px solid #3a3a3a; border-radius: 4px;
+  padding: 3px 12px; cursor: pointer; font-size: 12px;
+}
+.liq-win-btn.active { background: #1f3a2a; color: #cfd; border-color: #2f5a40; }
+.liq-detail-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.liq-detail-stat {
+  background: #232323; border: 1px solid #333; border-radius: 5px; padding: 6px 10px; min-width: 90px;
+}
+.liq-detail-stat .v { font-size: 14px; font-weight: 600; color: #cfd; }
+.liq-detail-stat .l { font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.03em; }
+.liq-detail-chart svg { width: 100%; height: auto; display: block; }
+.liq-chart-axis { fill: #888; font-size: 10px; }
+.liq-chart-price { fill: none; stroke: #4a8; stroke-width: 1.5; }
+.liq-chart-band { fill: rgba(74,136,136,0.15); }
+.liq-chart-vol { fill: #3a5a7a; }
+.liq-chart-ref { stroke-dasharray: 3 3; stroke-width: 1; }

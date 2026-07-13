@@ -367,6 +367,46 @@ A window degrades to `coverage: partial` (not enough days yet, baseline = oldest
 snapshot) or `insufficient` (<2 snapshots), so the Market-tab cards fill in as
 daily archives accumulate.
 
+### Liquidation tab (`/api/liquidation/*`)
+
+The buyback pipeline pays contractors **90% of the Amarr buy price** and leaves
+the goods in the home structure. The Liquidation tab manages turning that
+inventory back into ISK by shipping it to Jita (PushX courier) and selling it
+for more than it cost. Three sub-views:
+
+1. **Analyze / Plan.** Paste a courier contract, or one-click **Analyze →** a
+   courier contract straight from its title (the title is a Janice appraisal
+   URL). Items are resolved via Janice (type_ids + packaged volume), then priced
+   from the **live Jita ESI order book** (best sell / best buy — range-aware for
+   buy orders), with the cost basis from `90% × Janice Amarr buy` and days-to-sell
+   from **real ESI traded volume**. `liquidation.analyze_row` produces, per item,
+   the net margin listing vs dumping (net of Jita broker fee + sales tax +
+   allocated courier), and a recommendation — `list` (with the shortest
+   7/14/30/90-day window that fits the expected sell time), `dump` (hit a buy
+   order now when velocity beats holding), or `underwater`. The table defaults to
+   **sort by absolute net ISK** and flags near-zero-cost-basis items
+   (`low_confidence`, e.g. SKINs) whose margin % is meaningless. Exportable to
+   CSV/TXT; each item has a slide-out detail chart (ESI price+volume history +
+   live book).
+
+2. **Shipments.** Live ESI **courier contracts** (filtered to the configured
+   provider, "Push Industries", by default) bucketed active/completed/failed,
+   plus a **tracked-shipment board** — the board is one JSON doc stored on the
+   **market-history GitHub repo** (`liquidation/shipments.json`, shared across
+   admins, SHA-checked writes via the existing Contents-API helpers) with a local
+   file as cache/fallback. PushX courier cost is computed from the rate card
+   (base + collateral steps + rush).
+
+3. **Open orders.** The corp's live Jita **sell** orders (ESI, needs
+   `esi-markets.read_corporation_orders.v1` + Accountant/Trader role), enriched
+   with fill %, whether we're undercut, days-to-sell, window time-remaining, and
+   a **STALE** flag when an order has sat far longer than its expected sell time
+   — the anti-"ISK locked in non-movers" signal.
+
+The design bias: rank by **ISK velocity** (annualized ROI) not raw margin, so a
+thin-but-fast flip beats a fat-but-stuck listing. Prices are live ESI (needed
+anyway for liquidity); only the Amarr cost basis and item resolution use Janice.
+
 ## Data & persistence
 
 Everything user-specific lives under `EVE_BUYBACK_DATA_DIR`:
@@ -401,6 +441,11 @@ Files in that directory:
   Fuzzwork removed these CSV dumps upstream, so this download now 404s for any
   user without the file already cached — a latent bug in `refining.py`.
 - `sidecar.log` — last sidecar run's stdout/stderr (truncated each startup).
+- `liquidation.json` — chmod 600. Local cache/fallback of the Liquidation
+  shipment board. The shared primary copy lives in the market-history GitHub
+  repo at `liquidation/shipments.json` (SHA-checked writes); see
+  [python/liquidation.py](python/liquidation.py) + the `_liq_*` helpers in
+  server.py. Falls back to local-only when no repo URL / write PAT is set.
 
 Readiness scan + selection toggles also persist, but in **renderer
 localStorage** (`readinessState`), not on disk.

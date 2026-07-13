@@ -40,6 +40,10 @@ DEFAULTS = {
         'esi-contracts.read_character_contracts.v1',
         'esi-mail.send_mail.v1',
         'esi-corporations.read_structures.v1',
+        # Liquidation page: read the corp's open market (sell) orders in Jita so
+        # open positions auto-reconcile. Needs Accountant or Trader corp role on
+        # the authed character.
+        'esi-markets.read_corporation_orders.v1',
     ],
     'structures': DEFAULT_STRUCTURES,
     'janice_market': 'Jita 4-4',
@@ -102,6 +106,37 @@ DEFAULTS = {
     'market_history_pat_read': '',
     'market_history_pat_write': '',
     'market_history_last_archived': '',  # ISO timestamp of last push (per-machine)
+    # ---- Liquidation page ----
+    # Buyback items are shipped Amarr -> Jita and sold. Cost basis = the payout
+    # fraction of the live Janice Amarr *buy* price; margin is measured against
+    # the live Jita sell/buy prices net of the fees below.
+    'liquidation_buyback_fraction': 0.90,   # what the corp pays vs Amarr buy
+    'liquidation_cost_market': 'Amarr',     # Janice market the cost basis prices from
+    'liquidation_sell_market': 'Jita 4-4',  # Janice market items are sold in
+    'liquidation_broker_fee_pct': 3.0,      # Jita sell-order listing broker fee (%)
+    'liquidation_sales_tax_pct': 3.37,      # sales tax on a completed sale (%)
+    'liquidation_min_margin_pct': 10.0,     # below this net margin -> prefer dumping
+    'liquidation_min_annual_roi_pct': 50.0, # velocity floor for holding a listing
+    'liquidation_window_safety': 1.3,       # days_to_sell * this must fit the window
+    'liquidation_stale_factor': 1.5,        # age > expected_sell * this => STALE
+    'liquidation_vol_window_days': 20,      # trailing days of ESI history for avg volume
+    # The Forge / Jita 4-4 numeric IDs (region + station) for ESI market pulls.
+    'liquidation_sell_region_id': 10000002,
+    'liquidation_sell_station_id': 60003760,
+    'liquidation_sell_system_id': 30000142,  # Jita (for buy-order range matching)
+    # PushX courier rate card (see the in-app blurb). Cost is computed per
+    # shipment from these; collateral = Janice Jita sell value of the shipment.
+    'courier_base_isk': 450_000_000,
+    'courier_max_volume_m3': 360_000,
+    'courier_collateral_free_isk': 5_000_000_000,
+    'courier_collateral_step_isk': 5_000_000_000,
+    'courier_collateral_step_fee_isk': 50_000_000,
+    'courier_rush_fee_isk': 200_000_000,
+    'courier_accept_days': 3,
+    'courier_deliver_days': 3,
+    # Courier provider the Shipments view highlights among the corp's ESI
+    # courier contracts (substring match on the assignee name). Blank = show all.
+    'courier_provider_name': 'Push Industries',
 }
 
 _USER_KEYS = set(DEFAULTS)
