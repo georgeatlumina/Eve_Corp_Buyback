@@ -1,6 +1,6 @@
 {
   "name": "naval-defence-management-tool",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Naval Defence Alliance management tool (buyback, moon, doctrines, readiness)",
   "author": "SushiandSushi",
   "main": "electron/main.js",
