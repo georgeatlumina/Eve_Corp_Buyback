@@ -2681,7 +2681,10 @@ function bindQuotaSection(tbodyId, { addBtnId, importCsvBtnId, importJsonBtnId, 
     }
   });
   _tbody?.addEventListener('dragend', () => {
-    _dragSrc?.classList.remove('dragging');
+    if (_dragSrc) {
+      _dragSrc.classList.remove('dragging');
+      _dragSrc.draggable = false;
+    }
     _tbody.querySelectorAll('.quota-row').forEach((r) => r.classList.remove('drag-over-top', 'drag-over-bottom'));
     _dragSrc = null;
   });
