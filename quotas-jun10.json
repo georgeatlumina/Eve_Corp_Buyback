@@ -88,10 +88,10 @@
     "fit_id": 0
   },
   {
-    "name": "Mk3",
-    "ship_type_id": 12019,
-    "ship_name": "Sacrilege",
-    "required": 10,
+    "name": "Navy Damage Mk3",
+    "ship_type_id": 644,
+    "ship_name": "Typhoon",
+    "required": 5,
     "title_filter": "",
     "fit_id": 0
   },
