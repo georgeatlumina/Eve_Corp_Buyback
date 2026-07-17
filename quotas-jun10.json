@@ -1,13 +1,5 @@
 [
   {
-    "name": "Navy EWar Mk1",
-    "ship_type_id": 584,
-    "ship_name": "Griffin",
-    "required": 10,
-    "title_filter": "",
-    "fit_id": 0
-  },
-  {
     "name": "Navy Damage Mk3",
     "ship_type_id": 72872,
     "ship_name": "Prophecy Navy Issue",
@@ -124,6 +116,14 @@
     "ship_type_id": 37457,
     "ship_name": "Deacon",
     "required": 4,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy EWar Mk1",
+    "ship_type_id": 584,
+    "ship_name": "Griffin",
+    "required": 10,
     "title_filter": "",
     "fit_id": 0
   },
