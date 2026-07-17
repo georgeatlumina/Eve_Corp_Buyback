@@ -192,14 +192,6 @@
     "fit_id": 0
   },
   {
-    "name": "Navy ESS Logi Mk3",
-    "ship_type_id": 11978,
-    "ship_name": "Scimitar",
-    "required": 2,
-    "title_filter": "",
-    "fit_id": 0
-  },
-  {
     "name": "Navy ESS Damage Mk3",
     "ship_type_id": 630,
     "ship_name": "Bellicose",
