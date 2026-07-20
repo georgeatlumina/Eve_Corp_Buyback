@@ -4323,18 +4323,28 @@ function renderHaulxTab() {
   const root = $('#haulx-root');
   if (!root) return;
 
-  if (!lastContractsScan) {
-    root.innerHTML = '<p class="muted" style="padding:1.5rem">Run a Contracts scan first to see quota gaps.</p>';
+  const hasContracts = !!lastContractsScan;
+  const hasReadiness = !!(readinessState.scan?.fits);
+
+  if (!hasContracts || !hasReadiness) {
+    const items = [
+      !hasContracts && '<li>Run a <strong>Contracts</strong> scan (Contracts tab → Scan)</li>',
+      !hasReadiness && '<li>Run a <strong>Market Readiness</strong> scan (Market Readiness tab → Scan doctrines &amp; fits)</li>',
+    ].filter(Boolean).join('');
+    root.innerHTML = `
+      <h2>HaulX</h2>
+      <p class="muted">Before you can plan a haul, complete the following:</p>
+      <ul style="color:#e0e8f0;line-height:2">${items}</ul>`;
     return;
   }
 
   const quotas = lastContractsScan.quotas || [];
 
   root.innerHTML = `
-    <h2>Plan HaulX</h2>
+    <h2>HaulX</h2>
     <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Hit <strong>Copy Haul List</strong> when you're ready to paste into your courier contract.</p>
     <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
-      <span style="font-weight:600">Plan HaulX</span>
+      <span style="font-weight:600">HaulX</span>
       <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
       <span style="font-size:0.85rem">Collateral: <strong id="haulx-isk" class="haulx-metric">—B / 5.00B ISK</strong></span>
       <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
@@ -4369,6 +4379,13 @@ function renderHaulxTab() {
 
   const onHandByTypeId = Object.fromEntries(acquisitionsHulls.map((h) => [String(h.type_id), h.quantity]));
 
+  const fitsByHull = {};
+  for (const fit of Object.values(readinessState.scan?.fits || {})) {
+    const key = String(fit.hullTypeId);
+    if (!fitsByHull[key]) fitsByHull[key] = [];
+    fitsByHull[key].push(fit);
+  }
+
   for (const q of orderedQuotas) {
     const tid = String(q.ship_type_id);
     const missing = Number(q.missing) || 0;
@@ -4377,6 +4394,7 @@ function renderHaulxTab() {
     const qty = haulxQty[tid] || 0;
     const rowMax = haulxOverQuota ? 999 : (atQuota ? 10 : missing);
     const onHand = onHandByTypeId[tid] || 0;
+    const hasFit = (fitsByHull[tid]?.length || 0) > 0;
 
     const volText = price?.packaged_volume != null
       ? `${(price.packaged_volume / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³`
@@ -4389,9 +4407,10 @@ function renderHaulxTab() {
     tr.id = `haulx-row-${tid}`;
     tr.style.cssText = atQuota ? 'opacity:0.45;border-bottom:1px solid #1e2533' : 'border-bottom:1px solid #1e2533';
     tr.innerHTML = `
-      <td style="padding:0.5rem 1rem">
+      <td style="padding:0.5rem 1rem${hasFit ? '' : ';color:#ef4444'}">
         <strong>${escapeHtml(q.ship_name || q.name || `type ${tid}`)}</strong>
-        ${q.name && q.ship_name && q.name !== q.ship_name ? `<span class="muted" style="font-size:0.8rem;margin-left:0.4rem">${escapeHtml(q.name)}</span>` : ''}
+        ${q.name && q.ship_name && q.name !== q.ship_name ? `<span style="font-size:0.8rem;margin-left:0.4rem;opacity:0.7">${escapeHtml(q.name)}</span>` : ''}
+        ${hasFit ? '' : '<span style="font-size:0.75rem;margin-left:0.4rem;opacity:0.8">(no fit)</span>'}
       </td>
       <td style="padding:0.5rem 0.5rem;color:${missing > 0 ? '#e8a838' : '#4a8'}">${missing > 0 ? missing : '✓'}</td>
       <td style="padding:0.5rem 0.5rem;color:${onHand > 0 ? '#4a8' : '#8899aa'}">${onHand > 0 ? onHand : '—'}</td>
@@ -4423,16 +4442,55 @@ function renderHaulxTab() {
   });
 
   $('#haulx-copy')?.addEventListener('click', async () => {
-    const lines = [];
+    // Build selected list: [{q, qty}]
+    const selected = [];
     for (const tr of tbody.querySelectorAll('tr')) {
       const input = tr.querySelector('.haulx-qty');
       if (!input) continue;
       const qty = parseInt(input.value) || 0;
       if (!qty) continue;
-      const shipName = tr.querySelector('strong')?.textContent?.trim() || input.dataset.tid;
-      lines.push(`${qty} x ${shipName}`);
+      const tid = input.dataset.tid;
+      const q = (lastContractsScan.quotas || []).find((x) => String(x.ship_type_id) === tid);
+      if (q) selected.push({ q, qty });
     }
-    const text = lines.join('\n') || 'Nothing selected.';
+
+    // Try to find fit items from readinessState.scan for each selected ship.
+    // Match by hullTypeId + fit name (q.name). Fall back to hull-only if no fit found.
+    const fits = readinessState.scan?.fits || {};
+    const fitsByHull = {};
+    for (const fit of Object.values(fits)) {
+      const key = String(fit.hullTypeId);
+      if (!fitsByHull[key]) fitsByHull[key] = [];
+      fitsByHull[key].push(fit);
+    }
+
+    const hullLines = [];
+    const moduleAgg = {};  // name -> qty
+
+    for (const { q, qty } of selected) {
+      const tid = String(q.ship_type_id);
+      const hullName = q.ship_name || q.name || `type ${tid}`;
+      hullLines.push(`${qty} x ${hullName}`);
+
+      // Find the matching fit by hullTypeId, preferring one whose name matches q.name
+      const candidates = fitsByHull[tid] || [];
+      let fit = candidates.find((f) => f.name === q.name) || candidates[0];
+      if (!fit) continue;
+
+      // Aggregate non-hull items (hull is index 0, typeId === ship_type_id)
+      for (const item of fit.items || []) {
+        if (item.typeId === q.ship_type_id) continue;  // skip hull itself
+        const key = item.name;
+        moduleAgg[key] = (moduleAgg[key] || 0) + item.qty * qty;
+      }
+    }
+
+    const moduleLines = Object.entries(moduleAgg).map(([name, q]) => `${q} x ${name}`);
+    const sections = [];
+    if (hullLines.length) sections.push(hullLines.join('\n'));
+    if (moduleLines.length) sections.push(moduleLines.join('\n'));
+    const text = sections.join('\n\n') || 'Nothing selected.';
+
     try {
       await navigator.clipboard.writeText(text);
     } catch {
