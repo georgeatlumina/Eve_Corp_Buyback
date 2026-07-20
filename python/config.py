@@ -106,6 +106,19 @@ DEFAULTS = {
     'market_history_pat_read': '',
     'market_history_pat_write': '',
     'market_history_last_archived': '',  # ISO timestamp of last push (per-machine)
+    # ---- Stockpile page ----
+    # Alliance industry-material stock levels. The admin pastes an EVE
+    # inventory/asset list; the sidecar resolves + categorizes it and pushes a
+    # JSON doc to the market-history repo at `inventory/stock.json` (shared,
+    # SHA-checked writes — same repo + PATs as the liquidation board). Industry
+    # pilots read it. The tab is client-side gated on Alliance Auth membership
+    # in the group named below (a UX filter, not a security boundary — the real
+    # protection is the repo PAT). `stockpile_allow_push` unhides the admin
+    # paste/save panel, mirroring `alliance_quota_allow_push`.
+    'stockpile_group_name': 'Industry',
+    'stockpile_allow_push': False,
+    'stockpile_last_synced': '',   # ISO timestamp of last successful push
+    'stockpile_last_status': '',   # short human-readable last result
     # ---- Liquidation page ----
     # Buyback items are shipped Amarr -> Jita and sold. Cost basis = the payout
     # fraction of the live Janice Amarr *buy* price; margin is measured against

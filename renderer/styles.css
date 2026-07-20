@@ -864,3 +864,86 @@ body.liq-full main { max-width: none; }
 .liq-chart-band { fill: rgba(74,136,136,0.15); }
 .liq-chart-vol { fill: #3a5a7a; }
 .liq-chart-ref { stroke-dasharray: 3 3; stroke-width: 1; }
+
+/* ===== Stockpile tab ===== */
+.stockpile-filters { margin: 1em 0 0.5em; }
+.stockpile-cat { margin: 1.2em 0; }
+.stockpile-cat-head { margin: 0 0 0.4em; font-size: 1.05em; }
+.stockpile-cat-meta { font-size: 0.8em; font-weight: 400; margin-left: 0.4em; }
+.stockpile-editor { margin-top: 2em; }
+.stockpile-editor textarea {
+  width: 100%; box-sizing: border-box; background: #232323; color: #eee;
+  border: 1px solid #3a3a3a; border-radius: 4px; padding: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; resize: vertical;
+}
+.stockpile-note-label { display: block; margin: 0.6em 0; }
+.stockpile-note-label input { width: 100%; max-width: 480px; box-sizing: border-box; margin-top: 0.25em; padding: 0.4em; background: #232323; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; }
+#stockpile-unresolved { color: #d9a441; }
+.inline-check { display: flex; align-items: center; gap: 0.4em; }
+.inline-check input { width: auto; }
+
+/* ============================ Indy section ============================ */
+.error-text { color: #e07a5f; }
+.linklike { background: none; border: 0; color: #7ab7ff; cursor: pointer; padding: 0; font: inherit; }
+.linklike:hover { text-decoration: underline; }
+
+/* Material category chips (minerals / PI / other) */
+.mat-chip { display: inline-block; font-size: 0.72em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; padding: 0.1em 0.5em; border-radius: 10px; vertical-align: middle; border: 1px solid transparent; }
+.mat-chip.mat-minerals { background: #23343f; color: #7ec8e3; border-color: #2f4a5a; }
+.mat-chip.mat-pi { background: #2c2340; color: #b79be6; border-color: #43356a; }
+.mat-chip.mat-other { background: #333; color: #bbb; border-color: #484848; }
+
+/* --- Build Planner --- */
+#indy-builds { display: flex; flex-direction: column; gap: 1.1em; margin-top: 0.8em; }
+.indy-build { background: #242424; border: 1px solid #3a3a3a; border-radius: 8px; padding: 1em 1.1em; }
+.indy-build-head { display: flex; flex-wrap: wrap; gap: 1em; align-items: flex-end; }
+.indy-field { display: flex; flex-direction: column; gap: 0.3em; color: #bbb; font-size: 0.85em; font-weight: 600; }
+.indy-field-doctrine { min-width: 220px; flex: 1 1 220px; }
+.indy-field select, .indy-field input[type="date"], .indy-field input[type="text"] { background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.45em 0.55em; font-size: 0.95em; font-weight: 400; }
+.indy-field select:focus, .indy-field input:focus { outline: none; border-color: #4a8; }
+.indy-alliance { display: inline-flex; }
+.indy-note { margin: 0.8em 0 0.4em; max-width: 620px; }
+.indy-note input { width: 100%; box-sizing: border-box; }
+.indy-rm-build { margin-left: auto; }
+
+.indy-slots { display: flex; flex-direction: column; gap: 0.8em; margin: 0.8em 0; }
+.indy-slot { background: #1d1d1d; border: 1px solid #333; border-radius: 6px; padding: 0.7em 0.8em; }
+.indy-slot-head { display: flex; gap: 0.6em; align-items: center; margin-bottom: 0.55em; }
+.indy-slot-label { flex: 1; background: #161616; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.4em 0.55em; }
+.indy-slot-label:focus { outline: none; border-color: #4a8; }
+.indy-rm-slot { font-size: 0.82em; padding: 0.35em 0.7em; }
+
+.indy-paste-box { width: 100%; text-align: left; background: #14201a; color: #9fd6b8; border: 1.5px dashed #3e6b52; border-radius: 6px; padding: 0.75em 0.9em; cursor: pointer; font-size: 0.92em; font-weight: 600; transition: background 0.15s, border-color 0.15s; }
+.indy-paste-box:hover { background: #17271e; border-color: #4a8; }
+.indy-paste-box.has-materials { background: #1a2620; border-style: solid; border-color: #3e6b52; }
+.indy-paste-box-icon { margin-right: 0.4em; }
+.indy-slot-empty { margin: 0.5em 0 0; font-size: 0.88em; }
+
+.indy-mat-table { margin-top: 0.6em; }
+.indy-mat-table td, .indy-mat-table th { padding: 0.3em 0.6em; }
+.indy-mat-x { width: 1.5em; text-align: center; }
+.indy-add-slot { font-size: 0.85em; }
+
+/* --- Paste side drawer --- */
+.indy-drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.2s; z-index: 900; }
+.indy-drawer-overlay.open { opacity: 1; }
+.indy-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(440px, 92vw); background: #1f1f1f; border-left: 1px solid #3a3a3a; box-shadow: -6px 0 24px rgba(0,0,0,0.4); z-index: 901; transform: translateX(100%); transition: transform 0.2s ease; display: flex; flex-direction: column; padding: 1.1em 1.2em; box-sizing: border-box; overflow-y: auto; }
+.indy-drawer.open { transform: translateX(0); }
+.indy-drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3em; }
+.indy-drawer-head h3 { margin: 0; font-size: 1.1em; }
+.indy-drawer-close { background: none; border: 0; color: #999; font-size: 1.6em; line-height: 1; cursor: pointer; padding: 0 0.2em; }
+.indy-drawer-close:hover { color: #eee; }
+.indy-drawer textarea { width: 100%; box-sizing: border-box; background: #141414; color: #eee; border: 1px solid #3a3a3a; border-radius: 6px; padding: 0.6em; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; resize: vertical; margin: 0.5em 0; }
+.indy-drawer textarea:focus { outline: none; border-color: #4a8; }
+
+/* --- Build Fulfilment dashboard --- */
+#indy-fulfil-dashboard { display: flex; flex-direction: column; gap: 0.55em; margin-top: 0.6em; }
+.indy-fulfil-bar { cursor: default; }
+.indy-fulfil-bar:hover { filter: none; }
+.indy-fulfil-build { background: #242424; border: 1px solid #3a3a3a; border-radius: 8px; padding: 0.9em 1em; }
+.indy-fulfil-build-head { display: flex; flex-wrap: wrap; gap: 0.6em; align-items: baseline; margin-bottom: 0.6em; }
+.indy-fulfil-note { flex-basis: 100%; }
+.indy-fulfil-slot { margin: 0.5em 0; }
+.indy-fulfil-slot-label { font-weight: 600; color: #cdd; font-size: 0.9em; margin-bottom: 0.25em; }
+.mat-row-empty td { color: #e79; }
+.mat-row-partial td { color: #e8c84a; }

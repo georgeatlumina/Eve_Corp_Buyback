@@ -66,6 +66,7 @@ from esi import (
     fetch_system_kills,
     resolve_names,
     resolve_ids,
+    resolve_type_ids,
     send_evemail,
 )
 from janice import (
@@ -76,7 +77,9 @@ from janice import (
     fetch_type_sell_price,
     items_from_appraisal,
 )
+import builds
 import liquidation
+import stockpile
 from market import enrich as enrich_types, missing_ids as meta_missing_ids
 from pinned import (
     append_appraisal,
@@ -159,6 +162,8 @@ class ConfigUpdate(BaseModel):
     market_history_repo_url: Optional[str] = None
     market_history_pat_read: Optional[str] = None
     market_history_pat_write: Optional[str] = None
+    stockpile_group_name: Optional[str] = None
+    stockpile_allow_push: Optional[bool] = None
 
 
 @app.post('/api/config')
@@ -663,6 +668,40 @@ def _github_contents_put(owner, repo, branch, path, text, sha, pat, user_agent, 
         'commit_html_url': (out.get('commit') or {}).get('html_url'),
         'blob_sha': (out.get('content') or {}).get('sha'),
     }
+
+
+def _github_contents_list(owner, repo, branch, dirpath, pat, user_agent):
+    """List the files in one directory via the GitHub Contents API.
+
+    Returns ``[{name, path, sha}, …]`` for the files it contains. An empty list
+    is returned when the directory doesn't exist yet (404) — callers treat that
+    as "no builds published". Only regular files are returned (sub-dirs skipped).
+    """
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if pat:
+        headers['Authorization'] = f'Bearer {pat}'
+    api = f'https://api.github.com/repos/{owner}/{repo}/contents/{dirpath}'
+    resp = requests.get(api, headers=headers, params={'ref': branch}, timeout=15)
+    if resp.status_code == 404:
+        return []
+    if resp.status_code in (401, 403):
+        raise PermissionError(
+            f'{resp.status_code} {resp.reason} — '
+            f'{"GitHub rejected the PAT for this repo" if pat else "private repo — set a read PAT in Config"}'
+        )
+    resp.raise_for_status()
+    body = resp.json()
+    if not isinstance(body, list):
+        return []
+    return [
+        {'name': e.get('name'), 'path': e.get('path'), 'sha': e.get('sha')}
+        for e in body
+        if e.get('type') == 'file' and str(e.get('name') or '').endswith('.json')
+    ]
 
 
 def _sync_quotas_from_url(url, cfg, persist=True):
@@ -2130,6 +2169,344 @@ def liquidation_delete_shipment(shipment_id: str):
     if not removed:
         raise HTTPException(404, f'No shipment {shipment_id!r}')
     return {'ok': True}
+
+
+# ---- Stockpile (alliance industry-material stock levels) ----
+# One JSON doc on the *market-history* GitHub repo at inventory/stock.json,
+# shared across the alliance (same repo + PATs as the liquidation board). The
+# admin pastes an EVE inventory list; the sidecar resolves + categorizes it and
+# pushes the doc. Industry pilots read it. Local file is cache/fallback.
+_STOCKPILE_STORE_PATH = 'inventory/stock.json'
+
+
+def _stockpile_remote_cfg(cfg):
+    """Resolve the GitHub location for the stock store from the market-history
+    repo config, or None if not configured/parseable."""
+    url = (cfg.get('market_history_repo_url') or '').strip()
+    if not url:
+        return None
+    parsed = _parse_github_blob_url(url)
+    if not parsed:
+        return None
+    owner, repo, branch, _path = parsed
+    return {
+        'owner': owner, 'repo': repo, 'branch': branch, 'path': _STOCKPILE_STORE_PATH,
+        'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
+        'write_pat': cfg.get('market_history_pat_write') or None,
+    }
+
+
+def _stockpile_totals(store):
+    """Per-category `{lines, qty}` tallies for the dashboard header tiles."""
+    totals = {c: {'lines': 0, 'qty': 0} for c in stockpile.CATEGORIES}
+    for it in store.get('items', []):
+        c = it.get('category') if it.get('category') in totals else 'other'
+        totals[c]['lines'] += 1
+        totals[c]['qty'] += int(it.get('qty') or 0)
+    return totals
+
+
+def _stockpile_read_store():
+    """Return ``(store, sha, rc)``. Prefers the GitHub repo; on any remote
+    failure falls back to the local cache (sha None)."""
+    cfg = load_config()
+    rc = _stockpile_remote_cfg(cfg)
+    if not rc:
+        return stockpile.load_store_local(), None, None
+    ua = get_user_agent()
+    try:
+        text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                         rc['path'], rc['read_pat'], ua)
+        store = stockpile.normalize(json.loads(text))
+        stockpile.save_store_local(store)  # refresh cache
+        return store, sha, rc
+    except FileNotFoundError:
+        return stockpile.empty_store(), None, rc  # first write creates the file
+    except Exception:
+        return stockpile.load_store_local(), None, rc
+
+
+@app.get('/api/stockpile')
+def get_stockpile():
+    store, _sha, rc = _stockpile_read_store()
+    return {**store, 'storage': 'github' if rc else 'local', 'totals': _stockpile_totals(store)}
+
+
+class StockpileSave(BaseModel):
+    text: str = ''
+    note: Optional[str] = ''
+
+
+@app.post('/api/stockpile')
+def save_stockpile(req: StockpileSave):
+    cfg = load_config()
+    if not cfg.get('stockpile_allow_push'):
+        raise HTTPException(403, 'Stock editing is disabled (enable "Allow stock edits" in Config).')
+    parsed = stockpile.parse_paste(req.text or '')
+    if not parsed:
+        raise HTTPException(400, 'No items found in the pasted text.')
+    ua = get_user_agent()
+    # Resolve pasted names -> type ids, then type ids -> group/category metadata
+    # so each line can be bucketed into minerals / PI / other.
+    names = [p['name'] for p in parsed]
+    try:
+        name_to_id = resolve_type_ids(names, ua)
+    except Exception:
+        name_to_id = {}
+    type_ids = [tid for tid in name_to_id.values() if tid]
+    meta = {}
+    if type_ids:
+        try:
+            meta = enrich_types(type_ids, ua)
+        except Exception:
+            meta = {}
+    items = []
+    for p in parsed:
+        tid = name_to_id.get(p['name'].lower()) or 0
+        m = meta.get(int(tid)) if tid else None
+        items.append({
+            'name': p['name'],
+            'type_id': int(tid) if tid else 0,
+            'qty': int(p['qty']),
+            'category': stockpile.classify(m, p['name']),
+        })
+    store = {
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'note': (req.note or '').strip(),
+        'items': items,
+    }
+    rc = _stockpile_remote_cfg(cfg)
+    commit = None
+    if rc and rc.get('write_pat'):
+        try:
+            try:
+                _text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                                  rc['path'], rc['read_pat'], ua)
+            except FileNotFoundError:
+                sha = None  # first write creates the file
+            commit = _github_contents_put(rc['owner'], rc['repo'], rc['branch'], rc['path'],
+                                          json.dumps(store, indent=2), sha, rc['write_pat'],
+                                          ua, 'stockpile: update inventory')
+            cfg['stockpile_last_synced'] = store['updated_at']
+            cfg['stockpile_last_status'] = f'pushed {len(items)} item(s)'
+            save_config(cfg)
+        except Exception as e:
+            cfg['stockpile_last_status'] = f'push failed: {e}'
+            save_config(cfg)
+            stockpile.save_store_local(store)
+            raise HTTPException(502, f'GitHub push failed: {e}')
+    else:
+        cfg['stockpile_last_synced'] = store['updated_at']
+        cfg['stockpile_last_status'] = f'saved locally ({len(items)} item(s))'
+        save_config(cfg)
+    stockpile.save_store_local(store)
+    return {
+        **store,
+        'storage': 'github' if (rc and rc.get('write_pat')) else 'local',
+        'totals': _stockpile_totals(store),
+        'commit_sha': (commit or {}).get('commit_sha'),
+        'commit_html_url': (commit or {}).get('commit_html_url'),
+        'unresolved': [p['name'] for p in parsed if not name_to_id.get(p['name'].lower())],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Indy build planner — per-builder build entries, shared via the market-history
+# repo. Each authenticated pilot owns one file at builds/{character_id}.json
+# holding all of their planned builds (doctrine, est. completion date, and one
+# or more manufacturing slots with the missing materials pasted from the game).
+# Members submit their own file (write PAT required); admins read every file via
+# /api/builds/all and compare the aggregate missing materials against the
+# alliance stockpile on the Build Fulfilment dashboard. Reuses the stockpile
+# paste parser + item classifier so a "missing materials" paste resolves to
+# {name, type_id, qty, category} exactly like an inventory paste.
+# ---------------------------------------------------------------------------
+
+
+def _builds_remote_cfg(cfg):
+    """Resolve the GitHub location for the shared builds directory from the
+    market-history repo config, or None if not configured/parseable."""
+    url = (cfg.get('market_history_repo_url') or '').strip()
+    if not url:
+        return None
+    parsed = _parse_github_blob_url(url)
+    if not parsed:
+        return None
+    owner, repo, branch, _path = parsed
+    return {
+        'owner': owner, 'repo': repo, 'branch': branch,
+        'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
+        'write_pat': cfg.get('market_history_pat_write') or None,
+    }
+
+
+def _builds_file_path(builder_id):
+    return f'{builds.STORE_DIR}/{int(builder_id)}.json'
+
+
+def _current_builder():
+    """Identify the logged-in industry pilot from the default auth slot, or None
+    when nobody is authenticated there."""
+    st = _slot_status(DEFAULT_SLOT)
+    if not st.get('authenticated') or not st.get('character_id'):
+        return None
+    return {'id': int(st['character_id']), 'name': st.get('character') or ''}
+
+
+def _builds_resolve_and_classify(text, ua):
+    """Parse a missing-materials paste and resolve each line to a categorized
+    EVE type. Returns (items, unresolved). Mirrors the stockpile save path."""
+    parsed = stockpile.parse_paste(text or '')
+    if not parsed:
+        return [], []
+    names = [p['name'] for p in parsed]
+    try:
+        name_to_id = resolve_type_ids(names, ua)
+    except Exception:
+        name_to_id = {}
+    type_ids = [tid for tid in name_to_id.values() if tid]
+    meta = {}
+    if type_ids:
+        try:
+            meta = enrich_types(type_ids, ua)
+        except Exception:
+            meta = {}
+    items = []
+    for p in parsed:
+        tid = name_to_id.get(p['name'].lower()) or 0
+        m = meta.get(int(tid)) if tid else None
+        items.append({
+            'name': p['name'],
+            'type_id': int(tid) if tid else 0,
+            'qty': int(p['qty']),
+            'category': stockpile.classify(m, p['name']),
+        })
+    unresolved = [p['name'] for p in parsed if not name_to_id.get(p['name'].lower())]
+    return items, unresolved
+
+
+class BuildParseReq(BaseModel):
+    text: str = ''
+
+
+@app.post('/api/builds/parse')
+def builds_parse(req: BuildParseReq):
+    """Parse an in-game 'missing materials' paste into categorized line items
+    WITHOUT saving — the planner stores the result into the target build slot."""
+    items, unresolved = _builds_resolve_and_classify(req.text or '', get_user_agent())
+    if not items:
+        raise HTTPException(400, 'No items found in the pasted text.')
+    return {'items': items, 'unresolved': unresolved}
+
+
+def _builds_read_doc(builder_id):
+    """Return (doc, sha, rc). Prefer the GitHub file; fall back to local cache."""
+    cfg = load_config()
+    rc = _builds_remote_cfg(cfg)
+    if not rc:
+        return builds.load_mine_local(), None, None
+    ua = get_user_agent()
+    path = _builds_file_path(builder_id)
+    try:
+        text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'], path,
+                                         rc['read_pat'], ua)
+        doc = builds.normalize(json.loads(text))
+        builds.save_mine_local(doc)
+        return doc, sha, rc
+    except FileNotFoundError:
+        return builds.empty_doc(builder_id), None, rc
+    except Exception:
+        return builds.load_mine_local(), None, rc
+
+
+@app.get('/api/builds/mine')
+def get_my_builds():
+    b = _current_builder()
+    if not b:
+        raise HTTPException(400, 'Log in with your industry character on the Auth tab first (slot 1).')
+    doc, _sha, rc = _builds_read_doc(b['id'])
+    doc['builder_id'] = b['id']
+    if b['name']:
+        doc['builder_name'] = b['name']
+    return {
+        **doc,
+        'storage': 'github' if rc else 'local',
+        'can_publish': bool(rc and rc.get('write_pat')),
+        'slot_count': builds.build_slot_count(doc),
+    }
+
+
+class BuildsSave(BaseModel):
+    builds: list = []
+
+
+@app.post('/api/builds/mine')
+def save_my_builds(req: BuildsSave):
+    b = _current_builder()
+    if not b:
+        raise HTTPException(400, 'Log in with your industry character on the Auth tab first (slot 1).')
+    doc = builds.normalize({'builder_id': b['id'], 'builder_name': b['name'], 'builds': req.builds})
+    doc['updated_at'] = datetime.now(timezone.utc).isoformat()
+    cfg = load_config()
+    rc = _builds_remote_cfg(cfg)
+    commit = None
+    storage = 'local'
+    if rc and rc.get('write_pat'):
+        ua = get_user_agent()
+        path = _builds_file_path(b['id'])
+        try:
+            try:
+                _t, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'], path,
+                                               rc['read_pat'] or rc['write_pat'], ua)
+            except FileNotFoundError:
+                sha = None  # first write creates the file
+            commit = _github_contents_put(rc['owner'], rc['repo'], rc['branch'], path,
+                                          json.dumps(doc, indent=2), sha, rc['write_pat'], ua,
+                                          f'builds: update {b["name"] or b["id"]}')
+            storage = 'github'
+        except Exception as e:
+            builds.save_mine_local(doc)
+            raise HTTPException(502, f'GitHub push failed: {e}')
+    builds.save_mine_local(doc)
+    return {
+        **doc,
+        'storage': storage,
+        'can_publish': bool(rc and rc.get('write_pat')),
+        'slot_count': builds.build_slot_count(doc),
+        'commit_html_url': (commit or {}).get('commit_html_url'),
+    }
+
+
+@app.get('/api/builds/all')
+def get_all_builds():
+    """Every builder's file, plus a pre-aggregated missing-materials list — the
+    Build Fulfilment (admin) dashboard compares this against the stockpile."""
+    cfg = load_config()
+    rc = _builds_remote_cfg(cfg)
+    if not rc:
+        local = builds.load_mine_local()
+        docs = [local] if local.get('builds') else []
+        return {'builders': docs, 'missing': builds.aggregate_missing(docs),
+                'storage': 'local', 'reason': 'not_configured'}
+    ua = get_user_agent()
+    try:
+        entries = _github_contents_list(rc['owner'], rc['repo'], rc['branch'],
+                                        builds.STORE_DIR, rc['read_pat'], ua)
+    except Exception as e:
+        local = builds.load_mine_local()
+        docs = [local] if local.get('builds') else []
+        return {'builders': docs, 'missing': builds.aggregate_missing(docs),
+                'storage': 'local', 'reason': f'list_failed: {e}'}
+    docs = []
+    for ent in entries:
+        try:
+            text, _sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                              ent['path'], rc['read_pat'], ua)
+            docs.append(builds.normalize(json.loads(text)))
+        except Exception:
+            continue
+    return {'builders': docs, 'missing': builds.aggregate_missing(docs),
+            'storage': 'github', 'count': len(docs)}
 
 
 # ---------------------------------------------------------------------------

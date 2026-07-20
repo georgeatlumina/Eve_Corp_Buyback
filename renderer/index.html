@@ -31,6 +31,7 @@
         <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
         <button class="tab-btn" data-tab="readiness">Market Readiness</button>
         <button class="tab-btn" data-tab="market">Market</button>
+        <button class="tab-btn" data-tab="stockpile" id="tab-btn-stockpile" hidden>Stockpile</button>
       </div>
       <div class="nav-group" data-group="operations">
         <span class="nav-group-label">Operations</span>
@@ -40,6 +41,11 @@
         <button class="tab-btn" data-tab="srp">SRP</button>
         <button class="tab-btn" data-tab="liquidation">Liquidation</button>
         <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
+      </div>
+      <div class="nav-group" data-group="indy">
+        <span class="nav-group-label">Indy</span>
+        <button class="tab-btn" data-tab="indy-planner">Build Planner</button>
+        <button class="tab-btn" data-tab="indy-fulfil">Build Fulfilment</button>
       </div>
     </nav>
   </header>
@@ -191,6 +197,13 @@
             <label>Write PAT <small class="muted">(<code>Contents: read+write</code> — required to archive)</small> <input name="market_history_pat_write" type="password" autocomplete="off" placeholder="github_pat_…" /></label>
           </div>
           <p id="market-history-status" class="muted"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Stockpile page — industry material stock</legend>
+          <p class="muted">The Stockpile tab shows alliance mineral / PI / material stock levels. It's stored as <code>inventory/stock.json</code> in the <strong>Market history repo</strong> above (same repo + PATs). Access to the tab is gated on Alliance Auth membership in the group named below — a convenience filter, not a security boundary (the real protection is the repo PAT). Tick <strong>Allow stock edits</strong> to unhide the admin paste/save panel on that tab; it requires the Market-history <em>Write</em> PAT to push.</p>
+          <label>Auth group name <input name="stockpile_group_name" type="text" placeholder="Industry" /></label>
+          <label class="inline-check"><input name="stockpile_allow_push" type="checkbox" /> Allow stock edits (show the admin paste/save panel)</label>
         </fieldset>
 
         <label>Janice API Key (optional) <input name="janice_api_key" type="text" autocomplete="off" placeholder="X-ApiKey from Janice" /></label>
@@ -531,6 +544,43 @@
       </div>
     </section>
 
+    <section id="tab-stockpile" class="tab">
+      <h2>Alliance stockpile</h2>
+      <p class="muted">Current alliance stock of industry materials — minerals, planetary industry (PI) commodities, and everything else — kept up to date by the logistics team. Read-only for pilots; the numbers are the amounts on hand at last update.</p>
+      <div class="actions">
+        <button id="stockpile-refresh" type="button">Refresh</button>
+        <span id="stockpile-status" class="muted"></span>
+      </div>
+
+      <div id="stockpile-tiles" class="market-tiles"></div>
+
+      <div class="stockpile-filters market-filters">
+        <input id="stockpile-search" type="search" placeholder="Search material…" autocomplete="off" />
+        <select id="stockpile-category">
+          <option value="">All categories</option>
+          <option value="minerals">Minerals</option>
+          <option value="pi">Planetary (PI)</option>
+          <option value="other">Other</option>
+        </select>
+        <span id="stockpile-count" class="muted"></span>
+      </div>
+
+      <div id="stockpile-sections"></div>
+
+      <!-- Admin paste/save panel — unhidden only when "Allow stock edits" is on -->
+      <fieldset id="stockpile-editor" class="stockpile-editor" hidden>
+        <legend>Update stock (admin)</legend>
+        <p class="muted small">Open the alliance hangar / asset window in-game, select all, copy, and paste below (EVE inventory format — one item per line, name then quantity). Saving <strong>replaces</strong> the whole stock list and pushes it to the shared repo. Items are auto-sorted into Minerals / PI / Other.</p>
+        <textarea id="stockpile-paste" rows="8" placeholder="Tritanium	12,500,000&#10;Pyerite	4,200,000&#10;Coolant	85,000&#10;…"></textarea>
+        <label class="stockpile-note-label">Note <input id="stockpile-note" type="text" placeholder="optional — e.g. 'post-mining-op tally'" /></label>
+        <div class="actions">
+          <button id="stockpile-save" type="button">Save &amp; push</button>
+          <span id="stockpile-save-status" class="muted"></span>
+        </div>
+        <p id="stockpile-unresolved" class="muted small" hidden></p>
+      </fieldset>
+    </section>
+
     <section id="tab-liquidation" class="tab">
       <h2>Liquidation</h2>
       <p class="muted">Ship buyback Amarr&nbsp;→&nbsp;Jita (PushX courier) and sell it for more than the <strong>90% Amarr buy</strong> we paid. Paste a courier contract to see per-item margin, liquidity and a dump-vs-list recommendation; track shipments in flight; and watch live Jita sell orders. Ranked by <strong>annualized ROI</strong> so ISK isn't locked into orders that aren't moving. <span class="muted">Shipments stored locally; orders live from ESI.</span></p>
@@ -652,7 +702,57 @@
       </div>
       <div id="hh-planner-content"></div>
     </section>
+
+    <section id="tab-indy-planner" class="tab">
+      <h2>Build Planner</h2>
+      <p class="muted">Plan your manufacturing jobs and share the missing materials with the alliance. Pick the doctrine you're building against, set an estimated completion date, then paste the <strong>missing materials</strong> for each build slot straight from the in-game window. Submitted builds show up on the admin <strong>Build Fulfilment</strong> dashboard so directors can fill them from alliance stock.</p>
+      <div class="actions">
+        <button id="btn-indy-add-build" type="button">+ New build</button>
+        <button id="btn-indy-save" type="button" class="secondary">Save &amp; submit</button>
+        <button id="btn-indy-reload" type="button" class="secondary">Reload</button>
+        <span id="indy-planner-status" class="muted"></span>
+      </div>
+      <div id="indy-builds"></div>
+    </section>
+
+    <section id="tab-indy-fulfil" class="tab">
+      <h2>Build Fulfilment</h2>
+      <p class="muted">Every builder's outstanding missing materials, aggregated and compared against alliance stock (from the Stockpile). <strong>Green</strong> = fully coverable from stock, <strong>amber</strong> = partial, <strong>red</strong> = none in stock. Sort by soonest deadline or biggest shortfall to prioritise what to fill first.</p>
+      <div id="indy-fulfil-tiles" class="market-tiles"></div>
+      <div class="actions">
+        <button id="btn-indy-fulfil-refresh" type="button">Refresh</button>
+        <select id="indy-fulfil-view" class="secondary">
+          <option value="materials">Group by material</option>
+          <option value="builds">Group by build</option>
+        </select>
+        <select id="indy-fulfil-sort" class="secondary">
+          <option value="shortfall">Sort by biggest shortfall</option>
+          <option value="deadline">Sort by soonest deadline</option>
+          <option value="needed">Sort by total needed</option>
+        </select>
+        <label class="ds-hide-ok"><input type="checkbox" id="indy-fulfil-hide-ok" /> Only show shortfalls</label>
+        <button id="btn-indy-fulfil-export-csv" type="button" class="secondary">Export shortfall CSV</button>
+        <button id="btn-indy-fulfil-export-text" type="button" class="secondary">Copy shopping list</button>
+      </div>
+      <p id="indy-fulfil-status" class="muted"></p>
+      <div id="indy-fulfil-dashboard"></div>
+    </section>
   </main>
+
+  <div id="indy-paste-overlay" class="indy-drawer-overlay" hidden></div>
+  <aside id="indy-paste-drawer" class="indy-drawer" hidden aria-hidden="true">
+    <div class="indy-drawer-head">
+      <h3 id="indy-drawer-title">Paste missing materials</h3>
+      <button id="indy-drawer-close" type="button" class="indy-drawer-close" aria-label="Close">×</button>
+    </div>
+    <p class="muted">In-game: open the industry job, right-click the missing materials and <strong>Copy</strong>, then paste below. Works with the inventory/multibuy copy format.</p>
+    <textarea id="indy-drawer-paste" rows="14" placeholder="Tritanium&#9;1,250,000&#10;Pyerite&#9;480,000&#10;…"></textarea>
+    <div class="actions">
+      <button id="indy-drawer-parse" type="button">Parse &amp; add materials</button>
+      <button id="indy-drawer-cancel" type="button" class="secondary">Cancel</button>
+    </div>
+    <p id="indy-drawer-status" class="muted"></p>
+  </aside>
 
   <div id="mail-modal" class="modal" hidden>
     <div class="modal-backdrop"></div>
@@ -706,6 +806,8 @@
   <script src="hooks-hubs.js"></script>
   <script src="liquidation.js"></script>
   <script src="market.js"></script>
+  <script src="stockpile.js"></script>
   <script src="doctrine-stock.js"></script>
+  <script src="indy.js"></script>
 </body>
 </html>

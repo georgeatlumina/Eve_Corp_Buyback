@@ -74,6 +74,33 @@ def resolve_ids(names, user_agent):
     return out
 
 
+def resolve_type_ids(names, user_agent):
+    """Resolve item names -> type ids via POST /universe/ids/. Returns a dict
+    keyed by lowercased type name -> type_id (only the `inventory_types`
+    bucket). Unknown names are simply absent from the result."""
+    cleaned = sorted({n.strip() for n in names if n and n.strip()})
+    out = {}
+    if not cleaned:
+        return out
+    for i in range(0, len(cleaned), 500):
+        chunk = cleaned[i:i + 500]
+        resp = _session.post(
+            f'{ESI_BASE}/universe/ids/',
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': user_agent,
+            },
+            params={'datasource': 'tranquility'},
+            json=chunk,
+        )
+        resp.raise_for_status()
+        data = resp.json() or {}
+        for ent in (data.get('inventory_types') or []):
+            out[(ent.get('name') or '').lower()] = ent.get('id')
+    return out
+
+
 def send_evemail(character_id, recipient_id, subject, body, access_token, user_agent):
     """Send an EVE mail from the authenticated character to a single recipient.
 

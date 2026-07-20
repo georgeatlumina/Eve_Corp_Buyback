@@ -183,11 +183,54 @@ function applyViewMode(mode) {
   if (isMember && active && ADMIN_ONLY_TABS.includes(active.dataset.tab)) {
     activateTab('appraisal');
   }
+  if (typeof updateStockpileTabVisibility === 'function') updateStockpileTabVisibility();
 }
 
 $$('.view-mode-btn').forEach((btn) => {
   btn.addEventListener('click', () => applyViewMode(btn.dataset.mode));
 });
+
+// ===== Stockpile tab access gate =====
+// The Stockpile tab is gated on Alliance Auth group membership (a client-side
+// convenience filter, not a security boundary — see the note in Config). It's
+// also always shown in Admin view so whoever maintains the stock can reach it.
+// Membership is scraped once from the authenticated AA `/groups/` page. Declared
+// before the first applyViewMode() call below, which reads stockpileGroupOk.
+let stockpileGroupOk = false;
+
+function updateStockpileTabVisibility() {
+  const btn = $('#tab-btn-stockpile');
+  if (!btn) return;
+  const show = stockpileGroupOk || getViewMode() === 'admin';
+  btn.hidden = !show;
+  if (!show && btn.classList.contains('active')) activateTab('appraisal');
+}
+
+async function refreshStockpileAccess() {
+  let cfg = null;
+  try {
+    const res = await fetch(`${API}/api/config`);
+    if (res.ok) cfg = await res.json();
+  } catch (e) { /* config unreachable — treat as no access */ }
+  const groupName = (cfg?.stockpile_group_name || '').trim();
+  // Admin paste/save panel visibility is independent of group membership.
+  const editor = $('#stockpile-editor');
+  if (editor) editor.hidden = !cfg?.stockpile_allow_push;
+
+  stockpileGroupOk = false;
+  if (groupName && window.api?.aaFetchHtml && typeof parseUserGroups === 'function') {
+    try {
+      const res = await window.api.aaFetchHtml('/groups/');
+      const loggedIn = res?.ok
+        && !/\/account\/login\//.test(res.finalUrl || '')
+        && !/Login with Eve SSO/i.test(res.html || '');
+      if (loggedIn) {
+        stockpileGroupOk = hasGroupMembership(parseUserGroups(res.html || ''), groupName);
+      }
+    } catch (e) { /* scrape failed — tab stays hidden for non-admins */ }
+  }
+  updateStockpileTabVisibility();
+}
 
 applyViewMode(getViewMode());
 
@@ -272,6 +315,12 @@ async function loadConfig() {
   }
   if ($('[name=market_history_pat_write]')) {
     $('[name=market_history_pat_write]').value = cfg.market_history_pat_write || '';
+  }
+  if ($('[name=stockpile_group_name]')) {
+    $('[name=stockpile_group_name]').value = cfg.stockpile_group_name || '';
+  }
+  if ($('[name=stockpile_allow_push]')) {
+    $('[name=stockpile_allow_push]').checked = !!cfg.stockpile_allow_push;
   }
   updatePushButtonVisibility();
   renderQuotaSyncStatus(cfg);
@@ -394,6 +443,8 @@ function collectConfigForm() {
     market_history_repo_url: (fd.get('market_history_repo_url') || '').toString().trim(),
     market_history_pat_read: (fd.get('market_history_pat_read') || '').toString().trim(),
     market_history_pat_write: (fd.get('market_history_pat_write') || '').toString().trim(),
+    stockpile_group_name: (fd.get('stockpile_group_name') || '').toString().trim(),
+    stockpile_allow_push: $('[name=stockpile_allow_push]')?.checked || false,
   };
 }
 
@@ -406,6 +457,7 @@ $('#config-form').addEventListener('submit', async (e) => {
   });
   $('#config-status').textContent = res.ok ? 'Saved.' : 'Error saving.';
   setTimeout(() => ($('#config-status').textContent = ''), 2500);
+  if (res.ok) refreshStockpileAccess();  // re-evaluate the group gate + editor
 });
 
 function renderMoonTab() {
@@ -1150,6 +1202,7 @@ document.addEventListener('click', async (e) => {
 });
 
 loadConfig().then(maybeAutoSyncQuotas);
+refreshStockpileAccess();
 refreshAuthStatus();
 initMoonCalculator();
 
@@ -1192,6 +1245,9 @@ if (btnAaOpen) {
     }
   });
 }
+// Re-check stockpile group access when returning to the app (e.g. after signing
+// in via the separate AA window). Stops probing once access is granted.
+window.addEventListener('focus', () => { if (!stockpileGroupOk) refreshStockpileAccess(); });
 const btnAaLogout = $('#btn-aa-logout');
 if (btnAaLogout) {
   btnAaLogout.addEventListener('click', async () => {
@@ -1201,6 +1257,7 @@ if (btnAaLogout) {
       if (status) status.textContent = 'Signed out.';
       const list = $('#doctrines-list');
       if (list) list.innerHTML = '';
+      refreshStockpileAccess();  // drop stockpile access on sign-out
     }
   });
 }

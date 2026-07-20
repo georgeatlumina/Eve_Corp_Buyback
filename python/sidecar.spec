@@ -42,6 +42,7 @@ hidden_imports = [
     'market',
     'pinned',
     'refining',
+    'stockpile',
     'validate',
     'workforce_plan',
 ]

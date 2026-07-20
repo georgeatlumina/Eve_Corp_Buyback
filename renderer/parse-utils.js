@@ -211,6 +211,56 @@ function parseSrpRequests(html) {
 }
 
 // ISK price formatters — 'en-US' locale for deterministic output across systems.
+// Alliance Auth group membership. Scrapes the stock groupmanagement `/groups/`
+// page: it lists every open group as a table row, and the logged-in user is a
+// MEMBER of a group when that row offers a "leave" control (a request_leave URL
+// or a "Leave" button). A second pass reads a dashboard-style "Group
+// Memberships" panel (list of joined groups). Returns the array of joined group
+// names. Selectors target stock AA markup and may need tuning against a
+// customized install.
+function parseUserGroups(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const groups = new Set();
+
+  // Pass 1 — /groups/ table rows carrying a leave control => the user is in it.
+  doc.querySelectorAll('table tr').forEach((tr) => {
+    const cells = tr.querySelectorAll('td');
+    if (!cells.length) return;
+    const name = (cells[0].textContent || '').trim();
+    if (!name) return;
+    let member = !!tr.querySelector(
+      'a[href*="request_leave"], form[action*="request_leave"], a[href*="/leave/"], form[action*="/leave/"]'
+    );
+    if (!member) {
+      tr.querySelectorAll('button, a, input[type=submit]').forEach((b) => {
+        const t = (b.textContent || b.value || '').trim().toLowerCase();
+        if (t === 'leave' || t === 'leave group') member = true;
+      });
+    }
+    if (member) groups.add(name);
+  });
+
+  // Pass 2 — a "Group Memberships" panel/card lists only the user's groups.
+  doc.querySelectorAll('.panel, .card').forEach((panel) => {
+    const head = panel.querySelector('.panel-heading, .panel-title, .card-header, h3, h4');
+    if (!head || !/group/i.test(head.textContent || '')) return;
+    panel.querySelectorAll('li, .label, .badge').forEach((el) => {
+      const t = (el.textContent || '').trim();
+      if (t && t.length < 80 && !/membership/i.test(t)) groups.add(t);
+    });
+  });
+
+  return Array.from(groups);
+}
+
+// True when the user belongs to a group whose name matches `wanted`
+// (case-insensitive, substring — so "Industry" matches "Industry Pilots").
+function hasGroupMembership(groups, wanted) {
+  const w = (wanted || '').trim().toLowerCase();
+  if (!w) return false;
+  return (groups || []).some((g) => (g || '').toLowerCase().includes(w));
+}
+
 function fmtIsk(n) {
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
@@ -220,5 +270,5 @@ function fmtMillions(n) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { extractTypeId, parseDoctrinesHtml, parseDoctrineDetail, parseFitDetail, parseSrpFleets, parseSrpRequests, fmtIsk, fmtMillions };
+  module.exports = { extractTypeId, parseDoctrinesHtml, parseDoctrineDetail, parseFitDetail, parseSrpFleets, parseSrpRequests, parseUserGroups, hasGroupMembership, fmtIsk, fmtMillions };
 }
