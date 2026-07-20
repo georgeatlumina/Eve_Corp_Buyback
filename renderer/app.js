@@ -4213,7 +4213,7 @@ function renderAcquisitionsTab() {
   const root = $('#acquisitions-root');
   if (!root) return;
   root.innerHTML = `
-    <h2>Acquisitions Inventory</h2>
+    <h2>Acquisitions Inventory <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
     <p class="muted">Paste your full inventory (hulls and modules together) in EVE clipboard format
     — Name, tab, quantity, one line per item. Hulls and modules will be split automatically.</p>
     <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
@@ -4446,7 +4446,7 @@ function renderHaulxTab() {
       !hasReadiness && '<li>Run a <strong>Market Readiness</strong> scan (Market Readiness tab → Scan doctrines &amp; fits)</li>',
     ].filter(Boolean).join('');
     root.innerHTML = `
-      <h2>HaulX</h2>
+      <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
       <p class="muted">Before you can plan a haul, complete the following:</p>
       <ul style="color:#e0e8f0;line-height:2">${items}</ul>`;
     return;
@@ -4455,7 +4455,7 @@ function renderHaulxTab() {
   const quotas = lastContractsScan.quotas || [];
 
   root.innerHTML = `
-    <h2>HaulX</h2>
+    <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
     <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
     <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
       <span style="font-weight:600">HaulX</span>
