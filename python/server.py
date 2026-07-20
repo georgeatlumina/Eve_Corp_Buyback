@@ -69,6 +69,7 @@ from esi import (
     resolve_type_ids,
     send_evemail,
     fetch_type_info,
+    fetch_group_info,
 )
 from janice import (
     appraise_items,
@@ -3509,7 +3510,7 @@ class AcquisitionsSaveRequest(BaseModel):
 @app.post('/api/acquisitions/parse')
 def acquisitions_parse(req: AcquisitionsParseRequest):
     """Parse an EVE-format inventory paste (Name\\tQty per line) and resolve
-    names to type IDs via Janice. Returns a list of {type_id, name, quantity}."""
+    names to type IDs via Janice. Returns a list of {type_id, name, quantity, category_id}."""
     if not req.paste_text or not req.paste_text.strip():
         raise HTTPException(400, 'paste_text is empty')
     cfg = load_config()
@@ -3519,10 +3520,24 @@ def acquisitions_parse(req: AcquisitionsParseRequest):
         rows = appraise_items(req.paste_text, market_name, api_key=api_key)
     except Exception as e:
         raise HTTPException(502, f'Parse failed: {e}')
-    resolved = [
-        {'type_id': r['type_id'], 'name': r['name'], 'quantity': r['quantity']}
-        for r in rows if r.get('type_id')
-    ]
+    ua = get_user_agent()
+    resolved = []
+    for r in rows:
+        if not r.get('type_id'):
+            continue
+        category_id = None
+        try:
+            type_info = fetch_type_info(r['type_id'], ua)
+            group_info = fetch_group_info(type_info.get('group_id'), ua)
+            category_id = group_info.get('category_id')
+        except Exception:
+            pass
+        resolved.append({
+            'type_id': r['type_id'],
+            'name': r['name'],
+            'quantity': r['quantity'],
+            'category_id': category_id,
+        })
     return {'items': resolved, 'unresolved': []}
 
 

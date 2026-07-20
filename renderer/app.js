@@ -4113,8 +4113,8 @@ async function copyShoppingList() {
 // Acquisitions tab
 // ============================================================
 
-let acquisitionsHulls = [];  // [{type_id, name, quantity}]
-let acquisitionsItems = [];  // [{type_id, name, quantity}]
+let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
+let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
 
 async function acquisitionsLoad() {
   try {
@@ -4134,8 +4134,8 @@ async function acquisitionsSave() {
   } catch (_) {}
 }
 
-function renderAcquisitionsTable(items) {
-  if (!items.length) return '<p class="muted" style="font-size:0.875rem;padding:0.5rem 0">Nothing yet — paste inventory above and click Parse.</p>';
+function renderAcquisitionsTable(items, emptyMsg) {
+  if (!items.length) return `<p class="muted" style="font-size:0.875rem;padding:0.5rem 0">${emptyMsg || 'None.'}</p>`;
   return `<table style="width:100%;border-collapse:collapse;font-size:0.875rem;margin-top:0.5rem">
     <thead>
       <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
@@ -4155,41 +4155,12 @@ function renderAcquisitionsTable(items) {
   </table>`;
 }
 
-function renderAcquisitionsSection(root, id, title, items, onParse, onClear) {
-  const section = document.createElement('div');
-  section.id = id;
-  section.style.cssText = 'margin-bottom:2rem';
-  section.innerHTML = `
-    <h3 style="margin:0 0 0.5rem">${escapeHtml(title)}</h3>
-    <textarea id="${id}-paste" rows="6" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
-      placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
-    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
-      <button id="${id}-parse" class="btn">Parse</button>
-      <button id="${id}-clear" class="link-btn" style="color:#8899aa">Clear</button>
-      <span id="${id}-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
-    </div>
-    <div id="${id}-table"></div>`;
-  root.appendChild(section);
-
-  const textarea = section.querySelector(`#${id}-paste`);
-  const parseBtn = section.querySelector(`#${id}-parse`);
-  const clearBtn = section.querySelector(`#${id}-clear`);
-  const statusEl = section.querySelector(`#${id}-status`);
-  const tableEl = section.querySelector(`#${id}-table`);
-
-  tableEl.innerHTML = renderAcquisitionsTable(items);
-
-  parseBtn.addEventListener('click', () => onParse(textarea, tableEl, statusEl));
-  clearBtn.addEventListener('click', () => onClear(textarea, tableEl, statusEl));
-  textarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      onParse(textarea, tableEl, statusEl);
-    }
-  });
+function renderAcquisitionsResults(hullsEl, itemsEl) {
+  hullsEl.innerHTML = renderAcquisitionsTable(acquisitionsHulls, 'No hulls found.');
+  itemsEl.innerHTML = renderAcquisitionsTable(acquisitionsItems, 'No modules or ammo found.');
 }
 
-async function acquisitionsParse(textarea, tableEl, statusEl, isHulls) {
+async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
   const text = textarea.value.trim();
   if (!text) { statusEl.textContent = 'Nothing to parse.'; return; }
   statusEl.textContent = 'Parsing…';
@@ -4200,20 +4171,22 @@ async function acquisitionsParse(textarea, tableEl, statusEl, isHulls) {
       body: JSON.stringify({ paste_text: text }),
     }).then((r) => r.json());
     if (data.detail) throw new Error(data.detail);
-    const items = data.items || [];
-    if (isHulls) acquisitionsHulls = items; else acquisitionsItems = items;
-    tableEl.innerHTML = renderAcquisitionsTable(items);
-    statusEl.textContent = `${items.length} item${items.length !== 1 ? 's' : ''} resolved.`;
+    const all = data.items || [];
+    acquisitionsHulls = all.filter((it) => it.category_id === 6);
+    acquisitionsItems = all.filter((it) => it.category_id !== 6);
+    renderAcquisitionsResults(hullsEl, itemsEl);
+    statusEl.textContent = `${all.length} item${all.length !== 1 ? 's' : ''} resolved — ${acquisitionsHulls.length} hull${acquisitionsHulls.length !== 1 ? 's' : ''}, ${acquisitionsItems.length} module${acquisitionsItems.length !== 1 ? 's' : ''}.`;
     await acquisitionsSave();
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
   }
 }
 
-function acquisitionsClear(textarea, tableEl, statusEl, isHulls) {
+function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
   textarea.value = '';
-  if (isHulls) acquisitionsHulls = []; else acquisitionsItems = [];
-  tableEl.innerHTML = renderAcquisitionsTable([]);
+  acquisitionsHulls = [];
+  acquisitionsItems = [];
+  renderAcquisitionsResults(hullsEl, itemsEl);
   statusEl.textContent = '';
   acquisitionsSave();
 }
@@ -4221,27 +4194,45 @@ function acquisitionsClear(textarea, tableEl, statusEl, isHulls) {
 function renderAcquisitionsTab() {
   const root = $('#acquisitions-root');
   if (!root) return;
-  root.innerHTML = '';
+  root.innerHTML = `
+    <h2>Acquisitions Inventory</h2>
+    <p class="muted">Paste your full inventory (hulls and modules together) in EVE clipboard format
+    — Name, tab, quantity, one line per item. Hulls and modules will be split automatically.</p>
+    <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
+      placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
+    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
+      <button id="acq-parse" class="btn">Parse</button>
+      <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
+      <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1.5rem">
+      <div>
+        <h3 style="margin:0 0 0.5rem">Hulls</h3>
+        <div id="acq-hulls-table"></div>
+      </div>
+      <div>
+        <h3 style="margin:0 0 0.5rem">Modules &amp; Ammo</h3>
+        <div id="acq-items-table"></div>
+      </div>
+    </div>`;
 
-  const header = document.createElement('div');
-  header.innerHTML = `
-    <h2>Acquisitions</h2>
-    <p class="muted">Track what's already on hand so Plan HaulX can show accurate shortfalls.
-    Paste your hull inventory and item inventory (modules, ammo, etc.) using the standard
-    EVE clipboard format — Name, then a tab, then quantity, one line per item.
-    Changes are saved automatically and survive app restarts.</p>`;
-  root.appendChild(header);
+  const textarea = root.querySelector('#acq-paste');
+  const parseBtn = root.querySelector('#acq-parse');
+  const clearBtn = root.querySelector('#acq-clear');
+  const statusEl = root.querySelector('#acq-status');
+  const hullsEl = root.querySelector('#acq-hulls-table');
+  const itemsEl = root.querySelector('#acq-items-table');
 
-  renderAcquisitionsSection(
-    root, 'acq-hulls', 'Hull Inventory', acquisitionsHulls,
-    (ta, tbl, st) => acquisitionsParse(ta, tbl, st, true),
-    (ta, tbl, st) => acquisitionsClear(ta, tbl, st, true),
-  );
-  renderAcquisitionsSection(
-    root, 'acq-items', 'Item Inventory', acquisitionsItems,
-    (ta, tbl, st) => acquisitionsParse(ta, tbl, st, false),
-    (ta, tbl, st) => acquisitionsClear(ta, tbl, st, false),
-  );
+  renderAcquisitionsResults(hullsEl, itemsEl);
+
+  parseBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl));
+  clearBtn.addEventListener('click', () => acquisitionsClear(textarea, hullsEl, itemsEl, statusEl));
+  textarea.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      acquisitionsParse(textarea, hullsEl, itemsEl, statusEl);
+    }
+  });
 }
 
 // Load acquisitions inventory on startup
@@ -4254,8 +4245,8 @@ acquisitionsLoad();
 const HAULX_MAX_VOLUME = 360000;  // m³ (360 km³)
 const HAULX_MAX_COLLATERAL = 5_000_000_000;  // ISK
 
-const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume }
-const haulxItemPriceCache = {}; // type_id -> jita min_sell (for fit items)
+const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume, fit_price, fit_volume }
+const haulxItemPriceCache = {}; // type_id -> { min_sell, vol } (for fit items)
 let haulxQty = {};  // type_id (string) -> qty (number)
 let haulxOverQuota = false;
 let haulxReadinessScanDone = false;  // true only after a readiness scan in this session
@@ -4266,7 +4257,7 @@ function haulxTotals() {
     if (!qty) continue;
     const p = haulxPriceCache[tid];
     if (p) {
-      vol += qty * (p.packaged_volume || 0);
+      vol += qty * (p.fit_volume != null ? p.fit_volume : (p.packaged_volume || 0));
       isk += qty * (p.fit_price != null ? p.fit_price : (p.min_sell || 0));
     }
   }
@@ -4317,13 +4308,13 @@ async function haulxFetchPrices(quotas) {
       fetch(`${API}/api/market/jita-sell?type_id=${tid}`)
         .then((r) => r.json())
         .then((data) => {
-          haulxItemPriceCache[tid] = data.min_sell ?? null;
+          haulxItemPriceCache[tid] = { min_sell: data.min_sell ?? null, vol: data.packaged_volume ?? null };
           // Hull entries also get volume stored in haulxPriceCache
           if (!haulxPriceCache[tid]) {
             haulxPriceCache[tid] = { min_sell: data.min_sell, packaged_volume: data.packaged_volume };
           }
         })
-        .catch(() => { haulxItemPriceCache[tid] = null; })
+        .catch(() => { haulxItemPriceCache[tid] = { min_sell: null, vol: null }; })
     )
   );
 
@@ -4335,36 +4326,54 @@ async function haulxFetchPrices(quotas) {
 
     // Ensure hull cache entry exists
     if (!haulxPriceCache[tid]) {
-      haulxPriceCache[tid] = { min_sell: haulxItemPriceCache[tid] ?? null, packaged_volume: null };
+      const entry = haulxItemPriceCache[tid];
+      haulxPriceCache[tid] = { min_sell: entry?.min_sell ?? null, packaged_volume: entry?.vol ?? null };
     }
 
     let fitTotal = null;
+    let fitVolume = null;
     if (fit?.items?.length) {
-      let sum = 0;
-      let allPriced = true;
+      const hullEntry = haulxItemPriceCache[tid];
+      let sumIsk = hullEntry?.min_sell ?? 0;
+      let sumVol = hullEntry?.vol ?? 0;
+      let allPriced = hullEntry?.min_sell != null;
+      let allVolumed = hullEntry?.vol != null;
       for (const item of fit.items) {
+        if (String(item.typeId) === tid) continue;  // hull already counted above
         const p = haulxItemPriceCache[String(item.typeId)];
-        if (p == null) { allPriced = false; break; }
-        sum += p * item.qty;
+        if (p?.min_sell == null) { allPriced = false; }
+        else sumIsk += p.min_sell * item.qty;
+        if (p?.vol == null) { allVolumed = false; }
+        else sumVol += p.vol * item.qty;
       }
-      if (allPriced) fitTotal = sum * 1.15;
+      if (allPriced) fitTotal = sumIsk;
+      if (allVolumed) fitVolume = sumVol;
     }
     haulxPriceCache[tid].fit_price = fitTotal;
+    haulxPriceCache[tid].fit_volume = fitVolume;
 
     // Update rendered row if visible
     const row = $(`#haulx-row-${tid}`);
     if (row) {
       const volEl = row.querySelector('.haulx-row-vol');
       const priceEl = row.querySelector('.haulx-row-price');
-      const vol = haulxPriceCache[tid].packaged_volume;
-      if (volEl) volEl.textContent = vol != null ? `${(vol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³` : '—';
-      if (priceEl) priceEl.textContent = fitTotal != null
-        ? `${(fitTotal / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
-        : (fit ? '…' : '—');
+      const displayVol = fitVolume != null ? fitVolume : haulxPriceCache[tid].packaged_volume;
+      if (volEl) {
+        volEl.textContent = displayVol != null ? `${(displayVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³` : '—';
+        if (displayVol != null) volEl.title = `${displayVol.toLocaleString()} m³`;
+      }
+      if (priceEl) {
+        priceEl.textContent = fitTotal != null
+          ? `${(fitTotal / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
+          : (fit ? '…' : '—');
+        if (fitTotal != null) priceEl.title = `${fitTotal.toLocaleString()} ISK`;
+      }
       row.querySelector('.haulx-loading')?.remove();
     }
   }
   haulxUpdateTotals();
+  const fillBtn = $('#haulx-fill-priority');
+  if (fillBtn) fillBtn.disabled = false;
 }
 
 function renderHaulxTab() {
@@ -4395,8 +4404,9 @@ function renderHaulxTab() {
       <span style="font-weight:600">HaulX</span>
       <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
       <span style="font-size:0.85rem">Collateral: <strong id="haulx-isk" class="haulx-metric">—B / 5.00B ISK</strong></span>
+      <span style="font-size:0.85rem">Shipping: <strong>400M ISK</strong></span>
       <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
-      <button id="haulx-fill-priority" class="link-btn">Fill by priority</button>
+      <button id="haulx-fill-priority" class="link-btn" disabled>Fill by priority</button>
       <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
         <input type="checkbox" id="haulx-over-quota" ${haulxOverQuota ? 'checked' : ''}> Allow over quota
       </label>
@@ -4444,8 +4454,11 @@ function renderHaulxTab() {
     const onHand = onHandByTypeId[tid] || 0;
     const hasFit = (fitsByHull[tid]?.length || 0) > 0;
 
-    const volText = price?.packaged_volume != null
-      ? `${(price.packaged_volume / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³`
+    const rawVol = price?.fit_volume ?? price?.packaged_volume;
+    const volTitle = rawVol != null ? `title="${rawVol.toLocaleString()} m³"` : '';
+    const priceTitle = price?.fit_price != null ? `title="${price.fit_price.toLocaleString()} ISK"` : '';
+    const volText = rawVol != null
+      ? `${(rawVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³`
       : '<span class="haulx-loading muted">…</span>';
     const priceText = price?.fit_price != null
       ? `${(price.fit_price / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
@@ -4466,8 +4479,8 @@ function renderHaulxTab() {
         <input type="number" class="haulx-qty" data-tid="${tid}" value="${qty}" min="0" max="${rowMax}" style="width:4rem;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:3px;padding:2px 6px;text-align:center">
         <button class="haulx-max link-btn" data-tid="${tid}" data-max="${rowMax}" style="margin-left:0.3rem;font-size:0.75rem">max</button>
       </td>
-      <td class="haulx-row-vol" style="padding:0.5rem 0.5rem;color:#8899aa">${volText}</td>
-      <td class="haulx-row-price" style="padding:0.5rem 1rem;color:#8899aa">${priceText}</td>`;
+      <td class="haulx-row-vol" style="padding:0.5rem 0.5rem;color:#8899aa" ${volTitle}>${volText}</td>
+      <td class="haulx-row-price" style="padding:0.5rem 1rem;color:#8899aa" ${priceTitle}>${priceText}</td>`;
     tbody.appendChild(tr);
   }
 
@@ -4556,7 +4569,7 @@ function renderHaulxTab() {
       if (!haulxOverQuota && missing <= 0) continue;
       const tid = String(q.ship_type_id);
       const p = haulxPriceCache[tid];
-      const unitVol = p?.packaged_volume || 0;
+      const unitVol = p?.fit_volume != null ? p.fit_volume : (p?.packaged_volume || 0);
       const unitIsk = p?.fit_price != null ? p.fit_price : (p?.min_sell || 0);
       let canFit = haulxOverQuota ? 999 : missing;
       if (unitVol > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_VOLUME - vol) / unitVol));
