@@ -16,6 +16,22 @@
     "fit_id": 0
   },
   {
+    "name": "NAVY QRF DREK",
+    "ship_type_id": 49711,
+    "ship_name": "Drekavac",
+    "required": 10,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy Damage Mk3",
+    "ship_type_id": 644,
+    "ship_name": "Typhoon",
+    "required": 5,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
     "name": "Navy Links Mk3",
     "ship_type_id": 22474,
     "ship_name": "Damnation",
@@ -28,14 +44,6 @@
     "ship_type_id": 12017,
     "ship_name": "Devoter",
     "required": 2,
-    "title_filter": "",
-    "fit_id": 0
-  },
-  {
-    "name": "NAVY QRF DREK",
-    "ship_type_id": 49711,
-    "ship_name": "Drekavac",
-    "required": 10,
     "title_filter": "",
     "fit_id": 0
   },
@@ -75,14 +83,6 @@
     "name": "Hookbill Mk2",
     "ship_type_id": 17619,
     "ship_name": "Caldari Navy Hookbill",
-    "required": 5,
-    "title_filter": "",
-    "fit_id": 0
-  },
-  {
-    "name": "Navy Damage Mk3",
-    "ship_type_id": 644,
-    "ship_name": "Typhoon",
     "required": 5,
     "title_filter": "",
     "fit_id": 0
