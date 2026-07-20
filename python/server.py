@@ -2179,9 +2179,15 @@ def liquidation_delete_shipment(shipment_id: str):
 _STOCKPILE_STORE_PATH = 'inventory/stock.json'
 
 
-def _stockpile_remote_cfg(cfg):
-    """Resolve the GitHub location for the stock store from the market-history
-    repo config, or None if not configured/parseable."""
+def _share_remote_cfg(cfg):
+    """Resolve the shared GitHub repo used by the alliance-wide stores
+    (doctrine-stock, builds, stockpile): the *market-history* repo + PATs.
+
+    Deliberately separate from the alliance-quota repo: the market-history write
+    PAT is safe to distribute to all indy/manufacturing users, whereas the quota
+    repo holds the master quota numbers and its write PAT must stay restricted.
+    Returns ``{owner, repo, branch, read_pat, write_pat}`` or None. Callers
+    append their own path within the repo."""
     url = (cfg.get('market_history_repo_url') or '').strip()
     if not url:
         return None
@@ -2189,11 +2195,15 @@ def _stockpile_remote_cfg(cfg):
     if not parsed:
         return None
     owner, repo, branch, _path = parsed
-    return {
-        'owner': owner, 'repo': repo, 'branch': branch, 'path': _STOCKPILE_STORE_PATH,
-        'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
-        'write_pat': cfg.get('market_history_pat_write') or None,
-    }
+    return {'owner': owner, 'repo': repo, 'branch': branch,
+            'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
+            'write_pat': cfg.get('market_history_pat_write') or None}
+
+
+def _stockpile_remote_cfg(cfg):
+    """GitHub location for the stock store, in the shared alliance repo."""
+    rc = _share_remote_cfg(cfg)
+    return {**rc, 'path': _STOCKPILE_STORE_PATH} if rc else None
 
 
 def _stockpile_totals(store):
@@ -2310,6 +2320,38 @@ def save_stockpile(req: StockpileSave):
     }
 
 
+@app.post('/api/stockpile/janice')
+def stockpile_janice():
+    """Create a persisted Janice appraisal of the whole current stockpile and
+    return its shareable URL. Priced at the configured Janice market. Used by the
+    Stockpile tab's "Copy Janice appraisal" button."""
+    store, _sha, _rc = _stockpile_read_store()
+    lines = [
+        f"{it['name']}\t{int(it.get('qty') or 0)}"
+        for it in (store.get('items') or [])
+        if it.get('name') and int(it.get('qty') or 0) > 0
+    ]
+    if not lines:
+        raise HTTPException(400, 'Stockpile is empty — nothing to appraise.')
+    cfg = load_config()
+    market = cfg.get('janice_market') or 'Jita 4-4'
+    api_key = cfg.get('janice_api_key') or None
+    try:
+        result = create_appraisal_from_text('\n'.join(lines), market, api_key=api_key, persist=True)
+    except Exception as e:
+        raise HTTPException(502, f'Janice appraisal failed: {e}')
+    code = (result.get('raw') or {}).get('code') or result.get('code') or ''
+    if not code:
+        raise HTTPException(502, 'Janice did not return an appraisal code (persist may have failed).')
+    return {
+        'url': f'https://janice.e-351.com/a/{code}',
+        'code': code,
+        'market_name': result.get('market_name') or market,
+        'total_buy_price': result.get('total_buy_price') or 0,
+        'item_count': len(lines),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Indy build planner — per-builder build entries, shared via the market-history
 # repo. Each authenticated pilot owns one file at builds/{character_id}.json
@@ -2324,20 +2366,9 @@ def save_stockpile(req: StockpileSave):
 
 
 def _builds_remote_cfg(cfg):
-    """Resolve the GitHub location for the shared builds directory from the
-    market-history repo config, or None if not configured/parseable."""
-    url = (cfg.get('market_history_repo_url') or '').strip()
-    if not url:
-        return None
-    parsed = _parse_github_blob_url(url)
-    if not parsed:
-        return None
-    owner, repo, branch, _path = parsed
-    return {
-        'owner': owner, 'repo': repo, 'branch': branch,
-        'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
-        'write_pat': cfg.get('market_history_pat_write') or None,
-    }
+    """GitHub location for the shared builds directory, in the shared alliance
+    repo (quota repo, falling back to market-history)."""
+    return _share_remote_cfg(cfg)
 
 
 def _builds_file_path(builder_id):
@@ -2524,20 +2555,9 @@ _DOCTRINE_STOCK_ALLIANCES = ('main', 'institute')
 
 
 def _doctrine_stock_remote_cfg(cfg):
-    """Resolve the market-history GitHub repo for a given alliance's doctrine
-    stock file, or None if the repo URL isn't configured/parseable."""
-    url = (cfg.get('market_history_repo_url') or '').strip()
-    if not url:
-        return None
-    parsed = _parse_github_blob_url(url)
-    if not parsed:
-        return None
-    owner, repo, branch, _path = parsed
-    return {
-        'owner': owner, 'repo': repo, 'branch': branch,
-        'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
-        'write_pat': cfg.get('market_history_pat_write') or None,
-    }
+    """GitHub repo for a given alliance's doctrine-stock file, in the shared
+    alliance repo (quota repo, falling back to market-history)."""
+    return _share_remote_cfg(cfg)
 
 
 def _doctrine_stock_path(alliance):
