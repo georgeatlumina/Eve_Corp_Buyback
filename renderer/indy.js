@@ -72,16 +72,27 @@
   function markDirty() { p.dirty = true; setStatus('Unsaved changes — click “Save & submit”.'); }
 
   // ============================ Planner: load/save ============================
-  async function loadDoctrines() {
-    if (p.doctrinesLoaded) return;
+  async function loadDoctrines(force) {
+    if (p.doctrinesLoaded && !force) return;
     await Promise.all(ALLIANCES.map(async (a) => {
       try {
         const res = await fetch(`${API}/api/doctrine-stock?alliance=${a.key}`);
         const snap = res.ok ? await res.json() : {};
-        const names = Array.from(new Set(
-          (snap.quotas || []).map((q) => (q.name || '').trim()).filter(Boolean)
-        )).sort((x, y) => x.localeCompare(y));
-        p.doctrines[a.key] = names;
+        // Each quota row is a ship within a doctrine. Show "Ship — Doctrine" so
+        // the same doctrine name on different hulls stays distinguishable.
+        const seen = new Set();
+        const opts = [];
+        (snap.quotas || []).forEach((q) => {
+          const ship = (q.ship_name || '').trim();
+          const doc = (q.name || '').trim();
+          if (!ship && !doc) return;
+          const label = ship && doc ? `${ship} — ${doc}` : (ship || doc);
+          if (seen.has(label)) return;
+          seen.add(label);
+          opts.push(label);
+        });
+        opts.sort((x, y) => x.localeCompare(y));
+        p.doctrines[a.key] = opts;
       } catch (_) {
         p.doctrines[a.key] = [];
       }
@@ -94,7 +105,7 @@
     if (p.loaded && !force) { renderBuilds(); return; }
     p.loading = true;
     setStatus('Loading…');
-    await loadDoctrines();
+    await loadDoctrines(force);
     try {
       const res = await fetch(`${API}/api/builds/mine`);
       const data = await res.json().catch(() => ({}));

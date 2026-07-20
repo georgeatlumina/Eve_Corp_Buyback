@@ -9,44 +9,53 @@
 <body>
   <header>
     <h1>Naval Defence Alliance Management Tool <span id="app-version" class="app-version"></span><button id="btn-check-update" class="check-update-btn" type="button" title="Check for updates now">⟳</button><span id="app-author" class="app-author"></span></h1>
-    <div class="topbar">
+    <nav class="nav-menu">
       <div class="view-mode" role="group" aria-label="View mode">
-        <span class="view-mode-label">View</span>
         <button id="view-member" class="view-mode-btn active" type="button" data-mode="member">Member</button>
         <button id="view-admin" class="view-mode-btn" type="button" data-mode="admin">Admin</button>
       </div>
-      <div class="nav-group settings-tabs" data-group="setup">
-        <span class="nav-group-label">Settings</span>
-        <button class="tab-btn" data-tab="config">Config</button>
-        <button class="tab-btn" data-tab="auth">Auth</button>
-        <button class="tab-btn" data-tab="mail">Mail</button>
-      </div>
-    </div>
-    <nav>
+
       <div class="nav-group" data-group="general">
-        <span class="nav-group-label">General</span>
-        <button class="tab-btn active" data-tab="appraisal">Appraisal</button>
-        <button class="tab-btn" data-tab="sov">Sov</button>
-        <button class="tab-btn" data-tab="doctrines">Doctrines</button>
-        <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
-        <button class="tab-btn" data-tab="readiness">Market Readiness</button>
-        <button class="tab-btn" data-tab="market">Market</button>
-        <button class="tab-btn" data-tab="stockpile" id="tab-btn-stockpile" hidden>Stockpile</button>
+        <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">General</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-panel" role="menu">
+          <button class="tab-btn active" data-tab="appraisal">Appraisal</button>
+          <button class="tab-btn" data-tab="sov">Sov</button>
+          <button class="tab-btn" data-tab="doctrines">Doctrines</button>
+          <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
+          <button class="tab-btn" data-tab="readiness">Market Readiness</button>
+          <button class="tab-btn" data-tab="market">Market</button>
+          <button class="tab-btn" data-tab="stockpile" id="tab-btn-stockpile" hidden>Stockpile</button>
+        </div>
       </div>
+
       <div class="nav-group" data-group="operations">
-        <span class="nav-group-label">Operations</span>
-        <button class="tab-btn" data-tab="buybacks">Buybacks</button>
-        <button class="tab-btn" data-tab="working">Working</button>
-        <button class="tab-btn" data-tab="contracts">Contracts</button>
-        <button class="tab-btn" data-tab="srp">SRP</button>
-        <button class="tab-btn" data-tab="liquidation">Liquidation</button>
-        <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
-        <button class="tab-btn" data-tab="builds-overview">Build Overview</button>
+        <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Operations</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-panel" role="menu">
+          <button class="tab-btn" data-tab="buybacks">Buybacks</button>
+          <button class="tab-btn" data-tab="working">Working</button>
+          <button class="tab-btn" data-tab="contracts">Contracts</button>
+          <button class="tab-btn" data-tab="srp">SRP</button>
+          <button class="tab-btn" data-tab="liquidation">Liquidation</button>
+          <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
+          <button class="tab-btn" data-tab="builds-overview">Build Overview</button>
+        </div>
       </div>
+
       <div class="nav-group" data-group="indy">
-        <span class="nav-group-label">Indy</span>
-        <button class="tab-btn" data-tab="indy-planner">Build Planner</button>
-        <button class="tab-btn" data-tab="indy-fulfil">Build Fulfilment</button>
+        <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Indy</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-panel" role="menu">
+          <button class="tab-btn" data-tab="indy-planner">Build Planner</button>
+          <button class="tab-btn" data-tab="indy-fulfil">Build Fulfilment</button>
+        </div>
+      </div>
+
+      <div class="nav-group push-right" data-group="setup">
+        <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Settings</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-panel" role="menu">
+          <button class="tab-btn" data-tab="config">Config</button>
+          <button class="tab-btn" data-tab="auth">Auth</button>
+          <button class="tab-btn" data-tab="mail">Mail</button>
+        </div>
       </div>
     </nav>
   </header>
@@ -550,6 +559,7 @@
       <p class="muted">Current alliance stock of industry materials — minerals, planetary industry (PI) commodities, and everything else — kept up to date by the logistics team. Read-only for pilots; the numbers are the amounts on hand at last update.</p>
       <div class="actions">
         <button id="stockpile-refresh" type="button">Refresh</button>
+        <button id="stockpile-janice" type="button" class="secondary">Copy Janice appraisal</button>
         <span id="stockpile-status" class="muted"></span>
       </div>
 

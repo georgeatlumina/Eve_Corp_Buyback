@@ -154,11 +154,55 @@ function activateTab(name) {
   btn.classList.add('active');
   section.classList.add('active');
   if (name === 'buybacks') refreshWallets();
+  closeAllNavMenus();
+  updateNavTriggers();
 }
 
 $$('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => activateTab(btn.dataset.tab));
 });
+
+// ===== Collapsed grouped nav: each group's trigger toggles its dropdown. =====
+function closeAllNavMenus(except) {
+  $$('.nav-group.open').forEach((g) => {
+    if (g === except) return;
+    g.classList.remove('open');
+    g.querySelector('.nav-trigger')?.setAttribute('aria-expanded', 'false');
+  });
+}
+
+// Reflect the active tab on its group's trigger (dot + label) so you keep
+// context while the menus are collapsed.
+function updateNavTriggers() {
+  const active = $('.tab-btn.active');
+  const activeGroup = active ? active.closest('.nav-group') : null;
+  $$('.nav-group').forEach((g) => {
+    const trigger = g.querySelector('.nav-trigger');
+    const labelEl = trigger?.querySelector('.nav-trigger-label');
+    if (!trigger || !labelEl) return;
+    if (!trigger.dataset.base) trigger.dataset.base = labelEl.textContent;
+    const isActive = g === activeGroup;
+    g.classList.toggle('has-active', isActive);
+    labelEl.textContent = isActive
+      ? `${trigger.dataset.base} · ${active.textContent.trim()}`
+      : trigger.dataset.base;
+  });
+}
+
+$$('.nav-trigger').forEach((trigger) => {
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const group = trigger.closest('.nav-group');
+    const willOpen = !group.classList.contains('open');
+    closeAllNavMenus(group);
+    group.classList.toggle('open', willOpen);
+    trigger.setAttribute('aria-expanded', String(willOpen));
+  });
+});
+// Close on outside click or Escape.
+document.addEventListener('click', (e) => { if (!e.target.closest('.nav-group')) closeAllNavMenus(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllNavMenus(); });
+updateNavTriggers();
 
 // View mode (Member / Admin). This is a clutter filter for non-admin users,
 // NOT a security boundary — it's a single-user desktop app and all data still

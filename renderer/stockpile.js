@@ -171,6 +171,24 @@
     }
   }
 
+  async function copyJaniceAppraisal() {
+    const btn = $('#stockpile-janice');
+    if (!(sp.data?.items || []).length) { setStatus('Stockpile is empty — nothing to appraise.'); return; }
+    if (btn) btn.disabled = true;
+    setStatus('Building Janice appraisal…');
+    try {
+      const res = await fetch(`${API}/api/stockpile/janice`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      await navigator.clipboard.writeText(data.url);
+      setStatus(`Janice appraisal copied to clipboard — ${nfmt(data.item_count)} item(s), ${data.market_name} buy ${nfmt(Math.round(data.total_buy_price))} ISK.`);
+    } catch (e) {
+      setStatus(`Janice appraisal failed: ${e.message || e}`);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function initStockpileTab() {
     if (!sp.loaded) loadStockpile(false);
   }
@@ -180,5 +198,6 @@
   $('#stockpile-search')?.addEventListener('input', (e) => { sp.search = e.target.value; renderSections(); });
   $('#stockpile-category')?.addEventListener('change', (e) => { sp.category = e.target.value; renderSections(); });
   $('#stockpile-save')?.addEventListener('click', saveStockpile);
+  $('#stockpile-janice')?.addEventListener('click', copyJaniceAppraisal);
   document.querySelector('.tab-btn[data-tab="stockpile"]')?.addEventListener('click', initStockpileTab);
 })();

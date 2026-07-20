@@ -11,27 +11,36 @@ header h1 { margin: 0 0 0.6em; font-size: 1.4em; }
 .check-update-btn:disabled { opacity: 0.6; cursor: progress; }
 .check-update-btn.spinning { animation: spin 0.9s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-nav { display: flex; gap: 0.75em; flex-wrap: wrap; align-items: center; }
 .tab-btn { background: #333; color: #eee; border: 0; padding: 0.5em 1em; cursor: pointer; border-radius: 4px; font-size: 0.95em; }
 .tab-btn.active { background: #4a8; color: #111; font-weight: 600; }
 
-/* Top bar: view-mode toggle (left) + Settings tabs (right), above the main nav */
-.topbar { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; margin: 0 0 0.5em; }
-
-/* Grouped nav (General / Operations) + Settings cluster */
-.nav-group { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; }
-/* Fixed-width labels so the first button of each row lines up vertically
-   (View / General share the left edge; equal label width keeps them aligned). */
-.nav-group-label,
-.view-mode-label { display: inline-block; min-width: 6em; margin-right: 0.5em; font-size: 0.66em; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700; }
-.nav-group-label { color: #6fae90; }
-.nav-group + .nav-group { border-left: 1px solid #3a3a3a; padding-left: 0.85em; }
+/* ===== Collapsed grouped nav (single compact row of dropdown menus) ===== */
+.nav-menu { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
+.nav-group { position: relative; display: inline-flex; }
+.nav-group.push-right { margin-left: auto; }
 body.view-member .nav-group[data-group="operations"] { display: none; }
 
+/* Trigger button — the collapsed group header */
+.nav-trigger { display: inline-flex; align-items: center; gap: 0.45em; background: #2a2a2a; color: #cfe6da; border: 1px solid #3a3a3a; padding: 0.45em 0.9em; border-radius: 5px; cursor: pointer; font-size: 0.9em; font-weight: 600; white-space: nowrap; }
+.nav-trigger:hover { background: #333; }
+.nav-group.open > .nav-trigger { background: #333; border-color: #4a8; }
+.nav-group.has-active > .nav-trigger { border-color: #3a6a55; color: #fff; }
+.nav-group.has-active > .nav-trigger .nav-trigger-label::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 0.5em; border-radius: 50%; background: #4a8; vertical-align: middle; }
+.nav-caret { font-size: 0.7em; opacity: 0.65; transition: transform 0.12s ease; }
+.nav-group.open > .nav-trigger .nav-caret { transform: rotate(180deg); }
+
+/* Dropdown panel — hidden until the group is open */
+.nav-panel { position: absolute; top: calc(100% + 5px); left: 0; z-index: 200; display: none; flex-direction: column; gap: 0.2em; min-width: 190px; padding: 0.4em; background: #1c1c1c; border: 1px solid #3a3a3a; border-radius: 7px; box-shadow: 0 10px 28px rgba(0,0,0,0.55); }
+.nav-group.push-right .nav-panel { left: auto; right: 0; }
+.nav-group.open > .nav-panel { display: flex; }
+.nav-panel .tab-btn { background: transparent; color: #ddd; text-align: left; padding: 0.5em 0.7em; border-radius: 4px; font-size: 0.9em; white-space: nowrap; }
+.nav-panel .tab-btn:hover { background: #2c2c2c; }
+.nav-panel .tab-btn.active { background: #4a8; color: #111; }
+.nav-panel .tab-btn[hidden] { display: none; }
+
 /* View-mode toggle (Member / Admin) */
-.view-mode { display: inline-flex; align-items: center; gap: 0.25em; }
-.view-mode-label { color: #888; }
-.view-mode-btn { background: #2a2a2a; color: #bbb; border: 1px solid #444; padding: 0.3em 0.85em; cursor: pointer; font-size: 0.85em; }
+.view-mode { display: inline-flex; align-items: center; gap: 0.25em; margin-right: 0.25em; }
+.view-mode-btn { background: #2a2a2a; color: #bbb; border: 1px solid #444; padding: 0.4em 0.85em; cursor: pointer; font-size: 0.85em; }
 .view-mode-btn:first-of-type { border-radius: 4px 0 0 4px; }
 .view-mode-btn:last-of-type { border-radius: 0 4px 4px 0; border-left: 0; }
 .view-mode-btn.active { background: #4a8; color: #111; font-weight: 600; border-color: #4a8; }
