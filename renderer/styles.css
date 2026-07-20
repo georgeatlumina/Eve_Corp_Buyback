@@ -947,3 +947,79 @@ body.liq-full main { max-width: none; }
 .indy-fulfil-slot-label { font-weight: 600; color: #cdd; font-size: 0.9em; margin-bottom: 0.25em; }
 .mat-row-empty td { color: #e79; }
 .mat-row-partial td { color: #e8c84a; }
+
+/* ===== Build Overview (calendar + gantt) ===== */
+.bo-layout { display: flex; gap: 1em; align-items: flex-start; }
+#builds-overview-content { flex: 1 1 auto; min-width: 0; }
+.bo-detail { flex: 0 0 320px; background: #202020; border: 1px solid #3a3a3a; border-radius: 6px; padding: 0.7em 0.8em; position: sticky; top: 0.5em; max-height: 80vh; overflow-y: auto; }
+.bo-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5em; }
+.bo-detail-close { background: transparent; border: 0; color: #aaa; font-size: 1.3em; line-height: 1; cursor: pointer; padding: 0 0.2em; }
+.bo-detail-meta { font-size: 0.85em; margin: 0.3em 0; }
+.bo-detail-note { font-size: 0.85em; color: #cdb; background: #262622; border-radius: 4px; padding: 0.35em 0.5em; margin-bottom: 0.5em; }
+.bo-tag { font-size: 0.72em; font-weight: 600; padding: 0.08em 0.5em; border-radius: 999px; margin-left: 0.4em; vertical-align: middle; }
+.bo-tag.bo-a-main { background: #234a3a; color: #7fe0b3; }
+.bo-tag.bo-a-institute { background: #22385c; color: #9bc0f5; }
+.bo-slot { border-top: 1px solid #333; padding: 0.4em 0; }
+.bo-slot-head { font-weight: 600; color: #cdd; font-size: 0.88em; }
+.bo-mat-list { list-style: none; margin: 0.25em 0 0; padding: 0; }
+.bo-mat-list li { display: flex; justify-content: space-between; gap: 1em; font-size: 0.82em; color: #bbb; padding: 0.05em 0; }
+.bo-mat-qty { font-variant-numeric: tabular-nums; color: #cde; }
+
+/* alliance accent colours (shared by chips, bars, swatches) */
+.bo-a-main { --bo-accent: #3fa87a; --bo-fill: #2f6f52; }
+.bo-a-institute { --bo-accent: #5b8dd6; --bo-fill: #33507e; }
+
+/* calendar */
+.bo-cal-bar { display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.6em; }
+.bo-cal-title { font-weight: 600; font-size: 1.05em; min-width: 12em; text-align: center; }
+.bo-nav { background: #2a2a2a; color: #ddd; border: 1px solid #444; border-radius: 4px; padding: 0.25em 0.7em; cursor: pointer; font-size: 0.95em; font-weight: 600; }
+.bo-nav:hover { background: #333; }
+.bo-nav-today { margin-left: 0.4em; }
+.bo-cal-weekdays, .bo-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.bo-cal-wd { text-align: center; color: #8aa; font-size: 0.78em; font-weight: 600; padding-bottom: 0.2em; }
+.bo-cal-cell { min-height: 84px; background: #242424; border: 1px solid #333; border-radius: 5px; padding: 0.25em 0.3em; display: flex; flex-direction: column; gap: 0.25em; }
+.bo-cal-empty { background: #1c1c1c; border-color: #262626; }
+.bo-cal-today { border-color: #d46a3a; box-shadow: inset 0 0 0 1px #d46a3a; }
+.bo-cal-daynum { font-size: 0.78em; color: #999; font-variant-numeric: tabular-nums; }
+.bo-cal-today .bo-cal-daynum { color: #f0a878; font-weight: 700; }
+.bo-cal-chips { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+
+.bo-chip { display: block; width: 100%; text-align: left; background: #2b2b2b; border: 1px solid #3a3a3a; border-left: 3px solid var(--bo-accent, #666); border-radius: 4px; padding: 0.2em 0.4em; cursor: pointer; color: #eee; }
+.bo-chip:hover { filter: brightness(1.18); }
+.bo-chip.bo-chip-sel { outline: 2px solid var(--bo-accent, #888); }
+.bo-chip-doc { display: block; font-size: 0.8em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bo-chip-meta { display: block; font-size: 0.72em; color: #9a9a9a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.bo-undated { margin-top: 1em; }
+.bo-undated-head { color: #c99; font-size: 0.85em; margin-bottom: 0.4em; }
+.bo-undated-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.bo-undated-list .bo-chip { width: auto; max-width: 220px; }
+
+/* gantt */
+.bo-gantt-wrap { overflow-x: auto; border: 1px solid #333; border-radius: 6px; background: #1e1e1e; }
+.bo-gantt-header, .bo-g-row, .bo-g-group { display: flex; align-items: stretch; }
+.bo-g-label { flex: 0 0 165px; width: 165px; position: sticky; left: 0; z-index: 2; background: #242424; border-right: 1px solid #3a3a3a; padding: 0.3em 0.5em; font-size: 0.82em; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
+.bo-g-cornerlabel { background: #262626; }
+.bo-g-grouplabel { background: #2a2f2c; color: #bfe; font-weight: 600; }
+.bo-g-group .bo-g-track { background: #202220; }
+.bo-g-track { position: relative; height: 30px; border-bottom: 1px solid #2a2a2a; flex: 0 0 auto; }
+.bo-g-headtrack { height: 24px; background: #262626; }
+.bo-gantt-header { position: sticky; top: 0; z-index: 3; }
+.bo-tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #333; }
+.bo-tick-lbl { position: absolute; top: 3px; left: 3px; font-size: 0.68em; color: #888; white-space: nowrap; }
+.bo-g-body .bo-g-track .bo-tick { display: none; }
+.bo-today-line { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid #d46a3a; z-index: 1; pointer-events: none; }
+
+.bo-g-bar { position: absolute; top: 4px; height: 22px; border-radius: 4px; background: var(--bo-fill, #444); border: 1px solid var(--bo-accent, #666); cursor: pointer; padding: 0 0.4em; overflow: hidden; display: flex; align-items: center; z-index: 2; }
+.bo-g-bar:hover { filter: brightness(1.2); }
+.bo-g-bar.bo-g-bar-sel { outline: 2px solid #fff; }
+.bo-g-bar-lbl { font-size: 0.72em; color: #eaf3ee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* legend */
+.bo-legend { display: flex; gap: 1.3em; align-items: center; margin-top: 0.8em; color: #aaa; font-size: 0.82em; }
+.bo-legend-item { display: inline-flex; align-items: center; gap: 0.4em; }
+.bo-swatch { width: 13px; height: 13px; border-radius: 3px; display: inline-block; }
+.bo-swatch.bo-a-main { background: #3fa87a; }
+.bo-swatch.bo-a-institute { background: #5b8dd6; }
+.bo-swatch-today { width: 0; height: 14px; border-left: 2px solid #d46a3a; display: inline-block; }
+.bo-undated-note { margin-top: 0.6em; }

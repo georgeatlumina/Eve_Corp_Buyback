@@ -246,6 +246,19 @@ with a gaps-only filter and gap-CSV / shopping-list exports. This deliberately
 mirrors the industry **Stockpile** dashboard pattern (`inventory/stock.json` in
 the same repo).
 
+### Build Overview (calendar + gantt)
+
+A read-only Operations-tab view ([renderer/builds-overview.js](renderer/builds-overview.js))
+that lays every planned build on a timeline. It reuses `GET /api/builds/all`
+(the Build Fulfilment source — every builder's `builds/<char>.json`) with no new
+endpoint. Two layouts share a click-to-open detail panel (build → slots →
+missing materials): a **month calendar** keyed on each build's `est_completion`
+(due) date with prev/next/today nav and an "undated" bucket for builds with no
+ETA, and a **gantt** charting `created_at`→`est_completion` per build, grouped by
+builder, with weekly ticks, a today marker, and alliance-coloured bars. Slots
+carry no dates of their own, so the *build* is the scheduled unit and its slots
+are surfaced in the detail panel. Pure client-side date math; no external libs.
+
 ### Alliance quota sync (`POST /api/quotas/sync` and `/api/quotas/push`)
 
 Quotas can live on a shared source of truth so the whole alliance pulls

@@ -41,6 +41,7 @@
         <button class="tab-btn" data-tab="srp">SRP</button>
         <button class="tab-btn" data-tab="liquidation">Liquidation</button>
         <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
+        <button class="tab-btn" data-tab="builds-overview">Build Overview</button>
       </div>
       <div class="nav-group" data-group="indy">
         <span class="nav-group-label">Indy</span>
@@ -737,6 +738,29 @@
       <p id="indy-fulfil-status" class="muted"></p>
       <div id="indy-fulfil-dashboard"></div>
     </section>
+
+    <section id="tab-builds-overview" class="tab">
+      <h2>Build Overview</h2>
+      <p class="muted">Every planned build from the Build Planner, laid out on a timeline. <strong>Calendar</strong> places each build on its estimated completion (due) date; <strong>Gantt</strong> charts each build from when it was planned to its due date, grouped by builder. Click any build to see its slots and missing materials. Colour = alliance.</p>
+      <div class="actions">
+        <button id="btn-builds-overview-refresh" type="button">Refresh</button>
+        <select id="builds-overview-view" class="secondary">
+          <option value="calendar">Calendar view</option>
+          <option value="gantt">Gantt view</option>
+        </select>
+        <select id="builds-overview-alliance" class="secondary">
+          <option value="all">All alliances</option>
+          <option value="main">NLDF only</option>
+          <option value="institute">NLDO only</option>
+        </select>
+        <button id="btn-builds-overview-export" type="button" class="secondary">Export CSV</button>
+      </div>
+      <p id="builds-overview-status" class="muted"></p>
+      <div class="bo-layout">
+        <div id="builds-overview-content"></div>
+        <div id="builds-overview-detail" class="bo-detail" hidden></div>
+      </div>
+    </section>
   </main>
 
   <div id="indy-paste-overlay" class="indy-drawer-overlay" hidden></div>
@@ -809,5 +833,6 @@
   <script src="stockpile.js"></script>
   <script src="doctrine-stock.js"></script>
   <script src="indy.js"></script>
+  <script src="builds-overview.js"></script>
 </body>
 </html>
