@@ -1849,7 +1849,34 @@ def get_jita_sell_price(type_id: int, bust: bool = False):
     return result
 
 
-# ----------------------- Liquidation page -----------------------
+_jita_buy_cache: dict[int, dict] = {}
+
+@app.get('/api/market/jita-buy')
+def get_jita_buy_price(type_id: int, bust: bool = False):
+    """Return the Jita immediate buy price for a type via Janice. Requires a Janice API key.
+    Cached 5 min; bust=1 forces refresh."""
+    now = time.time()
+    if not bust:
+        cached = _jita_buy_cache.get(type_id)
+        if cached and (now - cached['fetched_at']) < _JITA_PRICE_TTL:
+            return cached['result']
+
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
+    if not api_key:
+        raise HTTPException(422, 'Janice API key required for buy price lookup')
+
+    try:
+        prices = fetch_buy_prices([type_id], 'Jita 4-4', api_key=api_key)
+    except Exception as e:
+        raise HTTPException(502, f'Janice buy price lookup failed: {e}')
+
+    result = {'type_id': type_id, 'max_buy': prices.get(type_id)}
+    _jita_buy_cache[type_id] = {'fetched_at': now, 'result': result}
+    return result
+
+
+
 # Buyback items are shipped Amarr -> Jita (PushX courier) and sold. This block
 # powers the three views: an analyzer (paste a courier contract -> per-item
 # margin + dump/list recommendation), courier-shipment tracking, and live

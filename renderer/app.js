@@ -1628,7 +1628,7 @@ function renderFitDetail(f) {
   const backLabel = aaState.doctrineDetail ? `← Back to ${aaState.doctrineDetail.name}` : '← All doctrines';
   const unknownCount = f.items.filter((it) => !it.typeId).length;
 
-  const avail = computeFitAvailability(f.items, aaState.market);
+  const avail = computeFitAvailability(fitItemsForReadiness(f), aaState.market);
   const itemsForRender = avail ? avail.items : f.items.map((it) => ({ ...it, availability: 'pending' }));
 
   let marketBlock = '';
@@ -1848,7 +1848,7 @@ const readinessState = {
   scanning: false,
   scanProgress: null,   // { phase, current, total, message }
   scanError: null,
-  toggles: { category: { 'Capital Fits': false }, fit: {} },
+  toggles: { category: { 'Capital Fits': false }, fit: {}, excludeHulls: false },
   settingsOpen: false,
   selection: null,      // null | { type: 'doctrine'|'category', id }
   search: '',
@@ -1864,7 +1864,10 @@ function loadReadinessPersistent() {
   } catch (_) {}
   try {
     const t = JSON.parse(localStorage.getItem(LS_TOGGLES_KEY) || 'null');
-    if (t && t.category && t.fit) readinessState.toggles = t;
+    if (t && t.category && t.fit) {
+      readinessState.toggles = t;
+      if (t.excludeHulls == null) readinessState.toggles.excludeHulls = false;
+    }
   } catch (_) {}
 }
 function saveReadinessScan() {
@@ -1880,6 +1883,11 @@ function fitIsEnabled(fit) {
   if (ft === true) return true;
   if (ft === false) return false;
   return readinessState.toggles.category[fit.category] !== false;
+}
+
+function fitItemsForReadiness(fit) {
+  if (!readinessState.toggles.excludeHulls || !fit.hullTypeId) return fit.items || [];
+  return (fit.items || []).filter((it) => it.typeId !== fit.hullTypeId);
 }
 
 async function fetchAaPath(path) {
@@ -1991,7 +1999,7 @@ function aggregateMissingFiltered(scan, market, filterFn) {
     if (f.error || !f.items) continue;
     if (!filterFn(f)) continue;
     fitsConsidered += 1;
-    for (const it of f.items) {
+    for (const it of fitItemsForReadiness(f)) {
       totalItemSlots += 1;
       if (it.typeId == null) {
         unknownSlots += 1;
@@ -2530,6 +2538,9 @@ function renderReadinessSettings() {
     <section class="readiness-settings">
       <h3>Settings — which fits to include</h3>
       <p class="muted small">Toggle whole categories or individual fits. Disabled fits are skipped in completeness and missing-items aggregation.</p>
+      <label class="chip ${readinessState.toggles.excludeHulls ? 'on' : 'off'}" style="margin-bottom:0.75rem">
+        <input type="checkbox" id="readiness-exclude-hulls" ${readinessState.toggles.excludeHulls ? 'checked' : ''}> Exclude hulls from readiness check
+      </label>
       <div class="category-chips">
         ${cats.map(([cat, n]) => {
           const enabled = readinessState.toggles.category[cat] !== false;
@@ -2623,6 +2634,13 @@ $('#btn-readiness-search-clear')?.addEventListener('click', () => {
 });
 
 $('#readiness-content')?.addEventListener('change', (e) => {
+  const excludeHullsInput = e.target.closest('#readiness-exclude-hulls');
+  if (excludeHullsInput) {
+    readinessState.toggles.excludeHulls = excludeHullsInput.checked;
+    saveReadinessToggles();
+    renderReadinessDashboard();
+    return;
+  }
   const catInput = e.target.closest('input[data-cat]');
   if (catInput) {
     const cat = catInput.getAttribute('data-cat');
@@ -4245,29 +4263,36 @@ acquisitionsLoad();
 const HAULX_MAX_VOLUME = 360000;  // m³ (360 km³)
 const HAULX_MAX_COLLATERAL = 5_000_000_000;  // ISK
 
-const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume, fit_price, fit_volume }
+const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume, fit_price, fit_volume, fit_buy_price }
 const haulxItemPriceCache = {}; // type_id -> { min_sell, vol } (for fit items)
+const haulxItemBuyCache = {};   // type_id -> max_buy (for fit items)
 let haulxQty = {};  // type_id (string) -> qty (number)
 let haulxOverQuota = false;
 let haulxReadinessScanDone = false;  // true only after a readiness scan in this session
 
 function haulxTotals() {
-  let vol = 0, isk = 0;
+  let vol = 0, isk = 0, sellValue = 0, buyValue = 0;
   for (const [tid, qty] of Object.entries(haulxQty)) {
     if (!qty) continue;
     const p = haulxPriceCache[tid];
     if (p) {
       vol += qty * (p.fit_volume != null ? p.fit_volume : (p.packaged_volume || 0));
       isk += qty * (p.fit_price != null ? p.fit_price : (p.min_sell || 0));
+      if (p.fit_price != null) sellValue += qty * p.fit_price;
+      if (p.fit_buy_price != null) buyValue += qty * p.fit_buy_price;
     }
   }
-  return { vol, isk };
+  return { vol, isk, sellValue, buyValue };
 }
 
+const HAULX_SHIPPING_COST = 400_000_000;
+const HAULX_SELL_MARKUP = 1.20;
+
 function haulxUpdateTotals() {
-  const { vol, isk } = haulxTotals();
+  const { vol, isk, sellValue, buyValue } = haulxTotals();
   const volEl = $('#haulx-vol');
   const iskEl = $('#haulx-isk');
+  const profitEl = $('#haulx-profit');
   const copyBtn = $('#haulx-copy');
   if (!volEl) return;
 
@@ -4278,6 +4303,19 @@ function haulxUpdateTotals() {
   const iskB = isk / 1_000_000_000;
   iskEl.textContent = `${iskB.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B / 5.00B ISK`;
   iskEl.classList.toggle('haulx-over', isk > HAULX_MAX_COLLATERAL);
+
+  if (profitEl) {
+    const hasBuyData = buyValue > 0 || Object.values(haulxQty).some((q) => q > 0 && Object.keys(haulxItemBuyCache).length > 0);
+    if (sellValue > 0 && buyValue > 0) {
+      const profit = (sellValue * HAULX_SELL_MARKUP) - buyValue - HAULX_SHIPPING_COST;
+      const profitM = profit / 1_000_000_000;
+      profitEl.textContent = `${profitM >= 0 ? '+' : ''}${profitM.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
+      profitEl.style.color = profit >= 0 ? '#4a8' : '#ef4444';
+    } else {
+      profitEl.textContent = '…';
+      profitEl.style.color = '#8899aa';
+    }
+  }
 
   const anySelected = Object.values(haulxQty).some((q) => q > 0);
   if (copyBtn) copyBtn.disabled = !anySelected;
@@ -4301,7 +4339,7 @@ async function haulxFetchPrices(quotas) {
     for (const item of fit?.items || []) allTypeIds.add(String(item.typeId));
   }
 
-  // Fetch any uncached prices
+  // Fetch any uncached sell prices
   const uncachedIds = [...allTypeIds].filter((tid) => !(tid in haulxItemPriceCache));
   await Promise.all(
     uncachedIds.map((tid) =>
@@ -4315,6 +4353,17 @@ async function haulxFetchPrices(quotas) {
           }
         })
         .catch(() => { haulxItemPriceCache[tid] = { min_sell: null, vol: null }; })
+    )
+  );
+
+  // Fetch any uncached buy prices (in parallel with next block)
+  const uncachedBuyIds = [...allTypeIds].filter((tid) => !(tid in haulxItemBuyCache));
+  await Promise.all(
+    uncachedBuyIds.map((tid) =>
+      fetch(`${API}/api/market/jita-buy?type_id=${tid}`)
+        .then((r) => r.json())
+        .then((data) => { haulxItemBuyCache[tid] = data.max_buy ?? null; })
+        .catch(() => { haulxItemBuyCache[tid] = null; })
     )
   );
 
@@ -4332,25 +4381,33 @@ async function haulxFetchPrices(quotas) {
 
     let fitTotal = null;
     let fitVolume = null;
+    let fitBuyTotal = null;
     if (fit?.items?.length) {
       const hullEntry = haulxItemPriceCache[tid];
       let sumIsk = hullEntry?.min_sell ?? 0;
       let sumVol = hullEntry?.vol ?? 0;
+      let sumBuy = haulxItemBuyCache[tid] ?? 0;
       let allPriced = hullEntry?.min_sell != null;
       let allVolumed = hullEntry?.vol != null;
+      let allBought = haulxItemBuyCache[tid] != null;
       for (const item of fit.items) {
         if (String(item.typeId) === tid) continue;  // hull already counted above
         const p = haulxItemPriceCache[String(item.typeId)];
+        const b = haulxItemBuyCache[String(item.typeId)];
         if (p?.min_sell == null) { allPriced = false; }
         else sumIsk += p.min_sell * item.qty;
         if (p?.vol == null) { allVolumed = false; }
         else sumVol += p.vol * item.qty;
+        if (b == null) { allBought = false; }
+        else sumBuy += b * item.qty;
       }
       if (allPriced) fitTotal = sumIsk;
       if (allVolumed) fitVolume = sumVol;
+      if (allBought) fitBuyTotal = sumBuy;
     }
     haulxPriceCache[tid].fit_price = fitTotal;
     haulxPriceCache[tid].fit_volume = fitVolume;
+    haulxPriceCache[tid].fit_buy_price = fitBuyTotal;
 
     // Update rendered row if visible
     const row = $(`#haulx-row-${tid}`);
@@ -4399,12 +4456,13 @@ function renderHaulxTab() {
 
   root.innerHTML = `
     <h2>HaulX</h2>
-    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Hit <strong>Copy Haul List</strong> when you're ready to paste into your courier contract.</p>
+    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
     <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
       <span style="font-weight:600">HaulX</span>
       <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
       <span style="font-size:0.85rem">Collateral: <strong id="haulx-isk" class="haulx-metric">—B / 5.00B ISK</strong></span>
       <span style="font-size:0.85rem">Shipping: <strong>400M ISK</strong></span>
+      <span style="font-size:0.85rem">Profit: <strong id="haulx-profit" style="color:#8899aa">…</strong></span>
       <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
       <button id="haulx-fill-priority" class="link-btn" disabled>Fill by priority</button>
       <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
