@@ -245,7 +245,7 @@ $$('.view-mode-btn').forEach((btn) => {
 // toggle and Alliance Auth membership in an officer group (Industry Officer /
 // Acquisitions Officer, matched by exact name off the dashboard "Membership"
 // card, so stockpileAdminOk is set in refreshIndyAccess).
-const STOCKPILE_PASSWORD = 'sushisithebestest69420';
+const STOCKPILE_PASSWORD = 'sushiisthebestest69420';
 const STOCKPILE_UNLOCK_KEY = 'stockpileUnlocked';
 let stockpileUnlocked = localStorage.getItem(STOCKPILE_UNLOCK_KEY) === '1';
 let stockpileAllowPush = false; // machine "Allow stock edits" toggle (from config)
