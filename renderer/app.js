@@ -2,6 +2,13 @@ const API = window.api.base;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+function updateAppHeaderHeight() {
+  const h = document.querySelector('header')?.getBoundingClientRect().height || 0;
+  document.documentElement.style.setProperty('--app-header-h', `${h}px`);
+}
+updateAppHeaderHeight();
+window.addEventListener('resize', updateAppHeaderHeight);
+
 (async () => {
   if (!window.api?.getMeta) return;
   try {
@@ -4326,18 +4333,18 @@ function renderHaulxTab() {
   root.innerHTML = `
     <h2>Plan HaulX</h2>
     <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Hit <strong>Copy Haul List</strong> when you're ready to paste into your courier contract.</p>
-    <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:0;z-index:10">
+    <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
       <span style="font-weight:600">Plan HaulX</span>
       <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
       <span style="font-size:0.85rem">Collateral: <strong id="haulx-isk" class="haulx-metric">—B / 5.00B ISK</strong></span>
-      <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Copy Haul List</button>
+      <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
       <button id="haulx-fill-priority" class="link-btn">Fill by priority</button>
       <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
         <input type="checkbox" id="haulx-over-quota" ${haulxOverQuota ? 'checked' : ''}> Allow over quota
       </label>
     </div>
     <table id="haulx-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">
-      <thead>
+      <thead style="position:sticky;top:calc(var(--app-header-h,0px) + 48px);z-index:9;background:#1e1e1e">
         <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
           <th style="padding:0.5rem 1rem">Ship</th>
           <th style="padding:0.5rem 0.5rem">Missing</th>
