@@ -68,6 +68,7 @@ from esi import (
     resolve_ids,
     resolve_type_ids,
     send_evemail,
+    fetch_type_info,
 )
 from janice import (
     appraise_items,
@@ -81,6 +82,7 @@ import builds
 import liquidation
 import stockpile
 from market import enrich as enrich_types, missing_ids as meta_missing_ids
+from acquisitions import load_acquisitions, save_acquisitions
 from pinned import (
     append_appraisal,
     load_pinned,
@@ -1798,6 +1800,54 @@ def get_amarr_sell_price(type_id: int, bust: bool = False):
     return result
 
 
+_JITA_REGION_ID = 10000002
+_JITA_SYSTEM_ID = 30000142
+_jita_sell_cache: dict[int, dict] = {}
+_JITA_PRICE_TTL = 300  # 5 min
+
+
+@app.get('/api/market/jita-sell')
+def get_jita_sell_price(type_id: int, bust: bool = False):
+    """Return the Jita sell price and packaged volume for a type. Uses Janice when an API key
+    is configured, otherwise falls back to ESI market orders. Cached 5 min; bust=1 forces refresh."""
+    now = time.time()
+    if not bust:
+        cached = _jita_sell_cache.get(type_id)
+        if cached and (now - cached['fetched_at']) < _JITA_PRICE_TTL:
+            return cached['result']
+
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
+
+    if api_key:
+        try:
+            min_sell = fetch_type_sell_price(type_id, 'Jita 4-4', api_key=api_key)
+        except Exception as e:
+            raise HTTPException(502, f'Janice price lookup failed: {e}')
+    else:
+        try:
+            orders = fetch_region_market_orders(_JITA_REGION_ID, type_id, get_user_agent())
+        except Exception as e:
+            raise HTTPException(502, f'ESI market fetch failed: {e}')
+        jita_orders = [o for o in orders if not o.get('is_buy_order') and int(o.get('system_id') or 0) == _JITA_SYSTEM_ID]
+        min_sell = min((float(o['price']) for o in jita_orders), default=None)
+
+    try:
+        type_info = fetch_type_info(type_id, get_user_agent())
+        packaged_volume = float(type_info.get('packaged_volume') or type_info.get('volume') or 0)
+    except Exception:
+        packaged_volume = None
+
+    result = {
+        'type_id': type_id,
+        'min_sell': min_sell,
+        'packaged_volume': packaged_volume,
+        'source': 'janice' if api_key else 'esi',
+    }
+    _jita_sell_cache[type_id] = {'fetched_at': now, 'result': result}
+    return result
+
+
 # ----------------------- Liquidation page -----------------------
 # Buyback items are shipped Amarr -> Jita (PushX courier) and sold. This block
 # powers the three views: an analyzer (paste a courier contract -> per-item
@@ -3168,7 +3218,7 @@ def _scan_contracts_stream(alliance: str = 'all'):
     if uncached:
         yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
             done = len(found) - len(uncached)
             for future in as_completed(futures):
@@ -3444,6 +3494,48 @@ def appraise_pinned(contract_id: int, req: PinAppraise):
     except KeyError:
         raise HTTPException(404, f'pin {contract_id} not found')
     return {'pin': pin, 'appraisal': appraisal_record}
+
+
+# ----------------------- Acquisitions tab -----------------------
+
+class AcquisitionsParseRequest(BaseModel):
+    paste_text: str
+
+class AcquisitionsSaveRequest(BaseModel):
+    hulls: list
+    items: list
+
+
+@app.post('/api/acquisitions/parse')
+def acquisitions_parse(req: AcquisitionsParseRequest):
+    """Parse an EVE-format inventory paste (Name\\tQty per line) and resolve
+    names to type IDs via Janice. Returns a list of {type_id, name, quantity}."""
+    if not req.paste_text or not req.paste_text.strip():
+        raise HTTPException(400, 'paste_text is empty')
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
+    market_name = cfg.get('janice_market') or 'Jita 4-4'
+    try:
+        rows = appraise_items(req.paste_text, market_name, api_key=api_key)
+    except Exception as e:
+        raise HTTPException(502, f'Parse failed: {e}')
+    resolved = [
+        {'type_id': r['type_id'], 'name': r['name'], 'quantity': r['quantity']}
+        for r in rows if r.get('type_id')
+    ]
+    return {'items': resolved, 'unresolved': []}
+
+
+@app.get('/api/acquisitions')
+def get_acquisitions():
+    """Return the saved hull and item inventory."""
+    return load_acquisitions()
+
+
+@app.post('/api/acquisitions')
+def post_acquisitions(req: AcquisitionsSaveRequest):
+    """Persist the hull and item inventory to disk."""
+    return save_acquisitions(req.hulls, req.items)
 
 
 @app.get('/api/contracts/scan')

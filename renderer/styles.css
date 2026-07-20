@@ -874,6 +874,7 @@ body.liq-full main { max-width: none; }
 .liq-chart-vol { fill: #3a5a7a; }
 .liq-chart-ref { stroke-dasharray: 3 3; stroke-width: 1; }
 
+<<<<<<< HEAD
 /* ===== Stockpile tab ===== */
 .stockpile-filters { margin: 1em 0 0.5em; }
 .stockpile-cat { margin: 1.2em 0; }
@@ -1043,3 +1044,7 @@ body.liq-full main { max-width: none; }
 .indy-demand-chip.demand-empty { background: #3a1f1f; color: #f0a6a6; border-color: #6b3535; }
 .indy-demand-chip.demand-partial { background: #3a331c; color: #ecd58a; border-color: #6b5f2f; }
 .indy-demand-chip.demand-ok { background: #1c3a2a; color: #8fd6b0; border-color: #2f6b4f; }
+
+/* Plan HaulX tab */
+.haulx-metric { color: #4a8; transition: color 0.15s; }
+.haulx-metric.haulx-over { color: #ef4444; }

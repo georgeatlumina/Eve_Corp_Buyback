@@ -156,6 +156,8 @@ function activateTab(name) {
   if (name === 'buybacks') refreshWallets();
   closeAllNavMenus();
   updateNavTriggers();
+  if (name === 'haulx') renderHaulxTab();
+  if (name === 'acquisitions') renderAcquisitionsTab();
 }
 
 $$('.tab-btn').forEach((btn) => {
@@ -3429,6 +3431,7 @@ async function runContractsScan() {
         lastContractsScan = evt.payload;
         contractsScanCache[activeContractsAlliance] = evt.payload;
         renderContractsDashboard(evt.payload);
+        haulxQty = {};
         step.textContent = 'done';
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);
@@ -4074,7 +4077,15 @@ async function copyShoppingList() {
     return;
   }
   const lines = [];
-  for (const q of lastContractsScan.quotas || []) {
+  const root = $('#contracts-quota-dashboard');
+  const bars = root ? [...root.querySelectorAll('.quota-bar')] : [];
+  const quotasByTypeId = Object.fromEntries(
+    (lastContractsScan.quotas || []).map((q) => [String(q.ship_type_id), q])
+  );
+  const orderedQuotas = bars.length
+    ? bars.map((el) => quotasByTypeId[el.dataset.shipTypeId]).filter(Boolean)
+    : (lastContractsScan.quotas || []);
+  for (const q of orderedQuotas) {
     const missing = Number(q.missing) || 0;
     if (missing > 0) {
       const name = q.ship_name || q.name || `type ${q.ship_type_id}`;
@@ -4088,6 +4099,374 @@ async function copyShoppingList() {
   } catch (e) {
     alert(text);
   }
+}
+
+// ============================================================
+// Acquisitions tab
+// ============================================================
+
+let acquisitionsHulls = [];  // [{type_id, name, quantity}]
+let acquisitionsItems = [];  // [{type_id, name, quantity}]
+
+async function acquisitionsLoad() {
+  try {
+    const data = await fetch(`${API}/api/acquisitions`).then((r) => r.json());
+    acquisitionsHulls = data.hulls || [];
+    acquisitionsItems = data.items || [];
+  } catch (_) {}
+}
+
+async function acquisitionsSave() {
+  try {
+    await fetch(`${API}/api/acquisitions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hulls: acquisitionsHulls, items: acquisitionsItems }),
+    });
+  } catch (_) {}
+}
+
+function renderAcquisitionsTable(items) {
+  if (!items.length) return '<p class="muted" style="font-size:0.875rem;padding:0.5rem 0">Nothing yet — paste inventory above and click Parse.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:0.875rem;margin-top:0.5rem">
+    <thead>
+      <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
+        <th style="padding:0.35rem 0.5rem">Name</th>
+        <th style="padding:0.35rem 0.5rem;text-align:right">Qty</th>
+        <th style="padding:0.35rem 0.75rem;text-align:right">Type ID</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${items.map((it) => `
+      <tr style="border-bottom:1px solid #1e2533">
+        <td style="padding:0.35rem 0.5rem">${escapeHtml(it.name)}</td>
+        <td style="padding:0.35rem 0.5rem;text-align:right">${it.quantity.toLocaleString()}</td>
+        <td style="padding:0.35rem 0.75rem;text-align:right;color:#8899aa">${it.type_id}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function renderAcquisitionsSection(root, id, title, items, onParse, onClear) {
+  const section = document.createElement('div');
+  section.id = id;
+  section.style.cssText = 'margin-bottom:2rem';
+  section.innerHTML = `
+    <h3 style="margin:0 0 0.5rem">${escapeHtml(title)}</h3>
+    <textarea id="${id}-paste" rows="6" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
+      placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
+    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
+      <button id="${id}-parse" class="btn">Parse</button>
+      <button id="${id}-clear" class="link-btn" style="color:#8899aa">Clear</button>
+      <span id="${id}-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
+    </div>
+    <div id="${id}-table"></div>`;
+  root.appendChild(section);
+
+  const textarea = section.querySelector(`#${id}-paste`);
+  const parseBtn = section.querySelector(`#${id}-parse`);
+  const clearBtn = section.querySelector(`#${id}-clear`);
+  const statusEl = section.querySelector(`#${id}-status`);
+  const tableEl = section.querySelector(`#${id}-table`);
+
+  tableEl.innerHTML = renderAcquisitionsTable(items);
+
+  parseBtn.addEventListener('click', () => onParse(textarea, tableEl, statusEl));
+  clearBtn.addEventListener('click', () => onClear(textarea, tableEl, statusEl));
+  textarea.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      onParse(textarea, tableEl, statusEl);
+    }
+  });
+}
+
+async function acquisitionsParse(textarea, tableEl, statusEl, isHulls) {
+  const text = textarea.value.trim();
+  if (!text) { statusEl.textContent = 'Nothing to parse.'; return; }
+  statusEl.textContent = 'Parsing…';
+  try {
+    const data = await fetch(`${API}/api/acquisitions/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paste_text: text }),
+    }).then((r) => r.json());
+    if (data.detail) throw new Error(data.detail);
+    const items = data.items || [];
+    if (isHulls) acquisitionsHulls = items; else acquisitionsItems = items;
+    tableEl.innerHTML = renderAcquisitionsTable(items);
+    statusEl.textContent = `${items.length} item${items.length !== 1 ? 's' : ''} resolved.`;
+    await acquisitionsSave();
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
+  }
+}
+
+function acquisitionsClear(textarea, tableEl, statusEl, isHulls) {
+  textarea.value = '';
+  if (isHulls) acquisitionsHulls = []; else acquisitionsItems = [];
+  tableEl.innerHTML = renderAcquisitionsTable([]);
+  statusEl.textContent = '';
+  acquisitionsSave();
+}
+
+function renderAcquisitionsTab() {
+  const root = $('#acquisitions-root');
+  if (!root) return;
+  root.innerHTML = '';
+
+  const header = document.createElement('div');
+  header.innerHTML = `
+    <h2>Acquisitions</h2>
+    <p class="muted">Track what's already on hand so Plan HaulX can show accurate shortfalls.
+    Paste your hull inventory and item inventory (modules, ammo, etc.) using the standard
+    EVE clipboard format — Name, then a tab, then quantity, one line per item.
+    Changes are saved automatically and survive app restarts.</p>`;
+  root.appendChild(header);
+
+  renderAcquisitionsSection(
+    root, 'acq-hulls', 'Hull Inventory', acquisitionsHulls,
+    (ta, tbl, st) => acquisitionsParse(ta, tbl, st, true),
+    (ta, tbl, st) => acquisitionsClear(ta, tbl, st, true),
+  );
+  renderAcquisitionsSection(
+    root, 'acq-items', 'Item Inventory', acquisitionsItems,
+    (ta, tbl, st) => acquisitionsParse(ta, tbl, st, false),
+    (ta, tbl, st) => acquisitionsClear(ta, tbl, st, false),
+  );
+}
+
+// Load acquisitions inventory on startup
+acquisitionsLoad();
+
+// ============================================================
+// Plan HaulX tab
+// ============================================================
+
+const HAULX_MAX_VOLUME = 360000;  // m³ (360 km³)
+const HAULX_MAX_COLLATERAL = 5_000_000_000;  // ISK
+
+const haulxPriceCache = {};  // type_id -> { min_sell, packaged_volume }
+let haulxQty = {};  // type_id (string) -> qty (number)
+let haulxOverQuota = false;
+
+function haulxTotals() {
+  let vol = 0, isk = 0;
+  for (const [tid, qty] of Object.entries(haulxQty)) {
+    if (!qty) continue;
+    const p = haulxPriceCache[tid];
+    if (p) {
+      vol += qty * (p.packaged_volume || 0);
+      isk += qty * (p.min_sell || 0);
+    }
+  }
+  return { vol, isk };
+}
+
+function haulxUpdateTotals() {
+  const { vol, isk } = haulxTotals();
+  const volEl = $('#haulx-vol');
+  const iskEl = $('#haulx-isk');
+  const copyBtn = $('#haulx-copy');
+  if (!volEl) return;
+
+  const volKm3 = vol / 1000;
+  volEl.textContent = `${volKm3.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / 360.0 km³`;
+  volEl.classList.toggle('haulx-over', vol > HAULX_MAX_VOLUME);
+
+  const iskB = isk / 1_000_000_000;
+  iskEl.textContent = `${iskB.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B / 5.00B ISK`;
+  iskEl.classList.toggle('haulx-over', isk > HAULX_MAX_COLLATERAL);
+
+  const anySelected = Object.values(haulxQty).some((q) => q > 0);
+  if (copyBtn) copyBtn.disabled = !anySelected;
+}
+
+async function haulxFetchPrices(quotas) {
+  const uncached = (quotas || []).filter((q) => !haulxPriceCache[String(q.ship_type_id)]);
+  if (!uncached.length) return;
+  await Promise.all(
+    uncached.map((q) =>
+      fetch(`${API}/api/market/jita-sell?type_id=${q.ship_type_id}`)
+        .then((r) => r.json())
+        .then((data) => {
+          haulxPriceCache[String(q.ship_type_id)] = {
+            min_sell: data.min_sell,
+            packaged_volume: data.packaged_volume,
+          };
+          // Update row if already rendered
+          const row = $(`#haulx-row-${q.ship_type_id}`);
+          if (row) {
+            const volEl = row.querySelector('.haulx-row-vol');
+            const priceEl = row.querySelector('.haulx-row-price');
+            if (volEl) volEl.textContent = data.packaged_volume != null ? `${(data.packaged_volume / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³` : '—';
+            if (priceEl) priceEl.textContent = data.min_sell != null ? `${(data.min_sell / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M` : '—';
+            row.querySelector('.haulx-loading')?.remove();
+          }
+          haulxUpdateTotals();
+        })
+        .catch(() => {
+          haulxPriceCache[String(q.ship_type_id)] = { min_sell: null, packaged_volume: null };
+        })
+    )
+  );
+}
+
+function renderHaulxTab() {
+  const root = $('#haulx-root');
+  if (!root) return;
+
+  if (!lastContractsScan) {
+    root.innerHTML = '<p class="muted" style="padding:1.5rem">Run a Contracts scan first to see quota gaps.</p>';
+    return;
+  }
+
+  const quotas = lastContractsScan.quotas || [];
+
+  root.innerHTML = `
+    <h2>Plan HaulX</h2>
+    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Hit <strong>Copy Haul List</strong> when you're ready to paste into your courier contract.</p>
+    <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:0;z-index:10">
+      <span style="font-weight:600">Plan HaulX</span>
+      <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
+      <span style="font-size:0.85rem">Collateral: <strong id="haulx-isk" class="haulx-metric">—B / 5.00B ISK</strong></span>
+      <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Copy Haul List</button>
+      <button id="haulx-fill-priority" class="link-btn">Fill by priority</button>
+      <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
+        <input type="checkbox" id="haulx-over-quota" ${haulxOverQuota ? 'checked' : ''}> Allow over quota
+      </label>
+    </div>
+    <table id="haulx-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">
+      <thead>
+        <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
+          <th style="padding:0.5rem 1rem">Ship</th>
+          <th style="padding:0.5rem 0.5rem">Missing</th>
+          <th style="padding:0.5rem 0.5rem">On hand</th>
+          <th style="padding:0.5rem 0.5rem">Qty</th>
+          <th style="padding:0.5rem 0.5rem">Vol/ship</th>
+          <th style="padding:0.5rem 1rem">Price (Jita)</th>
+        </tr>
+      </thead>
+      <tbody id="haulx-tbody"></tbody>
+    </table>`;
+
+  const tbody = $('#haulx-tbody');
+
+  // Respect current contracts sort order if bars are rendered
+  const contractsRoot = $('#contracts-quota-dashboard');
+  const bars = contractsRoot ? [...contractsRoot.querySelectorAll('.quota-bar')] : [];
+  const quotasByTypeId = Object.fromEntries(quotas.map((q) => [String(q.ship_type_id), q]));
+  const orderedQuotas = bars.length
+    ? bars.map((el) => quotasByTypeId[el.dataset.shipTypeId]).filter(Boolean)
+    : quotas;
+
+  const onHandByTypeId = Object.fromEntries(acquisitionsHulls.map((h) => [String(h.type_id), h.quantity]));
+
+  for (const q of orderedQuotas) {
+    const tid = String(q.ship_type_id);
+    const missing = Number(q.missing) || 0;
+    const atQuota = missing <= 0;
+    const price = haulxPriceCache[tid];
+    const qty = haulxQty[tid] || 0;
+    const rowMax = haulxOverQuota ? 999 : (atQuota ? 10 : missing);
+    const onHand = onHandByTypeId[tid] || 0;
+
+    const volText = price?.packaged_volume != null
+      ? `${(price.packaged_volume / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³`
+      : '<span class="haulx-loading muted">…</span>';
+    const priceText = price?.min_sell != null
+      ? `${(price.min_sell / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
+      : '<span class="haulx-loading muted">…</span>';
+
+    const tr = document.createElement('tr');
+    tr.id = `haulx-row-${tid}`;
+    tr.style.cssText = atQuota ? 'opacity:0.45;border-bottom:1px solid #1e2533' : 'border-bottom:1px solid #1e2533';
+    tr.innerHTML = `
+      <td style="padding:0.5rem 1rem">
+        <strong>${escapeHtml(q.ship_name || q.name || `type ${tid}`)}</strong>
+        ${q.name && q.ship_name && q.name !== q.ship_name ? `<span class="muted" style="font-size:0.8rem;margin-left:0.4rem">${escapeHtml(q.name)}</span>` : ''}
+      </td>
+      <td style="padding:0.5rem 0.5rem;color:${missing > 0 ? '#e8a838' : '#4a8'}">${missing > 0 ? missing : '✓'}</td>
+      <td style="padding:0.5rem 0.5rem;color:${onHand > 0 ? '#4a8' : '#8899aa'}">${onHand > 0 ? onHand : '—'}</td>
+      <td style="padding:0.5rem 0.5rem">
+        <input type="number" class="haulx-qty" data-tid="${tid}" value="${qty}" min="0" max="${rowMax}" style="width:4rem;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:3px;padding:2px 6px;text-align:center">
+        <button class="haulx-max link-btn" data-tid="${tid}" data-max="${rowMax}" style="margin-left:0.3rem;font-size:0.75rem">max</button>
+      </td>
+      <td class="haulx-row-vol" style="padding:0.5rem 0.5rem;color:#8899aa">${volText}</td>
+      <td class="haulx-row-price" style="padding:0.5rem 1rem;color:#8899aa">${priceText}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  tbody.addEventListener('input', (e) => {
+    const input = e.target.closest('.haulx-qty');
+    if (!input) return;
+    haulxQty[input.dataset.tid] = Math.max(0, parseInt(input.value) || 0);
+    haulxUpdateTotals();
+  });
+
+  tbody.addEventListener('click', (e) => {
+    const btn = e.target.closest('.haulx-max');
+    if (!btn) return;
+    const tid = btn.dataset.tid;
+    const max = parseInt(btn.dataset.max) || 0;
+    const input = tbody.querySelector(`.haulx-qty[data-tid="${tid}"]`);
+    if (input) input.value = max;
+    haulxQty[tid] = max;
+    haulxUpdateTotals();
+  });
+
+  $('#haulx-copy')?.addEventListener('click', async () => {
+    const lines = [];
+    for (const tr of tbody.querySelectorAll('tr')) {
+      const input = tr.querySelector('.haulx-qty');
+      if (!input) continue;
+      const qty = parseInt(input.value) || 0;
+      if (!qty) continue;
+      const shipName = tr.querySelector('strong')?.textContent?.trim() || input.dataset.tid;
+      lines.push(`${qty} x ${shipName}`);
+    }
+    const text = lines.join('\n') || 'Nothing selected.';
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      alert(text);
+    }
+  });
+
+  $('#haulx-fill-priority')?.addEventListener('click', () => {
+    // Reset all qtys, then fill by priority order (config order) until a limit is hit.
+    // Uses lastContractsScan.quotas which is always in priority order.
+    haulxQty = {};
+    let vol = 0, isk = 0;
+    for (const q of lastContractsScan.quotas || []) {
+      const missing = Number(q.missing) || 0;
+      if (!haulxOverQuota && missing <= 0) continue;
+      const tid = String(q.ship_type_id);
+      const p = haulxPriceCache[tid];
+      const unitVol = p?.packaged_volume || 0;
+      const unitIsk = p?.min_sell || 0;
+      let canFit = haulxOverQuota ? 999 : missing;
+      if (unitVol > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_VOLUME - vol) / unitVol));
+      if (unitIsk > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_COLLATERAL - isk) / unitIsk));
+      if (canFit <= 0) continue;
+      haulxQty[tid] = canFit;
+      vol += canFit * unitVol;
+      isk += canFit * unitIsk;
+    }
+    // Sync inputs
+    for (const input of tbody.querySelectorAll('.haulx-qty')) {
+      input.value = haulxQty[input.dataset.tid] || 0;
+    }
+    haulxUpdateTotals();
+  });
+
+  $('#haulx-over-quota')?.addEventListener('change', (e) => {
+    haulxOverQuota = e.target.checked;
+    renderHaulxTab();
+  });
+
+  haulxFetchPrices(orderedQuotas);
+  haulxUpdateTotals();
 }
 
 // ============================================================
