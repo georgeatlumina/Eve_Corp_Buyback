@@ -1965,6 +1965,7 @@ async function scanAllFits() {
       doctrines: doctrineRecords,
       fits,
     };
+    haulxReadinessScanDone = true;
     saveReadinessScan();
     readinessState.scanProgress = null;
     if (!aaState.market && !aaState.marketLoading) loadMarket(false);
@@ -4253,9 +4254,11 @@ acquisitionsLoad();
 const HAULX_MAX_VOLUME = 360000;  // m³ (360 km³)
 const HAULX_MAX_COLLATERAL = 5_000_000_000;  // ISK
 
-const haulxPriceCache = {};  // type_id -> { min_sell, packaged_volume }
+const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume }
+const haulxItemPriceCache = {}; // type_id -> jita min_sell (for fit items)
 let haulxQty = {};  // type_id (string) -> qty (number)
 let haulxOverQuota = false;
+let haulxReadinessScanDone = false;  // true only after a readiness scan in this session
 
 function haulxTotals() {
   let vol = 0, isk = 0;
@@ -4264,7 +4267,7 @@ function haulxTotals() {
     const p = haulxPriceCache[tid];
     if (p) {
       vol += qty * (p.packaged_volume || 0);
-      isk += qty * (p.min_sell || 0);
+      isk += qty * (p.fit_price != null ? p.fit_price : (p.min_sell || 0));
     }
   }
   return { vol, isk };
@@ -4290,33 +4293,78 @@ function haulxUpdateTotals() {
 }
 
 async function haulxFetchPrices(quotas) {
-  const uncached = (quotas || []).filter((q) => !haulxPriceCache[String(q.ship_type_id)]);
-  if (!uncached.length) return;
+  const fits = readinessState.scan?.fits || {};
+  const fitsByHull = {};
+  for (const fit of Object.values(fits)) {
+    const key = String(fit.hullTypeId);
+    if (!fitsByHull[key]) fitsByHull[key] = [];
+    fitsByHull[key].push(fit);
+  }
+
+  // Collect all type IDs we need prices for: hulls + all fit items
+  const allTypeIds = new Set();
+  for (const q of quotas || []) {
+    allTypeIds.add(String(q.ship_type_id));
+    const candidates = fitsByHull[String(q.ship_type_id)] || [];
+    const fit = candidates.find((f) => f.name === q.name) || candidates[0];
+    for (const item of fit?.items || []) allTypeIds.add(String(item.typeId));
+  }
+
+  // Fetch any uncached prices
+  const uncachedIds = [...allTypeIds].filter((tid) => !(tid in haulxItemPriceCache));
   await Promise.all(
-    uncached.map((q) =>
-      fetch(`${API}/api/market/jita-sell?type_id=${q.ship_type_id}`)
+    uncachedIds.map((tid) =>
+      fetch(`${API}/api/market/jita-sell?type_id=${tid}`)
         .then((r) => r.json())
         .then((data) => {
-          haulxPriceCache[String(q.ship_type_id)] = {
-            min_sell: data.min_sell,
-            packaged_volume: data.packaged_volume,
-          };
-          // Update row if already rendered
-          const row = $(`#haulx-row-${q.ship_type_id}`);
-          if (row) {
-            const volEl = row.querySelector('.haulx-row-vol');
-            const priceEl = row.querySelector('.haulx-row-price');
-            if (volEl) volEl.textContent = data.packaged_volume != null ? `${(data.packaged_volume / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³` : '—';
-            if (priceEl) priceEl.textContent = data.min_sell != null ? `${(data.min_sell / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M` : '—';
-            row.querySelector('.haulx-loading')?.remove();
+          haulxItemPriceCache[tid] = data.min_sell ?? null;
+          // Hull entries also get volume stored in haulxPriceCache
+          if (!haulxPriceCache[tid]) {
+            haulxPriceCache[tid] = { min_sell: data.min_sell, packaged_volume: data.packaged_volume };
           }
-          haulxUpdateTotals();
         })
-        .catch(() => {
-          haulxPriceCache[String(q.ship_type_id)] = { min_sell: null, packaged_volume: null };
-        })
+        .catch(() => { haulxItemPriceCache[tid] = null; })
     )
   );
+
+  // Now compute fit_price per quota and update rows
+  for (const q of quotas || []) {
+    const tid = String(q.ship_type_id);
+    const candidates = fitsByHull[tid] || [];
+    const fit = candidates.find((f) => f.name === q.name) || candidates[0];
+
+    // Ensure hull cache entry exists
+    if (!haulxPriceCache[tid]) {
+      haulxPriceCache[tid] = { min_sell: haulxItemPriceCache[tid] ?? null, packaged_volume: null };
+    }
+
+    let fitTotal = null;
+    if (fit?.items?.length) {
+      let sum = 0;
+      let allPriced = true;
+      for (const item of fit.items) {
+        const p = haulxItemPriceCache[String(item.typeId)];
+        if (p == null) { allPriced = false; break; }
+        sum += p * item.qty;
+      }
+      if (allPriced) fitTotal = sum * 1.15;
+    }
+    haulxPriceCache[tid].fit_price = fitTotal;
+
+    // Update rendered row if visible
+    const row = $(`#haulx-row-${tid}`);
+    if (row) {
+      const volEl = row.querySelector('.haulx-row-vol');
+      const priceEl = row.querySelector('.haulx-row-price');
+      const vol = haulxPriceCache[tid].packaged_volume;
+      if (volEl) volEl.textContent = vol != null ? `${(vol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³` : '—';
+      if (priceEl) priceEl.textContent = fitTotal != null
+        ? `${(fitTotal / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
+        : (fit ? '…' : '—');
+      row.querySelector('.haulx-loading')?.remove();
+    }
+  }
+  haulxUpdateTotals();
 }
 
 function renderHaulxTab() {
@@ -4324,7 +4372,7 @@ function renderHaulxTab() {
   if (!root) return;
 
   const hasContracts = !!lastContractsScan;
-  const hasReadiness = !!(readinessState.scan?.fits);
+  const hasReadiness = haulxReadinessScanDone;
 
   if (!hasContracts || !hasReadiness) {
     const items = [
@@ -4399,8 +4447,8 @@ function renderHaulxTab() {
     const volText = price?.packaged_volume != null
       ? `${(price.packaged_volume / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³`
       : '<span class="haulx-loading muted">…</span>';
-    const priceText = price?.min_sell != null
-      ? `${(price.min_sell / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
+    const priceText = price?.fit_price != null
+      ? `${(price.fit_price / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
       : '<span class="haulx-loading muted">…</span>';
 
     const tr = document.createElement('tr');
@@ -4509,7 +4557,7 @@ function renderHaulxTab() {
       const tid = String(q.ship_type_id);
       const p = haulxPriceCache[tid];
       const unitVol = p?.packaged_volume || 0;
-      const unitIsk = p?.min_sell || 0;
+      const unitIsk = p?.fit_price != null ? p.fit_price : (p?.min_sell || 0);
       let canFit = haulxOverQuota ? 999 : missing;
       if (unitVol > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_VOLUME - vol) / unitVol));
       if (unitIsk > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_COLLATERAL - isk) / unitIsk));
