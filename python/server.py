@@ -2132,6 +2132,181 @@ def liquidation_delete_shipment(shipment_id: str):
     return {'ok': True}
 
 
+# ---------------------------------------------------------------------------
+# Doctrine stock — a read-only, alliance-wide dashboard of the Contracts-tab
+# quota results. An admin (who holds a Contract Manager / Director token) runs
+# the Contracts scan; the renderer auto-publishes the resulting quota rows here,
+# which writes one JSON file per alliance into the *market-history* GitHub repo
+# (shared, its Read PAT already distributed to members). Regular members — who
+# lack the privileged token to scan contracts themselves — read that file from
+# the Doctrine Stock tab to see current stock and gaps. Only the quota summary
+# (name / ship / required / available / missing) is published; the raw contract
+# list (issuer names, prices) is deliberately left out.
+# ---------------------------------------------------------------------------
+_DOCTRINE_STOCK_ALLIANCES = ('main', 'institute')
+
+
+def _doctrine_stock_remote_cfg(cfg):
+    """Resolve the market-history GitHub repo for a given alliance's doctrine
+    stock file, or None if the repo URL isn't configured/parseable."""
+    url = (cfg.get('market_history_repo_url') or '').strip()
+    if not url:
+        return None
+    parsed = _parse_github_blob_url(url)
+    if not parsed:
+        return None
+    owner, repo, branch, _path = parsed
+    return {
+        'owner': owner, 'repo': repo, 'branch': branch,
+        'read_pat': cfg.get('market_history_pat_read') or cfg.get('market_history_pat_write') or None,
+        'write_pat': cfg.get('market_history_pat_write') or None,
+    }
+
+
+def _doctrine_stock_path(alliance):
+    return f'doctrine-stock/{alliance}.json'
+
+
+def _doctrine_stock_cache_path(alliance):
+    from config import AUTH_DIR
+    return os.path.join(AUTH_DIR, f'doctrine_stock_{alliance}.json')
+
+
+def _doctrine_stock_save_cache(alliance, snapshot):
+    try:
+        from config import AUTH_DIR
+        os.makedirs(AUTH_DIR, exist_ok=True)
+        path = _doctrine_stock_cache_path(alliance)
+        with open(path, 'w') as f:
+            json.dump(snapshot, f, indent=2)
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+
+def _doctrine_stock_load_cache(alliance):
+    try:
+        with open(_doctrine_stock_cache_path(alliance)) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _coerce_stock_quota(row):
+    """Trim a scan quota row down to the fields the dashboard needs. Drops the
+    per-contract references and any pricing so nothing sensitive is published."""
+    if not isinstance(row, dict):
+        return None
+    try:
+        required = int(row.get('required') or 0)
+        available = int(row.get('available') or 0)
+    except (TypeError, ValueError):
+        return None
+    missing = row.get('missing')
+    try:
+        missing = int(missing) if missing is not None else max(0, required - available)
+    except (TypeError, ValueError):
+        missing = max(0, required - available)
+    return {
+        'name': str(row.get('name') or ''),
+        'ship_name': str(row.get('ship_name') or ''),
+        'ship_type_id': row.get('ship_type_id') or None,
+        'title_filter': str(row.get('title_filter') or ''),
+        'fit_id': row.get('fit_id') or None,
+        'required': required,
+        'available': available,
+        'missing': missing,
+    }
+
+
+class DoctrineStockPublish(BaseModel):
+    alliance: str = 'main'
+    structure_id: Optional[int] = None
+    quotas: list = []
+
+
+@app.post('/api/doctrine-stock/publish')
+def publish_doctrine_stock(req: DoctrineStockPublish):
+    """Write the current Contracts-tab quota results for one alliance to the
+    market-history repo. Idempotent overwrite (read sha, PUT). No-ops quietly
+    (``published: False``) when the machine has no market-history write PAT, so
+    the renderer can call this after every scan without gating logic of its own.
+    """
+    alliance = req.alliance if req.alliance in _DOCTRINE_STOCK_ALLIANCES else 'main'
+    cfg = load_config()
+    rc = _doctrine_stock_remote_cfg(cfg)
+    quotas = [q for q in (_coerce_stock_quota(r) for r in (req.quotas or [])) if q]
+    snapshot = {
+        'alliance': alliance,
+        'structure_id': req.structure_id,
+        'published_at': datetime.now(timezone.utc).isoformat(),
+        'quota_count': len(quotas),
+        'quotas': quotas,
+    }
+    # Always refresh the local cache so this admin's own dashboard is current
+    # even before/without a successful push.
+    _doctrine_stock_save_cache(alliance, snapshot)
+    if not rc:
+        return {'published': False, 'reason': 'not_configured', 'quota_count': len(quotas)}
+    if not rc.get('write_pat'):
+        return {'published': False, 'reason': 'no_write_pat', 'quota_count': len(quotas)}
+    ua = get_user_agent()
+    path = _doctrine_stock_path(alliance)
+    sha = None
+    try:
+        _existing, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'], path, rc['write_pat'], ua)
+    except FileNotFoundError:
+        sha = None
+    except Exception as e:
+        return {'published': False, 'reason': f'read_failed: {e}', 'quota_count': len(quotas)}
+    text = json.dumps(snapshot, indent=2) + '\n'
+    try:
+        result = _github_contents_put(
+            rc['owner'], rc['repo'], rc['branch'], path, text, sha, rc['write_pat'], ua,
+            f'Doctrine stock ({alliance}) — {len(quotas)} row(s)',
+        )
+    except Exception as e:
+        return {'published': False, 'reason': f'put_failed: {e}', 'quota_count': len(quotas)}
+    return {
+        'published': True,
+        'quota_count': len(quotas),
+        'commit_sha': result.get('commit_sha'),
+        'commit_html_url': result.get('commit_html_url'),
+    }
+
+
+@app.get('/api/doctrine-stock')
+def get_doctrine_stock(alliance: str = 'main'):
+    """Read the published doctrine-stock snapshot for one alliance. Prefers the
+    market-history GitHub repo (using the Read PAT); on any remote failure falls
+    back to the local cache. Returns ``storage: 'github' | 'local' | 'none'``."""
+    alliance = alliance if alliance in _DOCTRINE_STOCK_ALLIANCES else 'main'
+    cfg = load_config()
+    rc = _doctrine_stock_remote_cfg(cfg)
+    if rc:
+        ua = get_user_agent()
+        try:
+            text, _sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                              _doctrine_stock_path(alliance), rc['read_pat'], ua)
+            snapshot = json.loads(text)
+            _doctrine_stock_save_cache(alliance, snapshot)
+            return {'storage': 'github', **snapshot}
+        except FileNotFoundError:
+            return {'storage': 'none', 'alliance': alliance, 'quotas': [], 'published_at': None,
+                    'reason': 'not_published_yet'}
+        except Exception as e:
+            cached = _doctrine_stock_load_cache(alliance)
+            if cached:
+                return {'storage': 'local', 'stale': True, 'error': str(e), **cached}
+            return {'storage': 'none', 'alliance': alliance, 'quotas': [], 'published_at': None,
+                    'reason': f'read_failed: {e}'}
+    cached = _doctrine_stock_load_cache(alliance)
+    if cached:
+        return {'storage': 'local', **cached}
+    return {'storage': 'none', 'alliance': alliance, 'quotas': [], 'published_at': None,
+            'reason': 'not_configured'}
+
+
 @app.get('/api/liquidation/corp-orders')
 def liquidation_corp_orders():
     """Live open Jita sell orders for the corp, enriched with cost basis (live

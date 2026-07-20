@@ -28,6 +28,7 @@
         <button class="tab-btn active" data-tab="appraisal">Appraisal</button>
         <button class="tab-btn" data-tab="sov">Sov</button>
         <button class="tab-btn" data-tab="doctrines">Doctrines</button>
+        <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
         <button class="tab-btn" data-tab="readiness">Market Readiness</button>
         <button class="tab-btn" data-tab="market">Market</button>
       </div>
@@ -362,6 +363,27 @@
       <div id="doctrines-list"></div>
     </section>
 
+    <section id="tab-doctrine-stock" class="tab">
+      <h2>Doctrine Stock</h2>
+      <p class="muted">Current doctrine hull stock and gaps at the home structure, published by the alliance admins whenever they scan contracts. <strong>Read-only</strong> — no login or special roles needed. Green = stocked, amber = partial, red = empty. Use <strong>Copy shopping list</strong> to grab everything that's short.</p>
+      <div class="alliance-toggle" role="group" aria-label="Alliance filter">
+        <button type="button" class="alliance-btn active" data-ds-alliance="main">NLDF (Main Alliance)</button>
+        <button type="button" class="alliance-btn" data-ds-alliance="institute">NLDO (Experimental)</button>
+      </div>
+      <div class="actions">
+        <button id="btn-doctrine-stock-refresh" type="button">Refresh</button>
+        <select id="doctrine-stock-sort" class="secondary">
+          <option value="under-quota">Sort by biggest gap</option>
+          <option value="default">Sort by ship name</option>
+        </select>
+        <label class="ds-hide-ok"><input type="checkbox" id="doctrine-stock-hide-ok" /> Only show gaps</label>
+        <button id="btn-doctrine-stock-export-csv" type="button" class="secondary">Export gap CSV</button>
+        <button id="btn-doctrine-stock-export-text" type="button" class="secondary">Copy shopping list</button>
+      </div>
+      <p id="doctrine-stock-status" class="muted"></p>
+      <div id="doctrine-stock-dashboard"></div>
+    </section>
+
     <section id="tab-readiness" class="tab">
       <h2>Market Readiness</h2>
       <p class="muted">Scans every doctrine/fit on <code>auth.navaldefence.org</code> and cross-references against the first configured structure's market. Capital-tier fits are off by default — toggle in Settings.</p>
@@ -684,5 +706,6 @@
   <script src="hooks-hubs.js"></script>
   <script src="liquidation.js"></script>
   <script src="market.js"></script>
+  <script src="doctrine-stock.js"></script>
 </body>
 </html>

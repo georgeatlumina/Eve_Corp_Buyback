@@ -224,6 +224,28 @@ contracts tab uses CCP's non-ESI client API. So this scan sees only what
 corps you hold a director / Contract Manager token for. Adding more slots
 widens visibility one corp at a time.
 
+### Doctrine Stock dashboard (`POST /api/doctrine-stock/publish`, `GET /api/doctrine-stock`)
+
+The Contracts scan needs a Contract Manager / Director ESI token, so only admins
+can run it. To let ordinary members (indy pilots especially) see current stock
+and gaps, the Contracts scan **auto-publishes** its per-alliance quota results —
+`publishDoctrineStock` in [renderer/app.js](renderer/app.js) fires after each
+`done` event and POSTs the lean quota rows (name / ship / required / available /
+missing — no contract issuer or price data) to the sidecar, which writes
+`doctrine-stock/<main|institute>.json` into the **market-history GitHub repo**
+(reusing `market_history_repo_url` + its PATs; publish is gated on the Write PAT
+being present, so a non-admin scanning their own corp never pushes). The push is
+an idempotent overwrite (read sha → PUT).
+
+The **Doctrine Stock tab** ([renderer/doctrine-stock.js](renderer/doctrine-stock.js))
+is a read-only member view in the General nav group — open to anyone who has
+authed a toon, no privileged role needed. It `GET`s the published snapshot (Read
+PAT), falling back to a local cache when GitHub is unreachable, and renders the
+same green/amber/red quota bars as the Contracts tab, sortable by biggest gap
+with a gaps-only filter and gap-CSV / shopping-list exports. This deliberately
+mirrors the industry **Stockpile** dashboard pattern (`inventory/stock.json` in
+the same repo).
+
 ### Alliance quota sync (`POST /api/quotas/sync` and `/api/quotas/push`)
 
 Quotas can live on a shared source of truth so the whole alliance pulls

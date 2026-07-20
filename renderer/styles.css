@@ -410,6 +410,11 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .quota-bar.quota-empty .quota-bar-fill { background: #d44; }
 .quota-bar { cursor: pointer; transition: border-color 0.15s; }
 .quota-bar:hover { filter: brightness(1.12); }
+/* Doctrine Stock: read-only bars — not clickable, no hover affordance. */
+.quota-bar.ds-bar { cursor: default; margin-bottom: 0.5em; }
+.quota-bar.ds-bar:hover { filter: none; }
+.ds-hide-ok { display: inline-flex; align-items: center; gap: 0.35em; color: #bbb; font-size: 0.9em; cursor: pointer; }
+.ds-hide-ok input { margin: 0; }
 .quota-expand-caret { margin-left: 0.5em; font-size: 1em; color: #7af; user-select: none; transition: transform 0.15s; }
 .quota-expand-panel { margin-top: 0.6em; border-top: 1px solid #333; padding-top: 0.5em; display: none; flex-direction: column; gap: 0.3em; }
 .quota-expand-panel.open { display: flex; }

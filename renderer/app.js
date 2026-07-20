@@ -3247,6 +3247,7 @@ async function runContractsScan() {
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);
         prefetchHullPrices(evt.payload.quotas || []);
+        publishDoctrineStock(activeContractsAlliance, evt.payload);
         const failedItems = (evt.payload.contracts || []).filter(c => c.items_error).length;
         if (failedItems > 0) {
           status.textContent = `⚠ ESI errors: items could not be fetched for ${failedItems} contract(s) — ship counts may be lower than actual. Try re-scanning.`;
@@ -3266,6 +3267,33 @@ async function runContractsScan() {
     const _st = $('#contracts-status');
     if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
   }
+}
+
+// Auto-publish the quota results so members can see current doctrine stock on
+// the read-only Doctrine Stock tab. Fire-and-forget: the sidecar quietly no-ops
+// when this machine has no market-history write PAT, so non-admins scanning
+// their own corp never push. A tiny status note surfaces success/failure.
+async function publishDoctrineStock(alliance, payload) {
+  const status = $('#contracts-status');
+  try {
+    const res = await fetch(`${API}/api/doctrine-stock/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        alliance,
+        structure_id: payload?.structure_id ?? null,
+        quotas: payload?.quotas || [],
+      }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.published && status && !status.textContent) {
+      const link = data.commit_html_url
+        ? ` (<a href="${escapeHtml(data.commit_html_url)}" target="_blank" rel="noopener">commit</a>)`
+        : '';
+      status.innerHTML = `Published ${data.quota_count} row(s) to the member Doctrine Stock dashboard${link}.`;
+    }
+  } catch (_) { /* offline / not configured — dashboard just stays at its last snapshot */ }
 }
 
 async function runSold30dScan() {
