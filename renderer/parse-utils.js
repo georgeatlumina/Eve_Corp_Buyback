@@ -261,6 +261,31 @@ function hasGroupMembership(groups, wanted) {
   return (groups || []).some((g) => (g || '').toLowerCase().includes(w));
 }
 
+// Parse the Alliance Auth *dashboard* group memberships. The dashboard shows a
+// card titled "Membership(s)" containing a table of the groups the user
+// actually belongs to (one `<td class="text-center">Group</td>` per row) — a
+// more reliable membership signal than the /groups/ join-leave page (where an
+// internal/auto-assigned group like "Industry Pilot" has no Leave control).
+// Returns the list of member group names. Scoped to the Membership card so it
+// doesn't pick up other dashboard tables (characters, etc.).
+function parseDashboardGroups(html) {
+  try {
+    const doc = new DOMParser().parseFromString(html || '', 'text/html');
+    let scope = null;
+    for (const c of doc.querySelectorAll('.card, .panel, .box, .widget')) {
+      const head = c.querySelector('.card-header, .card-title, .panel-heading, h1, h2, h3, h4, h5, header');
+      if (head && /membership/i.test(head.textContent || '')) { scope = c; break; }
+    }
+    scope = scope || doc; // fall back to the whole dashboard (it lists only memberships)
+    const names = Array.from(scope.querySelectorAll('td, li'))
+      .map((e) => (e.textContent || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(names));
+  } catch (e) {
+    return [];
+  }
+}
+
 function fmtIsk(n) {
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
@@ -270,5 +295,5 @@ function fmtMillions(n) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { extractTypeId, parseDoctrinesHtml, parseDoctrineDetail, parseFitDetail, parseSrpFleets, parseSrpRequests, parseUserGroups, hasGroupMembership, fmtIsk, fmtMillions };
+  module.exports = { extractTypeId, parseDoctrinesHtml, parseDoctrineDetail, parseFitDetail, parseSrpFleets, parseSrpRequests, parseUserGroups, parseDashboardGroups, hasGroupMembership, fmtIsk, fmtMillions };
 }

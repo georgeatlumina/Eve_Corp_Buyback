@@ -67,6 +67,16 @@ upgrade/workforce planner is fed by a manual, locally-persisted table
 & non-transferable, workforce transfers between systems) is a pure client-side
 function ([hooks-hubs-utils.js](renderer/hooks-hubs-utils.js) `computePlan`).
 
+An **Indy** nav group serves manufacturing pilots: a **Build Planner** where an
+industry pilot plans manufacturing jobs (doctrine + alliance + ETA + the job's
+missing materials) against current doctrine-stock demand, and a **Build
+Fulfilment** admin dashboard that aggregates every builder's plan and compares
+the summed missing materials against alliance stock.
+
+A **Stockpile** tab tracks the alliance's on-hand industry-material stock
+(minerals / PI / other) shared across admins, feeding the Build Fulfilment
+fill-status comparison.
+
 ## Stakeholders & users
 
 - **Primary user:** Naval Defence Alliance leadership running buyback intake. Single-user
@@ -258,6 +268,55 @@ ETA, and a **gantt** charting `created_at`→`est_completion` per build, grouped
 builder, with weekly ticks, a today marker, and alliance-coloured bars. Slots
 carry no dates of their own, so the *build* is the scheduled unit and its slots
 are surfaced in the detail panel. Pure client-side date math; no external libs.
+
+### Indy build planner & fulfilment (`/api/builds/*`)
+
+Two halves of the Indy nav group, both backed by per-builder JSON files in the
+market-history repo.
+
+**Build Planner** ([renderer/builds.js](renderer/builds.js)) lets an industry
+pilot plan manufacturing jobs. Each build is a **doctrine** (a dropdown from the
+published doctrine-stock, shown as "Ship — Doctrine"), an **alliance** (NLDF /
+NLDO), an **estimated completion date**, a **note**, and **one slot** holding the
+job's missing materials. The pilot clicks a paste box that opens a slide-in side
+drawer and pastes the in-game industry-job "missing materials" copy; it's parsed
+server-side (`POST /api/builds/parse`) into categorized `{name, type_id, qty,
+category}` line items. The parser (`builds.parse_missing_materials`) strips the
+blueprint header line, category labels, and the column-header row and reads the
+typeID column directly, falling back to the generic paste parser when handed
+plain multibuy text. Builder name auto-fills from the logged-in EVE character
+(slot 1). A colour-coded **"Most in demand"** strip surfaces the top-10 hulls by
+shortfall-to-quota (from doctrine-stock) so the pilot builds what the alliance
+actually lacks. Each plan is saved to the pilot's own file
+`builds/{character_id}.json` on the shared market-history repo (`GET`/`POST
+/api/builds/mine`); the write needs the market-history Write PAT, else it falls
+back to a local file.
+
+**Build Fulfilment** ([renderer/builds-fulfilment.js](renderer/builds-fulfilment.js))
+is the admin dashboard. It aggregates every builder's file (`GET /api/builds/all`
+→ `builds.aggregate_missing`) and compares the summed missing materials against
+the alliance stock (`GET /api/stockpile`), rendering a red / amber / green fill
+status per material. It sorts by biggest shortfall or soonest deadline, groups by
+material or by build, and exports a shortfall CSV plus a shopping-list.
+
+### Stockpile & Alliance Auth group gating (`/api/stockpile*`)
+
+The **Stockpile tab** ([renderer/stockpile.js](renderer/stockpile.js)) holds the
+alliance's on-hand industry-material stock (minerals / PI / other), shared at
+`inventory/stock.json` in the market-history repo. An admin pastes and saves the
+current stock (gated on the per-machine `stockpile_allow_push` flag, mirroring
+the doctrine-stock publish gate), and a **"Copy Janice appraisal"** button
+(`POST /api/stockpile/janice`) returns a shareable `janice.e-351.com/a/<code>`
+link for the whole stockpile.
+
+**Alliance Auth group gate.** Two client-side visibility filters key off the
+logged-in AA user's groups: the Stockpile tab is hidden unless the user is in the
+group named by config `stockpile_group_name` (default `"Industry"`), scraped from
+AA `/groups/` via `parseUserGroups`; the Indy nav group is hidden unless the user
+is in the hardcoded `"Industry Pilot"` group, scraped from the AA dashboard
+"Membership" card via `parseDashboardGroups`. Both are **convenience filters
+only** — they de-clutter the nav for non-industry members and are always shown in
+Admin view. The real access boundary is the GitHub PAT, not the group check.
 
 ### Alliance quota sync (`POST /api/quotas/sync` and `/api/quotas/push`)
 
@@ -557,6 +616,16 @@ localStorage** (`readinessState`), not on disk.
   syncs. Backward-compat for installs that already have a gist URL saved;
   also a one-line revert path if the secret-gist option ever needs to come
   back to the UI.
+- **One shared market-history repo, held apart from the quota repo.** All shared
+  alliance data — `doctrine-stock/<alliance>.json`, `builds/<character_id>.json`,
+  `inventory/stock.json`, and `liquidation/shipments.json` — lives in the single
+  **market-history GitHub repo** (`market_history_repo_url` + its read/write
+  PATs), resolved centrally by `_share_remote_cfg`. This is deliberately kept
+  **separate** from the alliance-quota repo: the market-history Write PAT is safe
+  to hand out to indy/manufacturing users (they publish stock and build plans),
+  whereas the quota repo holds the master quota numbers and its Write PAT stays
+  restricted to admins. Splitting the two lets low-trust users write shared
+  industry data without ever touching the quota source of truth.
 
 ## Common entry points
 

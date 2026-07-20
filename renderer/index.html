@@ -41,7 +41,7 @@
         </div>
       </div>
 
-      <div class="nav-group" data-group="indy">
+      <div class="nav-group" data-group="indy" hidden>
         <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Indy</span><span class="nav-caret" aria-hidden="true">▾</span></button>
         <div class="nav-panel" role="menu">
           <button class="tab-btn" data-tab="indy-planner">Build Planner</button>
@@ -716,7 +716,8 @@
 
     <section id="tab-indy-planner" class="tab">
       <h2>Build Planner</h2>
-      <p class="muted">Plan your manufacturing jobs and share the missing materials with the alliance. Pick the doctrine you're building against, set an estimated completion date, then paste the <strong>missing materials</strong> for each build slot straight from the in-game window. Submitted builds show up on the admin <strong>Build Fulfilment</strong> dashboard so directors can fill them from alliance stock.</p>
+      <p class="muted">Plan your manufacturing jobs and share the missing materials with the alliance. Pick the doctrine you're building against, set an estimated completion date, then paste the <strong>missing materials</strong> straight from the in-game window. Submitted builds show up on the admin <strong>Build Fulfilment</strong> dashboard so directors can fill them from alliance stock.</p>
+      <div id="indy-demand" class="indy-demand" hidden></div>
       <div class="actions">
         <button id="btn-indy-add-build" type="button">+ New build</button>
         <button id="btn-indy-save" type="button" class="secondary">Save &amp; submit</button>

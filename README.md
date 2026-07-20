@@ -27,6 +27,11 @@ payout. Highlights:
   each fit against the configured structure's market.
 - A **Sov** tab built on public ESI (IHUB ADM, system jumps/kills,
   incursions) — no auth required.
+- An **Indy** section (Build Planner + Build Fulfilment) for industry
+  pilots — plan doctrine builds, paste in-game missing-material lists, and
+  let directors aggregate every builder's shortfall against alliance stock.
+- A **Stockpile** tab exposing the alliance's on-hand minerals / PI / other
+  materials, with a one-click Janice appraisal of the whole pile.
 
 > Internal docs: [CONTEXT.md](CONTEXT.md) (architecture & key flows),
 > [STRUCTURE.md](STRUCTURE.md) (file layout), [FUNCTIONS.md](FUNCTIONS.md)
@@ -339,6 +344,74 @@ Admin dashboard for Orbital Skyhooks and Sovereignty Hubs, in two halves:
   workforce. *Import systems from my sov hubs* seeds the table with the system
   names from the fuel half. Edit freely (the sandbox) then **Save plan**;
   **Reload** discards unsaved changes.
+
+### Market-history repo — Doctrine Stock, Indy & Stockpile
+
+The same private **market-history GitHub repo** (plus its read/write PATs)
+that backs Doctrine Stock now also powers the **Indy** builds and the
+**Stockpile** tab. It works exactly like the quota-sync repo above: a
+**read PAT** (*Contents: Read-only*) goes to every member so they can pull
+published Doctrine Stock, the aggregated builds, and the alliance stock; a
+**write PAT** (*Contents: Read and write*) goes only to the people who
+publish or submit — directors pushing stock, and builders submitting their
+own build files. Set both in the market-history fields on the Config tab.
+Without the write PAT, submitting a build or saving stock falls back to a
+local-only save (nothing reaches the alliance).
+
+### Indy — Build Planner & Fulfilment
+
+The **Indy** section is for industry pilots and is **only visible to
+characters in the Alliance Auth "Industry Pilot" group** (and to anyone in
+Admin view). To unlock it, sign into Alliance Auth from the **Doctrines**
+tab as a character who is in that group. If you don't see Indy, you're
+either not signed in or not in the group — ask a director to add you.
+
+**Build Planner** (every industry pilot):
+
+1. Click **+ New build**.
+2. Pick the doctrine you're building from the dropdown — it lists
+   *Ship — Doctrine* entries pulled from the published Doctrine Stock.
+3. Set an **estimated completion date** and, optionally, add a note.
+4. Click the paste box to open the side drawer, then paste the in-game
+   job's **missing materials**: open the industry job, right-click the
+   missing-materials list, *Copy*, and paste. The app parses it into a
+   categorised material list.
+5. Click **Save & submit**. Your builder name is filled in automatically
+   from your signed-in character.
+
+The **Most in demand** strip along the top highlights the hulls that are
+currently most short of quota, so you can pick something useful to build.
+
+Your builds save to your own file on the shared **market-history repo**, so
+submitting needs the market-history **write PAT** set in Config (see
+[Market-history repo](#market-history-repo--doctrine-stock-indy--stockpile)
+above). Without it, builds are saved locally only and won't be visible to
+directors.
+
+**Build Fulfilment** (directors): aggregates every builder's missing
+materials into one list and compares the total against alliance stock (the
+Stockpile). Rows are colour-coded by how much of each material can currently
+be filled from stock, and the table sorts by biggest shortfall or by
+soonest deadline. **CSV** and **shopping-list** exports make it easy to go
+buy or haul what's missing.
+
+### Stockpile tab
+
+The **Stockpile** tab is a read-only view of the alliance's on-hand stock —
+minerals, PI, and other materials — pulled from the shared market-history
+repo. It's gated on Alliance Auth membership: you must be signed in as a
+character in the group named in **Auth group name** on the Config tab
+(default **"Industry"**).
+
+Admins who tick **Allow stock edits** get a paste/save panel revealed on the
+tab: paste an in-game inventory list (from a hangar, container, or corp
+hangar) and save to publish it as the new alliance stock. Pushing the update
+needs the market-history **write PAT** in Config; without it the save stays
+local.
+
+A **Copy Janice appraisal** button copies a shareable Janice link for the
+*entire* stockpile to your clipboard, so you can paste a valuation into
+Discord or open it in a browser.
 
 ## Troubleshooting
 

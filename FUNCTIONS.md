@@ -62,6 +62,13 @@ and a one-line description.
 | `DELETE /api/liquidation/shipments/{id}` | `liquidation_delete_shipment` | [server.py](python/server.py) | Remove a shipment (`apply_remove`). |
 | `GET /api/liquidation/corp-orders` | `liquidation_corp_orders` | [server.py](python/server.py) | Live corp Jita **sell** orders enriched with cost basis, best-sell/undercut, days-to-sell, window time-left, STALE flag. Needs `esi-markets.read_corporation_orders.v1` (returns `{configured:false, reason}` otherwise). |
 | `GET /api/liquidation/courier-contracts` | `liquidation_courier_contracts` | [server.py](python/server.py) | Corp ESI **courier** contracts bucketed active/completed/problem, assignee + route names resolved, configured provider flagged. Needs `esi-contracts.read_corporation_contracts.v1`. |
+| `POST /api/builds/parse` | `builds_parse` | [2436](python/server.py#L2436) | Parse an in-game "missing materials" paste into categorized `{name, type_id, qty, category}` line items **without** saving (via `_builds_resolve_and_classify`). The planner stores the result into the target slot. 400 when nothing parses. |
+| `GET /api/builds/mine` | `get_my_builds` | [2466](python/server.py#L2466) | The logged-in industry pilot's own builds doc from `builds/{character_id}.json` (GitHub source of truth, local fallback). Adds `storage`/`can_publish`/`slot_count`. 400 when slot 1 isn't authenticated. |
+| `POST /api/builds/mine` | `save_my_builds` | [2487](python/server.py#L2487) | Normalize + timestamp the pilot's builds and push to the shared repo (write PAT) or save locally. |
+| `GET /api/builds/all` | `get_all_builds` | [2524](python/server.py#L2524) | Every builder's file plus a pre-aggregated missing-materials list (`builds.aggregate_missing`) — the Build Fulfilment (admin) dashboard + Build Overview compare this against the stockpile. |
+| `GET /api/stockpile` | `get_stockpile` | [2239](python/server.py#L2239) | Alliance stock store (`items`/`updated_at`/`note`) + `storage` flag + per-category `totals`. |
+| `POST /api/stockpile` | `save_stockpile` | [2250](python/server.py#L2250) | Parse an EVE inventory paste, resolve names→type ids and classify each line (minerals/pi/other), push the whole list to the shared repo (or save locally). Gated on `stockpile_allow_push`; echoes `unresolved` names + commit url. |
+| `POST /api/stockpile/janice` | `stockpile_janice` | [2323](python/server.py#L2323) | Create a persisted Janice appraisal of the whole current stockpile and return its shareable `janice.e-351.com/a/<code>` URL + buy total. |
 
 ### Helpers / internals
 
@@ -93,6 +100,16 @@ and a one-line description.
 - `_scan_contracts_stream()` — [1175](python/server.py#L1175) — **Contracts dashboard pipeline.** Iterates `list_authenticated_slots()`, resolves each toon's corp via `fetch_character_info`, calls `fetch_corp_contracts` with that slot's token (dedupes corps), filters per-slot, fetches items via `fetch_contract_items`, bulk-resolves type+issuer names, tallies against configured quotas, emits one `done` with `{structure_id, corps_scanned[], contracts[], quotas[]}`.
 - `_contract_items_cache` — process-scope `dict[contract_id → items]` so back-to-back scans don't re-download every contract's items.
 - `_SOV_STRUCTURE_TYPE_NAMES` — `{32458: 'IHUB'}` (TCUs were removed in the 2024 sov rework).
+- `_github_contents_list(owner, repo, branch, dirpath, pat, user_agent)` — [673](python/server.py#L673) — list the `.json` files in one repo directory via the Contents API (returns `[{name, path, sha}]`; empty on 404 = dir not created yet). Backs `/api/builds/all`'s per-builder file walk.
+- `_share_remote_cfg(cfg)` — [2182](python/server.py#L2182) — resolve the **shared alliance repo** used by all alliance-wide stores (doctrine-stock / builds / stockpile): the *market-history* repo URL + PATs. Deliberately separate from the quota repo — this write PAT is safe to distribute to indy users. Returns `{owner, repo, branch, read_pat, write_pat}` or None.
+- `_builds_remote_cfg(cfg)` / `_stockpile_remote_cfg(cfg)` / `_doctrine_stock_remote_cfg(cfg)` — [2368/2203/2570](python/server.py#L2368) — per-store GitHub locations; all now delegate to `_share_remote_cfg` (stockpile appends `_STOCKPILE_STORE_PATH`; builds/doctrine-stock append their own path at the call site).
+- `_builds_file_path(builder_id)` — [2374](python/server.py#L2374) — `builds/{character_id}.json`.
+- `_current_builder()` — [2378](python/server.py#L2378) — identify the logged-in industry pilot from the default auth slot (`{id, name}`), or None when unauthenticated.
+- `_builds_resolve_and_classify(text, ua)` — [2387](python/server.py#L2387) — parse a missing-materials paste and resolve each line to a categorized EVE type. Prefers the in-game industry-job format (`builds.parse_missing_materials`, carries typeID); falls back to `stockpile.parse_paste`. Only lines still lacking a typeID are ESI name-resolved. Returns `(items, unresolved)`.
+- `_builds_read_doc(builder_id)` — [2446](python/server.py#L2446) — return `(doc, sha, rc)`; prefer the GitHub file, refresh the local cache, fall back to it on any remote failure.
+- `_stockpile_read_store()` — [2219](python/server.py#L2219) — return `(store, sha, rc)`; GitHub-preferred with local-cache fallback (sha None → next write creates the file).
+- `_stockpile_totals(store)` — [2209](python/server.py#L2209) — per-category `{lines, qty}` tallies for the dashboard header tiles.
+- `StockpileSave` / `BuildParseReq` / `BuildsSave` *(pydantic)* — stockpile save (`text`/`note`), builds paste (`text`), builds save (`builds` list).
 
 ---
 
@@ -152,6 +169,41 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 | `courier_cost(collateral, volume_m3, rush, cfg)` | PushX rate card: base + one step-fee per collateral step over the free ceiling + rush fee; flags `over_volume`. |
 | `analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units, courier_alloc_unit, cfg)` | Per-item margins (list vs dump, net of broker+tax), days-to-sell, annualized ROI, `low_confidence` (near-zero cost basis), and a recommended `action` (`list`/`dump`/`underwater`/`no_data`) + `window_days`. |
 | `analyze_items(rows, amarr_buy, history, depth, courier_total, cfg)` | Allocates courier across rows by Jita sell value, runs `analyze_row` for each, returns `{items, totals}` (totals include `by_action` counts). |
+
+---
+
+## `python/builds.py` — Indy build planner store (~254 LOC)
+
+[python/builds.py](python/builds.py). Pure (no network IO), mirroring `stockpile.py`/`liquidation.py`: GitHub read/write lives in `server.py`. Each *builder* (an authed EVE character) owns one file at `builds/{character_id}.json` on the shared repo, holding all their planned builds. A build tags a doctrine + estimated completion date and carries one or more *slots* (one manufacturing job each) whose missing materials the builder pastes from the in-game window.
+
+| Function | Purpose |
+|---|---|
+| `empty_doc(builder_id=0, builder_name='')` | Default builder-file shape `{builder_id, builder_name, updated_at, builds: []}`. |
+| `normalize(data)` / `_normalize_build(b)` / `_normalize_slot(sl)` / `_normalize_material(it)` | Coerce an arbitrary loaded doc into the canonical shape. A material is `{name, type_id, qty, category}` (category clamped to `minerals`/`pi`/`other`); a slot is `{id, label, missing[]}`; a build is `{id, doctrine, alliance, est_completion, note, created_at, slots[]}` (alliance clamped to `VALID_ALLIANCES = ('main', 'institute')`). Drops entries with no name/that aren't dicts. |
+| `load_mine_local()` / `save_mine_local(doc)` | Local cache of the current pilot's own file at `<AUTH_DIR>/builds_mine.json` (chmod 600, atomic replace). |
+| `build_slot_count(doc)` | Total slots across all builds. |
+| `aggregate_missing(docs)` | Sum missing materials across many builder docs → `[{name, type_id, category, needed, sources[]}]` sorted by biggest need. Keyed by type_id when known else lowercased name; `sources` records each contributing build/slot (builder, doctrine, est_completion, slot, qty). |
+| `parse_missing_materials(text)` | Parse the in-game industry-job "missing materials" clipboard copy. Strips the blueprint header line, the category labels ("Minerals"), and the column-header row — reads the `Required` qty + `typeID` **by their header positions**, only collecting rows after an `Item … Required` header. Aggregates by name → `[{name, qty, type_id}]`, or **`None`** when no such table header is present so the caller can fall back to the generic parser. |
+| `_strict_int(s)` / `_to_int(v, default=0)` | Whole-number parse tolerating thousands separators — `_strict_int` returns None for non-integers (e.g. the decimal price column) so those columns are skipped. |
+
+Module constants: `MINE_CACHE_PATH`, `STORE_DIR = 'builds'`, `VALID_ALLIANCES`.
+
+---
+
+## `python/stockpile.py` — alliance stock store + paste parsing (~156 LOC)
+
+[python/stockpile.py](python/stockpile.py). Pure (no network IO), mirroring `liquidation.py`: GitHub read/write lives in `server.py`. Owns paste parsing, item classification, and the local cache/fallback file. The admin pastes an EVE inventory/asset list; `parse_paste` → `[{name, qty}]`, the caller resolves each name to a type + category and calls `classify`.
+
+| Function | Purpose |
+|---|---|
+| `empty_store()` / `normalize(data)` | Default doc `{updated_at, note, items: []}` + shape coercion (each item `{name, type_id, qty, category}`, category clamped to `CATEGORIES`, dropping nameless items). |
+| `load_store_local()` / `save_store_local(store)` | Local cache at `<AUTH_DIR>/stockpile.json` (chmod 600, atomic replace). |
+| `parse_paste(text)` | Parse an EVE inventory/asset paste into `[{name, qty}]`, aggregating duplicate lines and preserving first-seen order. |
+| `_parse_line(line)` | Return `(name, qty)` for one line — tab-separated inventory copy, multibuy/space-separated with a trailing quantity, or a bare name (count 1). |
+| `_to_int(s)` | Parse an EVE quantity tolerating thousands separators; None when it isn't a plain integer. |
+| `classify(meta, name='')` | Bucket an item into `minerals`/`pi`/`other` from its ESI `{group_id, category_id}` metadata, with a name fallback (`MINERAL_NAMES`) for the eight minerals + Morphite. |
+
+Module constants: `STORE_PATH`, `CATEGORIES = ('minerals', 'pi', 'other')`, `MINERAL_NAMES`, `_GROUP_MINERAL = 18`, `_GROUP_PLANETARY_RAW = 1042`, `_CATEGORY_PLANETARY = 43`.
 
 ---
 
@@ -377,7 +429,11 @@ no DOM mutation — so they're directly require-able from Jest tests in
 | `parseDoctrinesHtml(html)` | Scrape the doctrine list page from Alliance Auth. |
 | `parseDoctrineDetail(html)` | Scrape one doctrine's fits. |
 | `parseFitDetail(html)` | Scrape one fit's items. |
-| `fmtIsk(n)` | Compact ISK formatting — `1.23B`, `45.6M`, `7.8K`, etc. |
+| `parseSrpFleets(html)` | Scrape Alliance Auth's SRP management list (`/srp/`) — one row per fleet (id, name, doctrine, FC, code, isk cost, status, pending count, view href). |
+| `parseSrpRequests(html)` | Scrape a fleet's SRP request list (`/srp/<id>/view/`) — per-request pilot, zkill/kill id, ship, loss amount, srp cost, update url, status. |
+| `parseUserGroups(html)` | Scrape the AA `/groups/` page for the user's joined groups — a row counts as a membership when it offers a leave control; a second pass reads a "Group Memberships" panel. Returns joined group names. |
+| `parseDashboardGroups(html)` | Scrape the AA **dashboard** "Membership(s)" card — a more reliable membership signal than `/groups/` (catches auto-assigned groups like "Industry Pilot" that have no Leave control). Returns member group names. |
+| `hasGroupMembership(groups, wanted)` | True when the user belongs to a group whose name contains `wanted` (case-insensitive substring). |
 | `fmtMillions(n)` | Round to nearest 1 M, emit `<N>M` with no decimal. Used on Contracts-tab quota bar headlines where space is tight. |
 
 Exports via `module.exports` when run under Node so Jest can require it
@@ -415,6 +471,7 @@ The renderer grew several new feature blocks across v1.1.0–v1.1.6:
 - **Whole-config export / import.** `collectConfigForm()` (shared by Save + Export so unsaved edits flow into the file). `setConfigIoStatus(msg)`, `downloadBlob(name, mime, content)`. `CONFIG_EXPORT_NEVER` set: `scopes` / `alliance_quota_last_synced` / `alliance_quota_last_status` / `alliance_quota_pat_write` / `alliance_quota_allow_push`. Read PAT + Janice key are opt-in via a confirm() prompt.
 - **Update-check button.** Module-bottom IIFE wires the ⟳ header button to `window.api.checkForUpdate()`, with a `.spinning` class applied while in-flight.
 - **Sov tab.** `refreshSov()`, `renderSovTotals(d)`, `renderSovOwners(o)`, `renderSovCampaigns(c)`, `renderSovIncursions(i)`, `sovSystemRowHtml(s, includeRegionCol)`. Pulls everything in one `/api/sov/overview` call.
+- **Access gates (Stockpile + Indy).** Two client-side convenience filters — **not** security boundaries (the shared write PAT is the real boundary), and both **always shown in Admin view**. Stockpile: `stockpileGroupOk` (let), `updateStockpileTabVisibility()` shows/hides `#tab-btn-stockpile`, `refreshStockpileAccess()` scrapes the authed AA `/groups/` page via `parseUserGroups`/`hasGroupMembership` against the configured `stockpile_group_name` (and toggles the paste/save editor on `stockpile_allow_push`). Indy: `INDY_GROUP_NAME = 'Industry Pilot'` (hardcoded), `indyGroupOk` (let), `updateIndyVisibility()` shows/hides the `nav-group[data-group="indy"]` (Build Planner / Fulfilment), `refreshIndyAccess()` scrapes the AA `/dashboard/` "Membership" card via `parseDashboardGroups` for an exact group-name match. Both are re-checked from `applyViewMode()`.
 
 ### Helpers + result classification
 
@@ -605,6 +662,73 @@ client-side over one cached payload.
 | `openDetail(typeId, name)` / `loadDetail()` / `renderDetail()` / `buildChart(hist, sig)` | Slide-out market-detail panel: inline-SVG price+volume chart (30/90/365d) + live book stats. |
 | `renderKpis()` | Capital-at-risk KPI strip (in-flight value/courier, listed value, stale capital). |
 | `copyName(name)` / `toast(msg)` | Clipboard copy + transient confirmation. |
+
+---
+
+## `renderer/indy.js` — Build Planner + Fulfilment (~640 LOC)
+
+[renderer/indy.js](renderer/indy.js). Self-contained IIFE loaded after `app.js` (reuses `$`/`$$`/`API`/`escapeHtml`/`downloadBlob`). Two tabs: the **Build Planner** (an industry pilot plans manufacturing jobs, one paste-fed slot per build, saved to their own `builds/{character_id}.json`) and the **Build Fulfilment** admin dashboard (aggregates every builder's missing materials vs. the Stockpile). Doctrine options + demand come from `/api/doctrine-stock`. Alliances: `main` (NLDF) / `institute` (NLDO).
+
+### Planner
+
+| Function | Purpose |
+|---|---|
+| `loadDoctrines(force)` | Fetch `/api/doctrine-stock?alliance=` for both alliances; build per-alliance "Ship — Doctrine" option lists + keep full quota rows for the demand strip; then `renderDemand()`. |
+| `loadMine(force)` / `saveMine()` | GET/POST `/api/builds/mine`. Load folds any legacy multi-slot missing into a single slot and records `builderName`/`canPublish`/`storage`; save posts `p.builds` and reports repo vs local. |
+| `doctrineOptions(build)` | `<option>` HTML for a build's doctrine `<select>` (injects the current value if not in the list). |
+| `quotaGap(q)` / `renderDemand()` | `quotaGap` → `{required, available, missing, state}`; `renderDemand` builds the top-10 "Most in demand" chip strip (biggest ship shortfalls vs quota across both alliances) into `#indy-demand`. |
+| `renderMaterials(build, slot)` / `renderBuild(build)` / `renderBuilds()` | Slot material table (category chip + qty + remove) / one build card (doctrine, alliance toggle, est-completion, note, paste box) / the whole `#indy-builds` list. |
+| `newBuild()` / `newSlot()` / `findBuild(id)` / `findSlot(build, id)` / `setStatus(msg, isErr)` / `markDirty()` / `wirePlanner()` | Model factories, lookups, status line, dirty flag, and the delegated field-edit + structural-action (`set-alliance`/`rm-build`/`rm-mat`/`open-paste`) listeners. |
+
+### Paste side-drawer
+
+| Function | Purpose |
+|---|---|
+| `openDrawer(buildId, slotId)` / `closeDrawer()` | Slide-in/out the paste drawer (`#indy-paste-drawer` + overlay), remembering `p.drawerSlot`. |
+| `parseDrawer()` | POST the pasted text to `/api/builds/parse`, store the returned categorized items into the target slot, report unresolved names, then auto-close. |
+| `wireDrawer()` | Wire close/cancel/overlay/parse buttons + Escape-to-close. |
+
+### Fulfilment dashboard
+
+| Function | Purpose |
+|---|---|
+| `loadFulfil(force)` | Parallel GET `/api/builds/all` + `/api/stockpile` into `f`. |
+| `stockMap(stock)` / `availableFor(mat, sm)` / `matState(needed, available)` / `earliestDeadline(mat)` | Build `{byId, byName}` stock lookup; available-in-stock for a material (by type_id then name); coverage state (`ok`/`partial`/`empty`/`unset`); earliest source deadline. |
+| `renderFulfil()` / `renderFulfilTiles(sm)` / `sortedMaterials(sm)` | Dispatch to materials/builds view + header tiles (builders, builds, slots, distinct materials, shortfalls, source); `sortedMaterials` computes available/shortfall/state/deadline and sorts by shortfall/needed/deadline (with `hideOk` filter). |
+| `renderMaterialsView(sm)` / `renderBuildsView(sm)` | Materials view = one quota-style coverage bar per material (who needs it + due date); builds view = per-builder per-slot needed/in-stock/short tables. |
+| `exportShortfallCsv()` / `copyShortfallList()` | CSV of shortfall rows / clipboard multibuy (`name\tshortfall`) of shortfalls. |
+| `wireFulfil()` | Wire refresh + view/sort/hide-ok controls + export buttons. |
+
+Tab-open handlers call `loadMine(false)` / `loadFulfil(false)` for lazy first load.
+
+---
+
+## `renderer/stockpile.js` — Stockpile tab (~204 LOC)
+
+[renderer/stockpile.js](renderer/stockpile.js). Self-contained IIFE loaded after `app.js` (reuses `$`/`$$`/`API`/`escapeHtml`). Read-only dashboard of alliance stock (minerals / PI / other) synced from the shared repo, plus an admin paste/save panel (shown only when `stockpile_allow_push` is on).
+
+| Function | Purpose |
+|---|---|
+| `loadStockpile(force)` | GET `/api/stockpile`, cache, render. |
+| `renderTiles()` / `renderSections()` / `filteredItems()` | Header tiles (total/per-category lines, last-updated, source); per-category tables sorted by qty; search + category filter. |
+| `saveStockpile()` | POST the paste + note to `/api/stockpile`, show unresolved names + commit link. |
+| `copyJaniceAppraisal()` | POST `/api/stockpile/janice`, copy the returned appraisal URL to the clipboard. |
+| `initStockpileTab()` + static wiring | Lazy first load on tab open; wire refresh/search/category/save/janice. |
+
+---
+
+## `renderer/builds-overview.js` — Build Overview (calendar + gantt) (~370 LOC)
+
+[renderer/builds-overview.js](renderer/builds-overview.js). Self-contained IIFE loaded after `app.js` (reuses `$`/`API`/`escapeHtml`/`downloadBlob`). Read-only ops view over `/api/builds/all` (same source as Fulfilment): every planned build laid out as a **calendar** (on its est-completion date) or a **gantt** (bar per build, `created_at → est_completion`, grouped by builder), with a shared slot-detail panel.
+
+| Function | Purpose |
+|---|---|
+| `load(force)` | GET `/api/builds/all` into `state.builders`. |
+| `buildItems()` / `allBuildsById()` | Flatten builder docs into build items with computed start/end dates (alliance-filtered); id→item map. |
+| `render()` / `renderCalendar(items)` / `renderGantt(items)` | Dispatch on `state.view`; month grid with per-day build chips + an undated block; builder-grouped gantt with weekly ticks + a "today" marker. |
+| `renderDetail()` / `chipTitle(it)` / `legend()` | Shared detail panel (slots + missing-material lists) for the selected build; chip tooltip; alliance/today legend. |
+| `exportCsv()` | CSV of all build items (builder, doctrine, alliance, planned, due, slots, material lines, note). |
+| date helpers (`parseDate`/`ymd`/`today`/`daysBetween`/`addDays`) + `wire()` | Local-midnight date math; delegated month-nav / chip-select / detail-close wiring; lazy first load on tab open. |
 
 ---
 

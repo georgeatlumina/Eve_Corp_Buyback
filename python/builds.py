@@ -16,6 +16,7 @@ materials against the alliance stockpile.
 
 import json
 import os
+import re
 
 from config import AUTH_DIR
 
@@ -114,6 +115,74 @@ def normalize(data):
         'updated_at': str(data.get('updated_at') or ''),
         'builds': builds,
     }
+
+
+def _strict_int(s):
+    """Parse an integer count, tolerating thousands separators. Returns None for
+    anything that isn't a whole number (e.g. the decimal price column)."""
+    if s is None:
+        return None
+    s = re.sub(r'[\s,]', '', str(s).strip())
+    return int(s) if s.isdigit() else None
+
+
+def parse_missing_materials(text):
+    """Parse the in-game industry-job 'missing materials' clipboard copy.
+
+    The format looks like::
+
+        Mjolnir Heavy Assault Missile Blueprint\\t26760\\t\\t\\t
+        <blank>
+        Minerals\\t\\t\\t\\t
+        Item\\tRequired\\tAvailable\\tEst. Unit price\\ttypeID
+        Tritanium\\t442\\t0\\t3.64\\t34
+        Pyerite\\t197\\t0\\t18.89\\t35
+
+    We keep only the actual material rows — dropping the blueprint header line,
+    the category labels ("Minerals"), and the column-header row — reading the
+    ``Required`` quantity and the ``typeID`` by their header positions. Rows are
+    only collected after an ``Item … Required`` header, so the blueprint line
+    (which precedes it) is naturally excluded. Returns ``[{name, qty, type_id}]``
+    aggregated by name, or ``None`` when no such table header is present so the
+    caller can fall back to the generic paste parser.
+    """
+    items = {}
+    order = []
+    in_table = False
+    saw_header = False
+    req_idx, tid_idx = 1, -1
+    for raw in (text or '').splitlines():
+        line = raw.strip()
+        if not line:
+            in_table = False  # a blank line ends the current section
+            continue
+        parts = [p.strip() for p in line.split('\t')]
+        low = [p.lower() for p in parts]
+        if parts[0].lower() == 'item' and 'required' in low:
+            in_table = True
+            saw_header = True
+            req_idx = low.index('required')
+            tid_idx = low.index('typeid') if 'typeid' in low else -1
+            continue
+        if not in_table:
+            continue  # preamble (blueprint line) or a category label before the header
+        name = parts[0]
+        qty = _strict_int(parts[req_idx]) if req_idx < len(parts) else None
+        if not name or qty is None:
+            continue  # category label / non-data row inside the section
+        type_id = 0
+        if 0 <= tid_idx < len(parts):
+            type_id = _strict_int(parts[tid_idx]) or 0
+        key = name.lower()
+        if key not in items:
+            items[key] = {'name': name, 'qty': 0, 'type_id': type_id}
+            order.append(key)
+        items[key]['qty'] += qty
+        if type_id and not items[key]['type_id']:
+            items[key]['type_id'] = type_id
+    if not saw_header:
+        return None
+    return [items[k] for k in order]
 
 
 def load_mine_local():

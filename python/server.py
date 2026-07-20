@@ -2366,8 +2366,8 @@ def stockpile_janice():
 
 
 def _builds_remote_cfg(cfg):
-    """GitHub location for the shared builds directory, in the shared alliance
-    repo (quota repo, falling back to market-history)."""
+    """GitHub location for the shared builds directory, in the shared
+    market-history repo (see `_share_remote_cfg`)."""
     return _share_remote_cfg(cfg)
 
 
@@ -2386,16 +2386,29 @@ def _current_builder():
 
 def _builds_resolve_and_classify(text, ua):
     """Parse a missing-materials paste and resolve each line to a categorized
-    EVE type. Returns (items, unresolved). Mirrors the stockpile save path."""
-    parsed = stockpile.parse_paste(text or '')
+    EVE type. Returns (items, unresolved).
+
+    Prefers the in-game industry-job format (`builds.parse_missing_materials`),
+    which strips the blueprint/category/header rows and carries the typeID
+    directly; falls back to the generic multibuy/inventory paste parser. Only
+    lines still lacking a typeID are name-resolved via ESI."""
+    parsed = builds.parse_missing_materials(text or '')
+    if parsed is None:
+        parsed = [{'name': p['name'], 'qty': p['qty'], 'type_id': 0}
+                  for p in stockpile.parse_paste(text or '')]
     if not parsed:
         return [], []
-    names = [p['name'] for p in parsed]
-    try:
-        name_to_id = resolve_type_ids(names, ua)
-    except Exception:
-        name_to_id = {}
-    type_ids = [tid for tid in name_to_id.values() if tid]
+    need_names = [p['name'] for p in parsed if not p.get('type_id')]
+    name_to_id = {}
+    if need_names:
+        try:
+            name_to_id = resolve_type_ids(need_names, ua)
+        except Exception:
+            name_to_id = {}
+    for p in parsed:
+        if not p.get('type_id'):
+            p['type_id'] = name_to_id.get(p['name'].lower()) or 0
+    type_ids = [int(p['type_id']) for p in parsed if p.get('type_id')]
     meta = {}
     if type_ids:
         try:
@@ -2404,15 +2417,15 @@ def _builds_resolve_and_classify(text, ua):
             meta = {}
     items = []
     for p in parsed:
-        tid = name_to_id.get(p['name'].lower()) or 0
-        m = meta.get(int(tid)) if tid else None
+        tid = int(p.get('type_id') or 0)
+        m = meta.get(tid) if tid else None
         items.append({
             'name': p['name'],
-            'type_id': int(tid) if tid else 0,
+            'type_id': tid,
             'qty': int(p['qty']),
             'category': stockpile.classify(m, p['name']),
         })
-    unresolved = [p['name'] for p in parsed if not name_to_id.get(p['name'].lower())]
+    unresolved = [p['name'] for p in parsed if not p.get('type_id')]
     return items, unresolved
 
 
@@ -2556,7 +2569,7 @@ _DOCTRINE_STOCK_ALLIANCES = ('main', 'institute')
 
 def _doctrine_stock_remote_cfg(cfg):
     """GitHub repo for a given alliance's doctrine-stock file, in the shared
-    alliance repo (quota repo, falling back to market-history)."""
+    market-history repo (see `_share_remote_cfg`)."""
     return _share_remote_cfg(cfg)
 
 
