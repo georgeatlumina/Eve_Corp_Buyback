@@ -242,6 +242,18 @@ $$('.view-mode-btn').forEach((btn) => {
 // Membership is scraped once from the authenticated AA `/groups/` page. Declared
 // before the first applyViewMode() call below, which reads stockpileGroupOk.
 let stockpileGroupOk = false;
+let stockpileAllowPush = false; // machine "Allow stock edits" toggle (from config)
+let stockpileAdminOk = false;   // AA officer-group membership (Industry / Acquisitions Officer)
+// The admin paste/save panel is gated on BOTH the "Allow stock edits" toggle and
+// Alliance Auth membership in an officer group. Officer groups are matched by
+// exact name (case-insensitive) off the dashboard "Membership" card — they don't
+// surface reliably on the /groups/ page — so the check lives in refreshIndyAccess.
+const STOCKPILE_ADMIN_GROUPS = ['industry officer', 'acquisitions officer'];
+
+function updateStockpileEditorVisibility() {
+  const editor = $('#stockpile-editor');
+  if (editor) editor.hidden = !(stockpileAllowPush && stockpileAdminOk);
+}
 
 function updateStockpileTabVisibility() {
   const btn = $('#tab-btn-stockpile');
@@ -258,9 +270,10 @@ async function refreshStockpileAccess() {
     if (res.ok) cfg = await res.json();
   } catch (e) { /* config unreachable — treat as no access */ }
   const groupName = (cfg?.stockpile_group_name || '').trim();
-  // Admin paste/save panel visibility is independent of group membership.
-  const editor = $('#stockpile-editor');
-  if (editor) editor.hidden = !cfg?.stockpile_allow_push;
+  // Admin paste/save panel: gated on the "Allow stock edits" toggle AND officer-
+  // group membership (stockpileAdminOk, set from the dashboard in refreshIndyAccess).
+  stockpileAllowPush = !!cfg?.stockpile_allow_push;
+  updateStockpileEditorVisibility();
 
   stockpileGroupOk = false;
   if (groupName && window.api?.aaFetchHtml && typeof parseUserGroups === 'function') {
@@ -300,8 +313,12 @@ function updateIndyVisibility() {
   }
 }
 
+// Scrapes the AA dashboard "Membership" card once and derives both the Indy
+// section gate (Industry Pilot) and the Stockpile admin-panel gate (officer
+// groups). Both are client-side convenience filters, not security boundaries.
 async function refreshIndyAccess() {
   indyGroupOk = false;
+  stockpileAdminOk = false;
   if (window.api?.aaFetchHtml && typeof parseDashboardGroups === 'function') {
     try {
       const res = await window.api.aaFetchHtml('/dashboard/');
@@ -309,12 +326,14 @@ async function refreshIndyAccess() {
         && !/\/account\/login\//.test(res.finalUrl || '')
         && !/Login with Eve SSO/i.test(res.html || '');
       if (loggedIn) {
-        const groups = parseDashboardGroups(res.html || '');
-        indyGroupOk = groups.some((g) => (g || '').trim().toLowerCase() === INDY_GROUP_NAME.toLowerCase());
+        const groups = parseDashboardGroups(res.html || '').map((g) => (g || '').trim().toLowerCase());
+        indyGroupOk = groups.includes(INDY_GROUP_NAME.toLowerCase());
+        stockpileAdminOk = groups.some((g) => STOCKPILE_ADMIN_GROUPS.includes(g));
       }
-    } catch (e) { /* scrape failed — section stays hidden for non-admins */ }
+    } catch (e) { /* scrape failed — Indy + stock-admin stay hidden */ }
   }
   updateIndyVisibility();
+  updateStockpileEditorVisibility();
 }
 
 applyViewMode(getViewMode());

@@ -303,9 +303,11 @@ material or by build, and exports a shortfall CSV plus a shopping-list.
 
 The **Stockpile tab** ([renderer/stockpile.js](renderer/stockpile.js)) holds the
 alliance's on-hand industry-material stock (minerals / PI / other), shared at
-`inventory/stock.json` in the market-history repo. An admin pastes and saves the
-current stock (gated on the per-machine `stockpile_allow_push` flag, mirroring
-the doctrine-stock publish gate), and a **"Copy Janice appraisal"** button
+`inventory/stock.json` in the market-history repo. An officer pastes and saves the
+current stock — the paste/save panel is gated on **both** the per-machine
+`stockpile_allow_push` flag **and** Alliance Auth membership in an officer group
+(**Industry Officer** / **Acquisitions Officer**, matched off the dashboard
+"Membership" card in `refreshIndyAccess`) — and a **"Copy Janice appraisal"** button
 (`POST /api/stockpile/janice`) returns a shareable `janice.e-351.com/a/<code>`
 link for the whole stockpile.
 

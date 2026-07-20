@@ -403,9 +403,10 @@ repo. It's gated on Alliance Auth membership: you must be signed in as a
 character in the group named in **Auth group name** on the Config tab
 (default **"Industry"**).
 
-Admins who tick **Allow stock edits** get a paste/save panel revealed on the
-tab: paste an in-game inventory list (from a hangar, container, or corp
-hangar) and save to publish it as the new alliance stock. Pushing the update
+The paste/save panel is revealed only to members of the **Industry Officer**
+or **Acquisitions Officer** Alliance Auth group who also have **Allow stock
+edits** ticked in Config: paste an in-game inventory list (from a hangar,
+container, or corp hangar) and save to publish it as the new alliance stock. Pushing the update
 needs the market-history **write PAT** in Config; without it the save stays
 local.
 
