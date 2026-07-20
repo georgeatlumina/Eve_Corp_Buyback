@@ -24,7 +24,6 @@
           <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
           <button class="tab-btn" data-tab="readiness">Market Readiness</button>
           <button class="tab-btn" data-tab="market">Market</button>
-          <button class="tab-btn" data-tab="stockpile" id="tab-btn-stockpile" hidden>Stockpile</button>
         </div>
       </div>
 
@@ -38,6 +37,7 @@
           <button class="tab-btn" data-tab="liquidation">Liquidation</button>
           <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
           <button class="tab-btn" data-tab="builds-overview">Build Overview</button>
+          <button class="tab-btn" data-tab="stockpile">Stockpile</button>
         </div>
       </div>
 
@@ -211,8 +211,13 @@
 
         <fieldset>
           <legend>Stockpile page — industry material stock</legend>
-          <p class="muted">The Stockpile tab shows alliance mineral / PI / material stock levels. It's stored as <code>inventory/stock.json</code> in the <strong>Market history repo</strong> above (same repo + PATs). Access to the tab is gated on Alliance Auth membership in the group named below — a convenience filter, not a security boundary (the real protection is the repo PAT). Tick <strong>Allow stock edits</strong> to unhide the admin paste/save panel on that tab; it requires the Market-history <em>Write</em> PAT to push.</p>
-          <label>Auth group name <input name="stockpile_group_name" type="text" placeholder="Industry" /></label>
+          <p class="muted">The Stockpile tab (in the <strong>Operations / Admin</strong> section) shows alliance mineral / PI / material stock levels, stored as <code>inventory/stock.json</code> in the <strong>Market history repo</strong> above. Access is <strong>password-protected</strong> — enter the password below to unlock the tab (remembered on this machine only; the password is <em>not</em> saved or exported with your config). Tick <strong>Allow stock edits</strong> to unhide the admin paste/save panel; editing further requires Industry Officer / Acquisitions Officer group membership and the Market-history <em>Write</em> PAT.</p>
+          <label>Stockpile access password <input type="password" id="stockpile-unlock-input" autocomplete="off" placeholder="Enter password to unlock the Stockpile tab" /></label>
+          <div class="actions">
+            <button id="stockpile-unlock-btn" type="button" class="secondary">Unlock</button>
+            <button id="stockpile-lock-btn" type="button" class="secondary">Lock</button>
+            <span id="stockpile-unlock-status" class="muted"></span>
+          </div>
           <label class="inline-check"><input name="stockpile_allow_push" type="checkbox" /> Allow stock edits (show the admin paste/save panel)</label>
         </fieldset>
 

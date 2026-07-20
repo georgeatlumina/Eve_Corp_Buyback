@@ -399,9 +399,12 @@ buy or haul what's missing.
 
 The **Stockpile** tab is a read-only view of the alliance's on-hand stock —
 minerals, PI, and other materials — pulled from the shared market-history
-repo. It's gated on Alliance Auth membership: you must be signed in as a
-character in the group named in **Auth group name** on the Config tab
-(default **"Industry"**).
+repo. It lives in the **Operations (Admin)** section and is **password-protected**:
+enter the password in **Stockpile access password** on the Config tab and click
+**Unlock** to reveal the tab (remembered on that machine; click **Lock** to hide
+it again). The password is not saved to or exported with your config. Note this is
+a soft access filter, not strong security — the real protection on the stock data
+is the market-history repo PAT.
 
 The paste/save panel is revealed only to members of the **Industry Officer**
 or **Acquisitions Officer** Alliance Auth group who also have **Allow stock

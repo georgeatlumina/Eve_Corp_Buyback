@@ -211,7 +211,7 @@ updateNavTriggers();
 const VIEW_MODE_KEY = 'viewMode';
 // Tabs hidden in Member view (the Operations group). The General group and the
 // Settings cluster (top bar) stay visible in both modes.
-const ADMIN_ONLY_TABS = ['buybacks', 'working', 'contracts', 'srp', 'liquidation', 'hooks-hubs', 'builds-overview'];
+const ADMIN_ONLY_TABS = ['buybacks', 'working', 'contracts', 'srp', 'liquidation', 'hooks-hubs', 'builds-overview', 'stockpile'];
 
 function getViewMode() {
   return localStorage.getItem(VIEW_MODE_KEY) === 'admin' ? 'admin' : 'member';
@@ -235,59 +235,80 @@ $$('.view-mode-btn').forEach((btn) => {
   btn.addEventListener('click', () => applyViewMode(btn.dataset.mode));
 });
 
-// ===== Stockpile tab access gate =====
-// The Stockpile tab is gated on Alliance Auth group membership (a client-side
-// convenience filter, not a security boundary — see the note in Config). It's
-// also always shown in Admin view so whoever maintains the stock can reach it.
-// Membership is scraped once from the authenticated AA `/groups/` page. Declared
-// before the first applyViewMode() call below, which reads stockpileGroupOk.
-let stockpileGroupOk = false;
+// ===== Stockpile access =====
+// The Stockpile tab lives in the Admin (Operations) nav group AND is
+// password-gated: it only appears once the correct password is entered on the
+// Config tab (remembered per-machine in localStorage). The password is hardcoded
+// in the client — a soft access filter, NOT real security, and deliberately kept
+// out of the config so it never saves or exports. Within the tab, the admin
+// paste/save panel is separately gated on BOTH the machine's "Allow stock edits"
+// toggle and Alliance Auth membership in an officer group (Industry Officer /
+// Acquisitions Officer, matched by exact name off the dashboard "Membership"
+// card, so stockpileAdminOk is set in refreshIndyAccess).
+const STOCKPILE_PASSWORD = 'sushisithebestest69420';
+const STOCKPILE_UNLOCK_KEY = 'stockpileUnlocked';
+let stockpileUnlocked = localStorage.getItem(STOCKPILE_UNLOCK_KEY) === '1';
 let stockpileAllowPush = false; // machine "Allow stock edits" toggle (from config)
 let stockpileAdminOk = false;   // AA officer-group membership (Industry / Acquisitions Officer)
-// The admin paste/save panel is gated on BOTH the "Allow stock edits" toggle and
-// Alliance Auth membership in an officer group. Officer groups are matched by
-// exact name (case-insensitive) off the dashboard "Membership" card — they don't
-// surface reliably on the /groups/ page — so the check lives in refreshIndyAccess.
 const STOCKPILE_ADMIN_GROUPS = ['industry officer', 'acquisitions officer'];
+
+function updateStockpileTabVisibility() {
+  const btn = document.querySelector('.tab-btn[data-tab="stockpile"]');
+  if (!btn) return;
+  btn.hidden = !stockpileUnlocked;
+  if (!stockpileUnlocked && btn.classList.contains('active')) activateTab('appraisal');
+}
+
+function setStockpileUnlocked(on) {
+  stockpileUnlocked = !!on;
+  if (on) localStorage.setItem(STOCKPILE_UNLOCK_KEY, '1');
+  else localStorage.removeItem(STOCKPILE_UNLOCK_KEY);
+  updateStockpileTabVisibility();
+}
 
 function updateStockpileEditorVisibility() {
   const editor = $('#stockpile-editor');
   if (editor) editor.hidden = !(stockpileAllowPush && stockpileAdminOk);
 }
 
-function updateStockpileTabVisibility() {
-  const btn = $('#tab-btn-stockpile');
-  if (!btn) return;
-  const show = stockpileGroupOk || getViewMode() === 'admin';
-  btn.hidden = !show;
-  if (!show && btn.classList.contains('active')) activateTab('appraisal');
-}
+// Config-tab password controls that unlock/lock the Stockpile tab. The input has
+// no `name`, so it's never serialized into the config save/export.
+(function wireStockpileUnlock() {
+  const input = $('#stockpile-unlock-input');
+  const status = $('#stockpile-unlock-status');
+  const showStatus = (msg) => { if (status) status.textContent = msg; };
+  const tryUnlock = () => {
+    if (!input) return;
+    if (input.value === STOCKPILE_PASSWORD) {
+      setStockpileUnlocked(true);
+      input.value = '';
+      showStatus('Unlocked ✓ — Stockpile shows under Operations (Admin view).');
+    } else {
+      showStatus('Incorrect password.');
+    }
+  };
+  $('#stockpile-unlock-btn')?.addEventListener('click', tryUnlock);
+  $('#stockpile-lock-btn')?.addEventListener('click', () => {
+    setStockpileUnlocked(false);
+    if (input) input.value = '';
+    showStatus('Locked.');
+  });
+  input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tryUnlock(); } });
+  showStatus(stockpileUnlocked ? 'Unlocked on this machine.' : 'Locked — enter the password to unlock.');
+  updateStockpileTabVisibility();
+})();
 
+// Reads the "Allow stock edits" toggle from config and refreshes the admin
+// paste/save panel visibility. (Officer-group membership is refreshed separately
+// in refreshIndyAccess.)
 async function refreshStockpileAccess() {
   let cfg = null;
   try {
     const res = await fetch(`${API}/api/config`);
     if (res.ok) cfg = await res.json();
   } catch (e) { /* config unreachable — treat as no access */ }
-  const groupName = (cfg?.stockpile_group_name || '').trim();
-  // Admin paste/save panel: gated on the "Allow stock edits" toggle AND officer-
-  // group membership (stockpileAdminOk, set from the dashboard in refreshIndyAccess).
   stockpileAllowPush = !!cfg?.stockpile_allow_push;
   updateStockpileEditorVisibility();
-
-  stockpileGroupOk = false;
-  if (groupName && window.api?.aaFetchHtml && typeof parseUserGroups === 'function') {
-    try {
-      const res = await window.api.aaFetchHtml('/groups/');
-      const loggedIn = res?.ok
-        && !/\/account\/login\//.test(res.finalUrl || '')
-        && !/Login with Eve SSO/i.test(res.html || '');
-      if (loggedIn) {
-        stockpileGroupOk = hasGroupMembership(parseUserGroups(res.html || ''), groupName);
-      }
-    } catch (e) { /* scrape failed — tab stays hidden for non-admins */ }
-  }
-  updateStockpileTabVisibility();
 }
 
 // ===== Indy section access gate =====
@@ -1350,10 +1371,9 @@ if (btnAaOpen) {
     }
   });
 }
-// Re-check stockpile group access when returning to the app (e.g. after signing
-// in via the separate AA window). Stops probing once access is granted.
+// Re-check Indy access (and the stockpile officer gate it derives) when
+// returning to the app — e.g. after signing in via the separate AA window.
 window.addEventListener('focus', () => {
-  if (!stockpileGroupOk) refreshStockpileAccess();
   if (!indyGroupOk) refreshIndyAccess();
 });
 const btnAaLogout = $('#btn-aa-logout');

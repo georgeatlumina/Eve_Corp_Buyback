@@ -311,14 +311,20 @@ current stock — the paste/save panel is gated on **both** the per-machine
 (`POST /api/stockpile/janice`) returns a shareable `janice.e-351.com/a/<code>`
 link for the whole stockpile.
 
-**Alliance Auth group gate.** Two client-side visibility filters key off the
-logged-in AA user's groups: the Stockpile tab is hidden unless the user is in the
-group named by config `stockpile_group_name` (default `"Industry"`), scraped from
-AA `/groups/` via `parseUserGroups`; the Indy nav group is hidden unless the user
-is in the hardcoded `"Industry Pilot"` group, scraped from the AA dashboard
-"Membership" card via `parseDashboardGroups`. Both are **convenience filters
-only** — they de-clutter the nav for non-industry members and are always shown in
-Admin view. The real access boundary is the GitHub PAT, not the group check.
+**Admin-only + password-gated tab.** The Stockpile tab lives in the **Admin
+(Operations) nav group** and is additionally **password-gated**: its button stays
+hidden until the correct password is entered on the Config tab, remembered
+per-machine in `localStorage` (`stockpileUnlocked`). The password is hardcoded in
+the client (`STOCKPILE_PASSWORD`) and deliberately kept out of the config — its
+input carries no `name`, so it never saves or exports. This is a **soft filter,
+not real security** (the password ships in the client). Within the tab, the admin
+paste/save panel is gated on **both** the machine's `stockpile_allow_push` toggle
+and Alliance Auth membership in an officer group (**Industry Officer** /
+**Acquisitions Officer**), matched by exact name off the AA dashboard "Membership"
+card (`stockpileAdminOk`, set in `refreshIndyAccess`). Separately, the **Indy** nav
+group is hidden unless the user is in the hardcoded `"Industry Pilot"` group,
+scraped from the same dashboard card via `parseDashboardGroups`. The real access
+boundary for the data itself is the GitHub write PAT, not these client filters.
 
 ### Alliance quota sync (`POST /api/quotas/sync` and `/api/quotas/push`)
 
