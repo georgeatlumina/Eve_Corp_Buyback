@@ -1032,3 +1032,14 @@ body.liq-full main { max-width: none; }
 .bo-swatch.bo-a-institute { background: #5b8dd6; }
 .bo-swatch-today { width: 0; height: 14px; border-left: 2px solid #d46a3a; display: inline-block; }
 .bo-undated-note { margin-top: 0.6em; }
+.indy-builder { margin: 0.2em 0 0.5em; font-size: 0.9em; }
+.indy-builder strong { color: #cde; }
+
+/* Build Planner "most in demand" strip */
+.indy-demand { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; margin: 0.6em 0 0.2em; }
+.indy-demand-label { font-size: 0.8em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #9aa; margin-right: 0.2em; }
+.indy-demand-chip { font-size: 0.85em; padding: 0.2em 0.6em; border-radius: 12px; border: 1px solid transparent; white-space: nowrap; }
+.indy-demand-chip b { font-variant-numeric: tabular-nums; margin-left: 0.15em; }
+.indy-demand-chip.demand-empty { background: #3a1f1f; color: #f0a6a6; border-color: #6b3535; }
+.indy-demand-chip.demand-partial { background: #3a331c; color: #ecd58a; border-color: #6b5f2f; }
+.indy-demand-chip.demand-ok { background: #1c3a2a; color: #8fd6b0; border-color: #2f6b4f; }

@@ -40,8 +40,10 @@
     canPublish: false,
     storage: 'local',
     doctrines: {},       // { main: [names], institute: [names] } from doctrine-stock
+    quotas: {},          // { main: [quotaRows], institute: [...] } for the demand strip
     doctrinesLoaded: false,
     dirty: false,
+    builderName: '',     // logged-in character, auto-filled from /api/builds/mine
     drawerSlot: null,    // { buildId, slotId } the drawer is pasting into
   };
 
@@ -78,11 +80,13 @@
       try {
         const res = await fetch(`${API}/api/doctrine-stock?alliance=${a.key}`);
         const snap = res.ok ? await res.json() : {};
+        const quotas = snap.quotas || [];
+        p.quotas[a.key] = quotas; // full rows, for the "most in demand" strip
         // Each quota row is a ship within a doctrine. Show "Ship — Doctrine" so
         // the same doctrine name on different hulls stays distinguishable.
         const seen = new Set();
         const opts = [];
-        (snap.quotas || []).forEach((q) => {
+        quotas.forEach((q) => {
           const ship = (q.ship_name || '').trim();
           const doc = (q.name || '').trim();
           if (!ship && !doc) return;
@@ -95,9 +99,11 @@
         p.doctrines[a.key] = opts;
       } catch (_) {
         p.doctrines[a.key] = [];
+        p.quotas[a.key] = [];
       }
     }));
     p.doctrinesLoaded = true;
+    renderDemand();
   }
 
   async function loadMine(force) {
@@ -110,17 +116,21 @@
       const res = await fetch(`${API}/api/builds/mine`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      p.builds = (data.builds || []).map((b) => ({
-        id: b.id || uid(),
-        doctrine: b.doctrine || '',
-        alliance: b.alliance || 'main',
-        est_completion: b.est_completion || '',
-        note: b.note || '',
-        created_at: b.created_at || '',
-        slots: (b.slots && b.slots.length ? b.slots : [newSlot()]).map((s) => ({
-          id: s.id || uid(), label: s.label || '', missing: s.missing || [],
-        })),
-      }));
+      // One slot per entry: fold any legacy multi-slot missing into a single slot.
+      p.builds = (data.builds || []).map((b) => {
+        const missing = (b.slots || []).flatMap((s) => s.missing || []);
+        const slotId = (b.slots && b.slots[0] && b.slots[0].id) || uid();
+        return {
+          id: b.id || uid(),
+          doctrine: b.doctrine || '',
+          alliance: b.alliance || 'main',
+          est_completion: b.est_completion || '',
+          note: b.note || '',
+          created_at: b.created_at || '',
+          slots: [{ id: slotId, label: '', missing }],
+        };
+      });
+      p.builderName = data.builder_name || '';
       p.canPublish = !!data.can_publish;
       p.storage = data.storage || 'local';
       p.loaded = true;
@@ -175,6 +185,43 @@
     return opts.join('');
   }
 
+  // ---- "Most in demand" strip (top doctrine shortfalls vs quota) ----
+  const ALLIANCE_TAG = { main: 'NLDF', institute: 'NLDO' };
+
+  function quotaGap(q) {
+    const required = Number(q.required) || 0;
+    const available = Number(q.available) || 0;
+    const missing = (q.missing != null) ? Number(q.missing) : Math.max(0, required - available);
+    const state = required === 0 ? 'unset' : available >= required ? 'ok' : available > 0 ? 'partial' : 'empty';
+    return { required, available, missing: Math.max(0, missing), state };
+  }
+
+  function renderDemand() {
+    const root = $('#indy-demand');
+    if (!root) return;
+    const rows = [];
+    ALLIANCES.forEach((a) => {
+      (p.quotas[a.key] || []).forEach((q) => {
+        const g = quotaGap(q);
+        if (g.required <= 0 || g.missing <= 0) return;
+        rows.push({
+          ship: q.ship_name || q.name || `type ${q.ship_type_id}`,
+          doctrine: q.name || '',
+          alliance: a.key,
+          missing: g.missing,
+          state: g.state,
+        });
+      });
+    });
+    if (!rows.length) { root.hidden = true; root.innerHTML = ''; return; }
+    rows.sort((x, y) => y.missing - x.missing);
+    const chips = rows.slice(0, 10).map((r) =>
+      `<span class="indy-demand-chip demand-${r.state}" title="${escapeHtml(r.ship)} — ${escapeHtml(r.doctrine)} · ${ALLIANCE_TAG[r.alliance] || r.alliance}">${escapeHtml(r.ship)} <b>${nfmt(r.missing)}</b></span>`
+    ).join('');
+    root.hidden = false;
+    root.innerHTML = `<span class="indy-demand-label">Most in demand</span>${chips}`;
+  }
+
   function renderMaterials(build, slot) {
     if (!slot.missing || !slot.missing.length) {
       return '<p class="muted indy-slot-empty">No materials yet — click the box above and paste from the game.</p>';
@@ -194,30 +241,18 @@
       </div>`;
   }
 
-  function renderSlot(build, slot) {
-    const count = (slot.missing || []).length;
-    const boxLabel = count
-      ? `${count} material${count === 1 ? '' : 's'} — click to replace paste`
-      : 'Click to paste missing materials from the game';
-    return `
-      <div class="indy-slot" data-slot="${slot.id}">
-        <div class="indy-slot-head">
-          <input type="text" class="indy-slot-label" data-field="label" data-build="${build.id}" data-slot="${slot.id}"
-                 placeholder="Build slot label (e.g. “Ferox ×10”)" value="${escapeHtml(slot.label || '')}" />
-          <button type="button" class="secondary indy-rm-slot" data-act="rm-slot" data-build="${build.id}" data-slot="${slot.id}">Remove slot</button>
-        </div>
-        <button type="button" class="indy-paste-box${count ? ' has-materials' : ''}" data-act="open-paste" data-build="${build.id}" data-slot="${slot.id}">
-          <span class="indy-paste-box-icon">📋</span> ${boxLabel}
-        </button>
-        ${renderMaterials(build, slot)}
-      </div>`;
-  }
-
   function renderBuild(build) {
     const allianceBtns = ALLIANCES.map((a) =>
       `<button type="button" class="alliance-btn${build.alliance === a.key ? ' active' : ''}" data-act="set-alliance" data-build="${build.id}" data-alliance="${a.key}">${escapeHtml(a.label)}</button>`
     ).join('');
-    const slots = (build.slots || []).map((s) => renderSlot(build, s)).join('');
+    const slot = build.slots[0] || (build.slots[0] = newSlot());
+    const count = (slot.missing || []).length;
+    const boxLabel = count
+      ? `${count} material${count === 1 ? '' : 's'} — click to replace paste`
+      : 'Click to paste missing materials from the game';
+    const builderLine = p.builderName
+      ? `<div class="indy-builder muted">Builder: <strong>${escapeHtml(p.builderName)}</strong></div>`
+      : '';
     return `
       <div class="indy-build" data-build="${build.id}">
         <div class="indy-build-head">
@@ -232,11 +267,16 @@
           </label>
           <button type="button" class="secondary indy-rm-build" data-act="rm-build" data-build="${build.id}">Delete build</button>
         </div>
+        ${builderLine}
         <label class="indy-field indy-note">Note
           <input type="text" data-field="note" data-build="${build.id}" placeholder="Optional — e.g. staging, priority, who it's for" value="${escapeHtml(build.note || '')}" />
         </label>
-        <div class="indy-slots">${slots}</div>
-        <button type="button" class="secondary indy-add-slot" data-act="add-slot" data-build="${build.id}">+ Add build slot</button>
+        <div class="indy-slot" data-slot="${slot.id}">
+          <button type="button" class="indy-paste-box${count ? ' has-materials' : ''}" data-act="open-paste" data-build="${build.id}" data-slot="${slot.id}">
+            <span class="indy-paste-box-icon">📋</span> ${boxLabel}
+          </button>
+          ${renderMaterials(build, slot)}
+        </div>
       </div>`;
   }
 
@@ -272,13 +312,7 @@
       if (!el) return;
       const build = findBuild(el.dataset.build);
       if (!build) return;
-      const field = el.dataset.field;
-      if (field === 'label') {
-        const slot = findSlot(build, el.dataset.slot);
-        if (slot) slot.label = el.value;
-      } else {
-        build[field] = el.value;
-      }
+      build[el.dataset.field] = el.value;
       markDirty();
     };
     root.addEventListener('input', onFieldChange);
@@ -296,17 +330,8 @@
         build.alliance = btn.dataset.alliance;
         markDirty();
         renderBuilds();
-      } else if (act === 'add-slot') {
-        build.slots.push(newSlot());
-        markDirty();
-        renderBuilds();
-      } else if (act === 'rm-slot') {
-        build.slots = build.slots.filter((s) => s.id !== btn.dataset.slot);
-        if (!build.slots.length) build.slots.push(newSlot());
-        markDirty();
-        renderBuilds();
       } else if (act === 'rm-build') {
-        if (!confirm('Delete this build and its slots?')) return;
+        if (!confirm('Delete this build?')) return;
         p.builds = p.builds.filter((b) => b.id !== build.id);
         markDirty();
         renderBuilds();

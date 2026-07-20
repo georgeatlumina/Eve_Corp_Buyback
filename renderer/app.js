@@ -228,6 +228,7 @@ function applyViewMode(mode) {
     activateTab('appraisal');
   }
   if (typeof updateStockpileTabVisibility === 'function') updateStockpileTabVisibility();
+  if (typeof updateIndyVisibility === 'function') updateIndyVisibility();
 }
 
 $$('.view-mode-btn').forEach((btn) => {
@@ -274,6 +275,46 @@ async function refreshStockpileAccess() {
     } catch (e) { /* scrape failed — tab stays hidden for non-admins */ }
   }
   updateStockpileTabVisibility();
+}
+
+// ===== Indy section access gate =====
+// The Indy nav-group (Build Planner / Fulfilment) is gated on Alliance Auth
+// membership in the "Industry Pilot" group — a client-side convenience filter,
+// not a security boundary (the market-history write PAT is the real boundary).
+// Always shown in Admin view so directors can reach the fulfilment dashboard.
+// Membership is scraped from the authenticated AA dashboard's "Membership" card.
+// Declared before the applyViewMode() call below, which calls updateIndyVisibility().
+const INDY_GROUP_NAME = 'Industry Pilot';
+let indyGroupOk = false;
+
+function updateIndyVisibility() {
+  const grp = document.querySelector('.nav-group[data-group="indy"]');
+  if (!grp) return;
+  const show = indyGroupOk || getViewMode() === 'admin';
+  grp.hidden = !show;
+  if (!show) {
+    const active = $('.tab-btn.active');
+    if (active && (active.dataset.tab === 'indy-planner' || active.dataset.tab === 'indy-fulfil')) {
+      activateTab('appraisal');
+    }
+  }
+}
+
+async function refreshIndyAccess() {
+  indyGroupOk = false;
+  if (window.api?.aaFetchHtml && typeof parseDashboardGroups === 'function') {
+    try {
+      const res = await window.api.aaFetchHtml('/dashboard/');
+      const loggedIn = res?.ok
+        && !/\/account\/login\//.test(res.finalUrl || '')
+        && !/Login with Eve SSO/i.test(res.html || '');
+      if (loggedIn) {
+        const groups = parseDashboardGroups(res.html || '');
+        indyGroupOk = groups.some((g) => (g || '').trim().toLowerCase() === INDY_GROUP_NAME.toLowerCase());
+      }
+    } catch (e) { /* scrape failed — section stays hidden for non-admins */ }
+  }
+  updateIndyVisibility();
 }
 
 applyViewMode(getViewMode());
@@ -501,7 +542,7 @@ $('#config-form').addEventListener('submit', async (e) => {
   });
   $('#config-status').textContent = res.ok ? 'Saved.' : 'Error saving.';
   setTimeout(() => ($('#config-status').textContent = ''), 2500);
-  if (res.ok) refreshStockpileAccess();  // re-evaluate the group gate + editor
+  if (res.ok) { refreshStockpileAccess(); refreshIndyAccess(); }  // re-evaluate the group gates
 });
 
 function renderMoonTab() {
@@ -1247,6 +1288,7 @@ document.addEventListener('click', async (e) => {
 
 loadConfig().then(maybeAutoSyncQuotas);
 refreshStockpileAccess();
+refreshIndyAccess();
 refreshAuthStatus();
 initMoonCalculator();
 
@@ -1291,7 +1333,10 @@ if (btnAaOpen) {
 }
 // Re-check stockpile group access when returning to the app (e.g. after signing
 // in via the separate AA window). Stops probing once access is granted.
-window.addEventListener('focus', () => { if (!stockpileGroupOk) refreshStockpileAccess(); });
+window.addEventListener('focus', () => {
+  if (!stockpileGroupOk) refreshStockpileAccess();
+  if (!indyGroupOk) refreshIndyAccess();
+});
 const btnAaLogout = $('#btn-aa-logout');
 if (btnAaLogout) {
   btnAaLogout.addEventListener('click', async () => {
@@ -1302,6 +1347,7 @@ if (btnAaLogout) {
       const list = $('#doctrines-list');
       if (list) list.innerHTML = '';
       refreshStockpileAccess();  // drop stockpile access on sign-out
+      refreshIndyAccess();       // and Indy access
     }
   });
 }
