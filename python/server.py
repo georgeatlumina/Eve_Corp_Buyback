@@ -3544,6 +3544,7 @@ def acquisitions_parse(req: AcquisitionsParseRequest):
 
     def _stream():
         import json as _json
+        import re as _re
         cfg = load_config()
         api_key = cfg.get('janice_api_key') or None
         market_name = cfg.get('janice_market') or 'Jita 4-4'
@@ -3553,11 +3554,28 @@ def acquisitions_parse(req: AcquisitionsParseRequest):
         except Exception as e:
             yield _json.dumps({'event': 'error', 'message': f'Parse failed: {e}'}) + '\n'
             return
+
+        # Collect input line names to detect lines Janice dropped entirely.
+        input_names = []
+        for line in req.paste_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = _re.split(r'\t+|\s{2,}', line)
+            input_names.append(parts[0].strip())
+        resolved_names = {r['name'] for r in rows if r.get('type_id')}
+        unresolved = [n for n in input_names if n not in resolved_names]
+
         ua = get_user_agent()
         total = len(rows)
         resolved = []
+        zero_qty = []
         for i, r in enumerate(rows):
             if not r.get('type_id'):
+                continue
+            if not r.get('quantity'):
+                zero_qty.append(r['name'])
+                yield _json.dumps({'event': 'progress', 'done': i + 1, 'total': total, 'name': r['name']}) + '\n'
                 continue
             category_id = None
             try:
@@ -3573,7 +3591,8 @@ def acquisitions_parse(req: AcquisitionsParseRequest):
                 'category_id': category_id,
             })
             yield _json.dumps({'event': 'progress', 'done': i + 1, 'total': total, 'name': r['name']}) + '\n'
-        yield _json.dumps({'event': 'done', 'items': resolved}) + '\n'
+        yield _json.dumps({'event': 'done', 'items': resolved,
+                           'ignored': unresolved, 'zero_qty': zero_qty}) + '\n'
 
     return StreamingResponse(_stream(), media_type='application/x-ndjson')
 

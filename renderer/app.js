@@ -4273,6 +4273,8 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
     const decoder = new TextDecoder();
     let buf = '';
     let all = [];
+    let ignored = [];
+    let zeroQty = [];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -4289,6 +4291,8 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
           if (step) step.textContent = `${ev.name} (${ev.done} / ${ev.total})`;
         } else if (ev.event === 'done') {
           all = ev.items || [];
+          ignored = ev.ignored || [];
+          zeroQty = ev.zero_qty || [];
         } else if (ev.event === 'error') {
           throw new Error(ev.message);
         }
@@ -4299,6 +4303,23 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
     acquisitionsItems = all.filter((it) => it.category_id !== 6);
     renderAcquisitionsResults(hullsEl, itemsEl);
     statusEl.textContent = `${all.length} item${all.length !== 1 ? 's' : ''} resolved — ${acquisitionsHulls.length} hull${acquisitionsHulls.length !== 1 ? 's' : ''}, ${acquisitionsItems.length} module${acquisitionsItems.length !== 1 ? 's' : ''}.`;
+
+    const ignoredSection = root.querySelector('#acq-ignored-section');
+    const ignoredSummary = root.querySelector('#acq-ignored-summary');
+    const ignoredList = root.querySelector('#acq-ignored-list');
+    const allIgnored = [
+      ...ignored.map((n) => ({ name: n, reason: 'unrecognised' })),
+      ...zeroQty.map((n) => ({ name: n, reason: 'no qty' })),
+    ];
+    if (ignoredSection && ignoredList && allIgnored.length) {
+      ignoredSummary.textContent = `Ignored lines (${allIgnored.length})`;
+      ignoredList.innerHTML = allIgnored.map((it) =>
+        `<div style="padding:1px 0">${escapeHtml(it.name)} <span class="muted" style="font-size:0.75rem">${escapeHtml(it.reason)}</span></div>`
+      ).join('');
+      ignoredSection.hidden = false;
+    } else if (ignoredSection) {
+      ignoredSection.hidden = true;
+    }
     await acquisitionsSave();
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
@@ -4313,6 +4334,8 @@ function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
   acquisitionsItems = [];
   renderAcquisitionsResults(hullsEl, itemsEl);
   statusEl.textContent = '';
+  const ignoredSection = textarea.closest('#acquisitions-root')?.querySelector('#acq-ignored-section');
+  if (ignoredSection) ignoredSection.hidden = true;
   acquisitionsSave();
 }
 
@@ -4343,6 +4366,12 @@ function renderAcquisitionsTab() {
         <h3 style="margin:0 0 0.5rem">Modules &amp; Ammo</h3>
         <div id="acq-items-table"></div>
       </div>
+    </div>
+    <div id="acq-ignored-section" hidden style="margin-top:1.5rem">
+      <details>
+        <summary style="cursor:pointer;color:#8899aa;font-size:0.85rem" id="acq-ignored-summary">Ignored lines</summary>
+        <div id="acq-ignored-list" style="margin-top:0.5rem;font-size:0.8rem;color:#8899aa;columns:2;column-gap:2rem"></div>
+      </details>
     </div>`;
 
   const textarea = root.querySelector('#acq-paste');
