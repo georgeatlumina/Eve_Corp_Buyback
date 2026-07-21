@@ -3814,7 +3814,11 @@ function renderQuotaBar(q, priority = 0) {
     const key = String(q.ship_type_id);
     const existing = contractsReservations[key];
     const shipName = q.ship_name || q.name || `type ${q.ship_type_id}`;
-    const qtyStr = prompt(`Reserve how many ${shipName}?${existing ? `\n(Currently reserved: ${existing.qty}${existing.pilot ? ` by ${existing.pilot}` : ''}) — enter 0 to clear` : ''}`, existing?.qty ?? missing || 1);
+    const reservedNote = existing
+      ? '\n(Currently reserved: ' + existing.qty + (existing.pilot ? ' by ' + existing.pilot : '') + ') — enter 0 to clear'
+      : '';
+    const defaultQty = existing ? (existing.qty ?? 1) : (missing || 1);
+    const qtyStr = prompt('Reserve how many ' + shipName + '?' + reservedNote, defaultQty);
     if (qtyStr === null) return;
     const qty = parseInt(qtyStr) || 0;
     let pilot = '';
