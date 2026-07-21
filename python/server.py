@@ -3544,7 +3544,8 @@ def acquisitions_parse(req: AcquisitionsParseRequest):
     api_key = cfg.get('janice_api_key') or None
     market_name = cfg.get('janice_market') or 'Jita 4-4'
     try:
-        rows = appraise_items(req.paste_text, market_name, api_key=api_key)
+        result = appraise_items(req.paste_text, market_name, api_key=api_key)
+        rows = result.get('items') or []
     except Exception as e:
         raise HTTPException(502, f'Parse failed: {e}')
     ua = get_user_agent()
