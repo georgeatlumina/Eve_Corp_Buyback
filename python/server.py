@@ -3537,36 +3537,45 @@ class AcquisitionsSaveRequest(BaseModel):
 @app.post('/api/acquisitions/parse')
 def acquisitions_parse(req: AcquisitionsParseRequest):
     """Parse an EVE-format inventory paste (Name\\tQty per line) and resolve
-    names to type IDs via Janice. Returns a list of {type_id, name, quantity, category_id}."""
+    names to type IDs via Janice. Streams NDJSON progress events then a final
+    'done' event with all resolved items."""
     if not req.paste_text or not req.paste_text.strip():
         raise HTTPException(400, 'paste_text is empty')
-    cfg = load_config()
-    api_key = cfg.get('janice_api_key') or None
-    market_name = cfg.get('janice_market') or 'Jita 4-4'
-    try:
-        result = appraise_items(req.paste_text, market_name, api_key=api_key)
-        rows = result.get('items') or []
-    except Exception as e:
-        raise HTTPException(502, f'Parse failed: {e}')
-    ua = get_user_agent()
-    resolved = []
-    for r in rows:
-        if not r.get('type_id'):
-            continue
-        category_id = None
+
+    def _stream():
+        import json as _json
+        cfg = load_config()
+        api_key = cfg.get('janice_api_key') or None
+        market_name = cfg.get('janice_market') or 'Jita 4-4'
         try:
-            type_info = fetch_type_info(r['type_id'], ua)
-            group_info = fetch_group_info(type_info.get('group_id'), ua)
-            category_id = group_info.get('category_id')
-        except Exception:
-            pass
-        resolved.append({
-            'type_id': r['type_id'],
-            'name': r['name'],
-            'quantity': r['quantity'],
-            'category_id': category_id,
-        })
-    return {'items': resolved, 'unresolved': []}
+            result = appraise_items(req.paste_text, market_name, api_key=api_key)
+            rows = result.get('items') or []
+        except Exception as e:
+            yield _json.dumps({'event': 'error', 'message': f'Parse failed: {e}'}) + '\n'
+            return
+        ua = get_user_agent()
+        total = len(rows)
+        resolved = []
+        for i, r in enumerate(rows):
+            if not r.get('type_id'):
+                continue
+            category_id = None
+            try:
+                type_info = fetch_type_info(r['type_id'], ua)
+                group_info = fetch_group_info(type_info.get('group_id'), ua)
+                category_id = group_info.get('category_id')
+            except Exception:
+                pass
+            resolved.append({
+                'type_id': r['type_id'],
+                'name': r['name'],
+                'quantity': r['quantity'],
+                'category_id': category_id,
+            })
+            yield _json.dumps({'event': 'progress', 'done': i + 1, 'total': total, 'name': r['name']}) + '\n'
+        yield _json.dumps({'event': 'done', 'items': resolved}) + '\n'
+
+    return StreamingResponse(_stream(), media_type='application/x-ndjson')
 
 
 @app.get('/api/acquisitions')

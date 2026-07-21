@@ -4254,14 +4254,47 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
   const text = textarea.value.trim();
   if (!text) { statusEl.textContent = 'Nothing to parse.'; return; }
   statusEl.textContent = 'Parsing…';
+
+  const root = textarea.closest('#acquisitions-root') || document;
+  const progress = root.querySelector('#acq-progress');
+  const fill = progress?.querySelector('.progress-fill');
+  const step = progress?.querySelector('.progress-step');
+  if (progress) progress.hidden = false;
+
   try {
-    const data = await fetch(`${API}/api/acquisitions/parse`, {
+    const resp = await fetch(`${API}/api/acquisitions/parse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paste_text: text }),
-    }).then((r) => r.json());
-    if (data.detail) throw new Error(data.detail);
-    const all = data.items || [];
+    });
+    if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let all = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const ev = JSON.parse(line);
+        if (ev.event === 'progress') {
+          const pct = ev.total > 0 ? Math.round((ev.done / ev.total) * 100) : 0;
+          if (fill) fill.style.width = `${pct}%`;
+          if (step) step.textContent = `${ev.name} (${ev.done} / ${ev.total})`;
+        } else if (ev.event === 'done') {
+          all = ev.items || [];
+        } else if (ev.event === 'error') {
+          throw new Error(ev.message);
+        }
+      }
+    }
+
     acquisitionsHulls = all.filter((it) => it.category_id === 6);
     acquisitionsItems = all.filter((it) => it.category_id !== 6);
     renderAcquisitionsResults(hullsEl, itemsEl);
@@ -4269,6 +4302,8 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
     await acquisitionsSave();
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
+  } finally {
+    if (progress) progress.hidden = true;
   }
 }
 
@@ -4294,6 +4329,10 @@ function renderAcquisitionsTab() {
       <button id="acq-parse" class="btn">Parse</button>
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
+    </div>
+    <div class="progress-area" id="acq-progress" hidden>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <div class="progress-step muted">starting…</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1.5rem">
       <div>
