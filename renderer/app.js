@@ -3358,6 +3358,51 @@ let lastContractsScan = null;
 const contractsScanCache = {};
 let activeContractsAlliance = 'main';
 
+const LS_RESERVATIONS_KEY = 'contracts.reservations.v1';
+let contractsReservations = {};  // ship_type_id (string) -> { qty, pilot, reservedAt }
+try {
+  const r = JSON.parse(localStorage.getItem(LS_RESERVATIONS_KEY) || '{}');
+  if (r && typeof r === 'object') contractsReservations = r;
+} catch (_) {}
+
+function saveReservations() {
+  try { localStorage.setItem(LS_RESERVATIONS_KEY, JSON.stringify(contractsReservations)); } catch (_) {}
+}
+
+function setReservation(shipTypeId, qty, pilot) {
+  const key = String(shipTypeId);
+  if (!qty) {
+    delete contractsReservations[key];
+  } else {
+    contractsReservations[key] = { qty, pilot: pilot || '', reservedAt: new Date().toISOString() };
+  }
+  saveReservations();
+  // Update the rendered bar if present
+  const bar = $(`.quota-bar[data-ship-type-id="${key}"]`);
+  if (bar) updateReservationDisplay(bar, key);
+}
+
+function updateReservationDisplay(bar, shipTypeId) {
+  const key = String(shipTypeId);
+  const res = contractsReservations[key];
+  let badge = bar.querySelector('.quota-reservation-badge');
+  const btn = bar.querySelector('.quota-reserve-btn');
+  if (res) {
+    bar.classList.add('quota-reserved');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'quota-reservation-badge';
+      bar.querySelector('.quota-bar-head').appendChild(badge);
+    }
+    badge.textContent = `🔒 Reserved: ${res.qty}${res.pilot ? ` (${res.pilot})` : ''}`;
+    if (btn) btn.textContent = 'Update';
+  } else {
+    bar.classList.remove('quota-reserved');
+    if (badge) badge.remove();
+    if (btn) btn.textContent = 'Reserve';
+  }
+}
+
 document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
   const btn = ev.target.closest('[data-alliance]');
   if (!btn) return;
@@ -3742,6 +3787,7 @@ function renderQuotaBar(q, priority = 0) {
       <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
       <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
       <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
+      <button type="button" class="quota-reserve-btn link-btn" style="margin-left:auto;font-size:0.78rem">Reserve</button>
       <span class="quota-expand-caret">▸</span>
     </div>
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
@@ -3757,9 +3803,31 @@ function renderQuotaBar(q, priority = 0) {
       </div>
     </div>
   `;
+
+  // Apply existing reservation if any
+  updateReservationDisplay(div, q.ship_type_id);
+
+  // Reserve button handler
+  const reserveBtn = div.querySelector('.quota-reserve-btn');
+  reserveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const key = String(q.ship_type_id);
+    const existing = contractsReservations[key];
+    const shipName = q.ship_name || q.name || `type ${q.ship_type_id}`;
+    const qtyStr = prompt(`Reserve how many ${shipName}?${existing ? `\n(Currently reserved: ${existing.qty}${existing.pilot ? ` by ${existing.pilot}` : ''}) — enter 0 to clear` : ''}`, existing?.qty ?? missing || 1);
+    if (qtyStr === null) return;
+    const qty = parseInt(qtyStr) || 0;
+    let pilot = '';
+    if (qty > 0) {
+      pilot = prompt('Your name (optional):', existing?.pilot ?? '') ?? '';
+    }
+    setReservation(key, qty, pilot);
+  });
+
   // First click: toggle expand panel. Second click on the price row: fetch price.
   div.addEventListener('click', (e) => {
     if (e.target.closest('.quota-expand-panel')) return; // handled separately
+    if (e.target.closest('.quota-reserve-btn')) return; // handled above
     const panel = div.querySelector('.quota-expand-panel');
     const caret = div.querySelector('.quota-expand-caret');
     panel.classList.toggle('open');
