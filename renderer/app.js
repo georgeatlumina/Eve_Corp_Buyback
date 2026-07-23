@@ -3834,6 +3834,10 @@ function renderQuotaBar(q, priority = 0) {
       // Fallback: Auth fit lookup.
       let fitDetail = null;
       let fitFoundOnAuth = false;
+      // Why we couldn't price the full fit, for an informative hull-only message.
+      // One of: 'none' | 'ambiguous' | 'hull-mismatch' | null (resolved fine).
+      let fallbackReason = null;
+      let ambiguousCount = 0;
       if (window.api?.aaFetchHtml && (q.fit_id || q.ship_name || q.name)) {
         priceEl.textContent = 'searching fits…';
         let resolvedFitId = q.fit_id || 0;
@@ -3855,6 +3859,12 @@ function renderQuotaBar(q, priority = 0) {
               const filterLower = q.title_filter.toLowerCase();
               const match = bucket.find((e) => e.fitName.includes(filterLower));
               if (match) resolvedFitId = match.fitId;
+              else { fallbackReason = 'ambiguous'; ambiguousCount = bucket.length; }
+            } else if (bucket.length > 1) {
+              fallbackReason = 'ambiguous';
+              ambiguousCount = bucket.length;
+            } else {
+              fallbackReason = 'none';
             }
           }
         }
@@ -3867,6 +3877,8 @@ function renderQuotaBar(q, priority = 0) {
           const hullMismatch = q.ship_type_id && candidate?.hullTypeId
             && candidate.hullTypeId !== q.ship_type_id;
           if (candidate && !hullMismatch) { fitDetail = candidate; fitFoundOnAuth = true; }
+          else if (hullMismatch) fallbackReason = 'hull-mismatch';
+          else fallbackReason = 'none';
         }
       }
 
@@ -3902,20 +3914,36 @@ function renderQuotaBar(q, priority = 0) {
           priceEl.textContent = 'no Jita prices found for fit items';
         }
       } else {
-        const notInAuth = _fitIndexByType.size > 0 && !fitFoundOnAuth;
         priceEl.textContent = 'loading…';
         const res = await fetch(`${API}/api/market/jita-sell?type_id=${q.ship_type_id}${bustParam}`);
         const data = await res.json();
-        if (notInAuth) {
+        const shipLabel = q.ship_name || q.name || 'this ship';
+        if (_fitIndexByType.size === 0) {
+          // No Auth fit data at all — not logged in or Auth unreachable.
+          if (labelEl) labelEl.textContent = 'Alliance Auth not connected · 120% Jita sell (hull only)';
+        } else if (fitFoundOnAuth) {
+          // A fit matched but exposes no buy list to price against.
+          const fitName = fitDetail?.name;
           if (labelEl) {
-            labelEl.textContent = '⚠ Not in alliance fits — hull price only';
+            labelEl.textContent = fitName
+              ? `Fit "${fitName}" has no buy list on Auth · hull only`
+              : 'Alliance fit found — no buy list on Auth · hull only';
+          }
+        } else {
+          // Resolution failed — tell the user which cause and how to fix it.
+          let msg;
+          if (fallbackReason === 'ambiguous') {
+            msg = `⚠ ${ambiguousCount} ${shipLabel} fits on Auth — set a title filter to pick one · hull price only`;
+          } else if (fallbackReason === 'hull-mismatch') {
+            msg = '⚠ Matched fit is a different hull — check the fit · hull only';
+          } else {
+            msg = `⚠ No ${shipLabel} fit on alliance Auth · hull only`;
+          }
+          if (labelEl) {
+            labelEl.textContent = msg;
             labelEl.classList.add('quota-not-in-auth');
           }
           expandRow.classList.add('quota-row-warning');
-        } else if (fitFoundOnAuth) {
-          if (labelEl) labelEl.textContent = 'Alliance fit found — hull price only (no buy list on Auth)';
-        } else {
-          if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · hull only)';
         }
         if (data.min_sell != null) {
           if (data.source === 'esi') markEsi();
