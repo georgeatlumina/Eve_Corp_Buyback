@@ -10,6 +10,7 @@ import json
 import sys
 import os
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -35,7 +36,11 @@ def _char_info(alliance_id=ALLIANCE_ID_MAIN, corp_id=CORP_ID):
     return {'corporation_id': corp_id, 'alliance_id': alliance_id}
 
 
-def _sold_contract(contract_id=1, date_completed='2026-06-20T12:00:00+00:00', corp_id=CORP_ID):
+def _sold_contract(contract_id=1, date_completed=None, corp_id=CORP_ID):
+    # Default to a completion date safely inside the scan's 30-day window,
+    # computed relative to now so the fixture doesn't age out over real time.
+    if date_completed is None:
+        date_completed = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
     return {
         'contract_id': contract_id,
         'status': 'finished',
