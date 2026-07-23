@@ -3681,10 +3681,10 @@ async function prefetchHullPrices(quotas) {
   await Promise.all([...typeToBar.entries()].map(async ([typeId, { bar, q }]) => {
     if (bar.dataset.price !== '') return; // already priced from an expanded bar
     try {
-      const res = await fetch(`${API}/api/market/amarr-sell?type_id=${typeId}`);
+      const res = await fetch(`${API}/api/market/jita-sell?type_id=${typeId}`);
       const data = await res.json();
       if (data.min_sell != null && bar.dataset.price === '') {
-        bar.dataset.price = data.min_sell * 1.15;
+        bar.dataset.price = data.min_sell * 1.2;
         if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
       }
     } catch (_) {}
@@ -3747,7 +3747,7 @@ function renderQuotaBar(q, priority = 0) {
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
     <div class="quota-expand-panel">
       <div class="quota-expand-row">
-        <span class="quota-expand-label">Contract price (115% Amarr sell)</span>
+        <span class="quota-expand-label">Contract price (120% Jita sell)</span>
         <span class="quota-amarr-price muted">—</span>
         <button type="button" class="quota-price-refresh" title="Refresh price" hidden>↻</button>
       </div>
@@ -3806,7 +3806,7 @@ function renderQuotaBar(q, priority = 0) {
         const uniqueIds = [...new Set(contractPricingItems.map((i) => i.typeId))];
         const priceResults = await Promise.all(
           uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/amarr-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
+            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
           )
         );
         const priceMap = new Map();
@@ -3819,14 +3819,14 @@ function renderQuotaBar(q, priority = 0) {
           if (p != null) total += p * item.qty;
           else unpriced.push({ name: item.name, qty: item.qty });
         }
-        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · from contracts)';
+        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · from contracts)';
         if (total > 0) {
-          div.dataset.price = total * 1.15;
-          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
+          div.dataset.price = total * 1.2;
+          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
-          priceEl.textContent = 'no Amarr prices found for contract items';
+          priceEl.textContent = 'no Jita prices found for contract items';
         }
         return;
       }
@@ -3877,7 +3877,7 @@ function renderQuotaBar(q, priority = 0) {
         const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
         const priceResults = await Promise.all(
           uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/amarr-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
+            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
           )
         );
         const priceMap = new Map();
@@ -3892,19 +3892,19 @@ function renderQuotaBar(q, priority = 0) {
           else unpriced.push({ name: item.name, qty: item.qty });
         }
 
-        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · full fit)';
+        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · full fit)';
         if (total > 0) {
-          div.dataset.price = total * 1.15;
-          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
+          div.dataset.price = total * 1.2;
+          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
-          priceEl.textContent = 'no Amarr prices found for fit items';
+          priceEl.textContent = 'no Jita prices found for fit items';
         }
       } else {
         const notInAuth = _fitIndexByType.size > 0 && !fitFoundOnAuth;
         priceEl.textContent = 'loading…';
-        const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}${bustParam}`);
+        const res = await fetch(`${API}/api/market/jita-sell?type_id=${q.ship_type_id}${bustParam}`);
         const data = await res.json();
         if (notInAuth) {
           if (labelEl) {
@@ -3915,15 +3915,15 @@ function renderQuotaBar(q, priority = 0) {
         } else if (fitFoundOnAuth) {
           if (labelEl) labelEl.textContent = 'Alliance fit found — hull price only (no buy list on Auth)';
         } else {
-          if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
+          if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · hull only)';
         }
         if (data.min_sell != null) {
           if (data.source === 'esi') markEsi();
-          div.dataset.price = data.min_sell * 1.15;
-          priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)})`;
+          div.dataset.price = data.min_sell * 1.2;
+          priceEl.textContent = `${fmtM(data.min_sell * 1.2)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
         } else {
-          priceEl.textContent = 'no sell orders in Amarr';
+          priceEl.textContent = 'no sell orders in Jita';
         }
       }
     } catch {
