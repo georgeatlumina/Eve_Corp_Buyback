@@ -4617,7 +4617,7 @@ function renderHaulxTab() {
 
   root.innerHTML = `
     <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
-    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Rows use the same sort order as the <strong>Contracts</strong> page — change the sort there and re-open this tab to reorder them. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
+    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Jita to UEXO. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Rows use the same sort order as the <strong>Contracts</strong> page — change the sort there and re-open this tab to reorder them. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
     <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
       <span style="font-weight:600">HaulX</span>
       <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
