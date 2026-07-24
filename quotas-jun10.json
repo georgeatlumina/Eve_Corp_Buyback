@@ -192,7 +192,7 @@
     "fit_id": 0
   },
   {
-    "name": "Navy ESS Damage Mk3",
+    "name": "Navy ESS Damage Mk1",
     "ship_type_id": 630,
     "ship_name": "Bellicose",
     "required": 1,
@@ -224,6 +224,14 @@
     "fit_id": 0
   },
   {
+    "name": "Navy Logi Mk2",
+    "ship_type_id": 634,
+    "ship_name": "Exequror",
+    "required": 2,
+    "title_filter": "Mk2",
+    "fit_id": 93
+  },
+  {
     "name": "Navy Tackle Mk3",
     "ship_type_id": 11971,
     "ship_name": "Lachesis",
@@ -246,13 +254,5 @@
     "required": 2,
     "title_filter": "",
     "fit_id": 0
-  },
-  {
-    "name": "Navy Logi Mk2",
-    "ship_type_id": 634,
-    "ship_name": "Exequror",
-    "required": 2,
-    "title_filter": "Mk2",
-    "fit_id": 93
   }
 ]
