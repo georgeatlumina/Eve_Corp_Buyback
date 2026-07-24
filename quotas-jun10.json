@@ -120,6 +120,14 @@
     "fit_id": 0
   },
   {
+    "name": "Navy Links Mk3",
+    "ship_type_id": 37481,
+    "ship_name": "Pontifex",
+    "required": 2,
+    "title_filter": "",
+    "fit_id": 0
+  },
+  {
     "name": "Navy EWar Mk1",
     "ship_type_id": 584,
     "ship_name": "Griffin",
