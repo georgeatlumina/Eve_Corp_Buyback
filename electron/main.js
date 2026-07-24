@@ -144,7 +144,12 @@ async function waitForSidecar(onTick) {
   for (let i = 0; i < maxAttempts; i++) {
     if (onTick) onTick(i, maxAttempts);
     try {
-      const res = await fetch(`http://localhost:${PYTHON_PORT}/api/health`);
+      // 127.0.0.1, not localhost: server.py binds 127.0.0.1, and Electron 28's
+      // bundled Node 18.18 has autoSelectFamily=false, so `localhost` resolves
+      // to ::1 and every poll ECONNREFUSEs without falling back to IPv4. That
+      // silently burned the full 30s timeout on every Linux launch. The
+      // renderer is unaffected — Chromium does Happy Eyeballs.
+      const res = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/health`);
       if (res.ok) {
         logSidecar(`health OK after ~${i * 0.5}s`);
         return;
