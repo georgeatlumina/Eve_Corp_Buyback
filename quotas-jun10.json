@@ -221,7 +221,7 @@
     "ship_name": "Exequror",
     "required": 5,
     "title_filter": "Mk3",
-    "fit_id": 0
+    "fit_id": 93
   },
   {
     "name": "Navy Logi Mk2",
@@ -229,7 +229,7 @@
     "ship_name": "Exequror",
     "required": 2,
     "title_filter": "Mk2",
-    "fit_id": 93
+    "fit_id": 94
   },
   {
     "name": "Navy Tackle Mk3",
