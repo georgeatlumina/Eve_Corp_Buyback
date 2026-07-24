@@ -4357,8 +4357,9 @@ acquisitionsLoad();
 // Plan HaulX tab
 // ============================================================
 
-const HAULX_MAX_VOLUME = 360000;  // m³ (360 km³)
-const HAULX_MAX_COLLATERAL = 5_000_000_000;  // ISK
+// HAULX_MAX_VOLUME, HAULX_MAX_COLLATERAL, HAULX_SHIPPING_COST, HAULX_SELL_MARKUP
+// and the planning maths (haulxTotals / haulxFillByPriority / haulxBlockReason /
+// haulxProfit) all come from haulx-utils.js, loaded before this file.
 
 const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume, fit_price, fit_volume, fit_buy_price }
 const haulxItemPriceCache = {}; // type_id -> { min_sell, vol } (for fit items)
@@ -4367,26 +4368,8 @@ let haulxQty = {};  // type_id (string) -> qty (number)
 let haulxOverQuota = false;
 let haulxReadinessScanDone = false;  // true only after a readiness scan in this session
 
-function haulxTotals() {
-  let vol = 0, isk = 0, sellValue = 0, buyValue = 0;
-  for (const [tid, qty] of Object.entries(haulxQty)) {
-    if (!qty) continue;
-    const p = haulxPriceCache[tid];
-    if (p) {
-      vol += qty * (p.fit_volume != null ? p.fit_volume : (p.packaged_volume || 0));
-      isk += qty * (p.fit_price != null ? p.fit_price : (p.min_sell || 0));
-      if (p.fit_price != null) sellValue += qty * p.fit_price;
-      if (p.fit_buy_price != null) buyValue += qty * p.fit_buy_price;
-    }
-  }
-  return { vol, isk, sellValue, buyValue };
-}
-
-const HAULX_SHIPPING_COST = 400_000_000;
-const HAULX_SELL_MARKUP = 1.20;
-
 function haulxUpdateTotals() {
-  const { vol, isk, sellValue, buyValue } = haulxTotals();
+  const { vol, isk, sellValue, buyValue } = haulxTotals(haulxQty, haulxPriceCache);
   const volEl = $('#haulx-vol');
   const iskEl = $('#haulx-isk');
   const profitEl = $('#haulx-profit');
@@ -4404,7 +4387,7 @@ function haulxUpdateTotals() {
   if (profitEl) {
     const hasBuyData = buyValue > 0 || Object.values(haulxQty).some((q) => q > 0 && Object.keys(haulxItemBuyCache).length > 0);
     if (sellValue > 0 && buyValue > 0) {
-      const profit = (sellValue * HAULX_SELL_MARKUP) - buyValue - HAULX_SHIPPING_COST;
+      const profit = haulxProfit(sellValue, buyValue);
       const profitM = profit / 1_000_000_000;
       profitEl.textContent = `${profitM >= 0 ? '+' : ''}${profitM.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
       profitEl.style.color = profit >= 0 ? '#4a8' : '#ef4444';
@@ -4585,11 +4568,7 @@ async function haulxFetchPrices(quotas) {
       // A row is only addable once we know both the full fit volume and the full
       // fit price — anything else would let a haul be planned against costs we
       // can't stand behind. Blocked rows are flagged and locked to 0.
-      const reason = !fit ? 'no fit in Auth'
-        : fitTotal == null ? 'no price'
-        : fitVolume == null ? 'no volume'
-        : '';
-      haulxSetRowBlocked(row, tid, reason);
+      haulxSetRowBlocked(row, tid, haulxBlockReason(haulxPriceCache[tid], !!fit));
     }
   }
   haulxUpdateTotals();
@@ -4598,10 +4577,7 @@ async function haulxFetchPrices(quotas) {
   // volume and price. Rows missing either are blocked above, so they neither
   // hold the button hostage nor end up in the haul.
   const fillable = (quotas || []).filter((q) => haulxOverQuota || (Number(q.missing) || 0) > 0);
-  const usable = fillable.filter((q) => {
-    const p = haulxPriceCache[String(q.ship_type_id)];
-    return p?.fit_volume != null && p?.fit_price != null;
-  });
+  const usable = fillable.filter((q) => haulxIsAddable(haulxPriceCache[String(q.ship_type_id)]));
   const blockedCount = fillable.length - usable.length;
   if (fillBtn) {
     fillBtn.disabled = usable.length === 0;
@@ -4809,27 +4785,10 @@ function renderHaulxTab() {
   });
 
   $('#haulx-fill-priority')?.addEventListener('click', () => {
-    // Reset all qtys, then fill by priority order (config order) until a limit is hit.
-    // Uses lastContractsScan.quotas which is always in priority order.
-    haulxQty = {};
-    let vol = 0, isk = 0;
-    for (const q of lastContractsScan.quotas || []) {
-      const missing = Number(q.missing) || 0;
-      if (!haulxOverQuota && missing <= 0) continue;
-      const tid = String(q.ship_type_id);
-      const p = haulxPriceCache[tid];
-      // Skip ships we can't fully price/measure — same rows the table locks to 0.
-      if (p?.fit_volume == null || p?.fit_price == null) continue;
-      const unitVol = p.fit_volume;
-      const unitIsk = p.fit_price;
-      let canFit = haulxOverQuota ? 999 : missing;
-      if (unitVol > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_VOLUME - vol) / unitVol));
-      if (unitIsk > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_COLLATERAL - isk) / unitIsk));
-      if (canFit <= 0) continue;
-      haulxQty[tid] = canFit;
-      vol += canFit * unitVol;
-      isk += canFit * unitIsk;
-    }
+    // Reset all qtys, then fill by priority order (config order) until a limit is
+    // hit. lastContractsScan.quotas is always in priority order. Ships without a
+    // full fit volume and price are skipped — the same rows the table locks to 0.
+    haulxQty = haulxFillByPriority(lastContractsScan.quotas, haulxPriceCache, haulxOverQuota);
     // Sync inputs
     for (const input of tbody.querySelectorAll('.haulx-qty')) {
       input.value = haulxQty[input.dataset.tid] || 0;
