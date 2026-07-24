@@ -1,5 +1,6 @@
 import logging
 import re
+import threading
 
 import requests
 
@@ -21,8 +22,33 @@ def _log_response(resp, *args, **kwargs):
         logger.info('ESI %s %s → %s (%.2fs)', resp.request.method, url, resp.status_code, elapsed)
 
 
-_session = requests.Session()
-_session.hooks['response'].append(_log_response)
+class _ThreadLocalSession:
+    """A ``requests.Session`` per thread, behind one module-level name.
+
+    ``Session`` is not thread-safe, and the contracts scan fetches contract
+    items from a ThreadPoolExecutor — sharing one session races on the
+    underlying connection pool. Delegating through ``__getattr__`` keeps all
+    call sites (and ``patch('esi._session.get')`` in tests) working unchanged,
+    since an attribute set directly on this object shadows the delegation.
+    """
+
+    def __init__(self):
+        self._local = threading.local()
+
+    @property
+    def _thread_session(self):
+        session = getattr(self._local, 'session', None)
+        if session is None:
+            session = requests.Session()
+            session.hooks['response'].append(_log_response)
+            self._local.session = session
+        return session
+
+    def __getattr__(self, name):
+        return getattr(self._thread_session, name)
+
+
+_session = _ThreadLocalSession()
 
 
 def resolve_names(ids, user_agent):

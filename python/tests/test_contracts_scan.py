@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import requests
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 CORP_ID = 1000001
@@ -369,3 +371,124 @@ class TestContractsSold30dEndpoint:
             from server import contracts_sold_30d
             result = contracts_sold_30d(ship_type_id=123, alliance='institute')
         assert result == {'sold_30d': None}
+
+
+# ---------------------------------------------------------------------------
+# Deferred sweep for ESI's transient 520 bursts
+# ---------------------------------------------------------------------------
+
+def _http_error(status):
+    """The HTTPError requests raises out of resp.raise_for_status()."""
+    resp = requests.Response()
+    resp.status_code = status
+    return requests.exceptions.HTTPError(f'{status} Server Error', response=resp)
+
+
+def _outstanding(contract_id, corp_id=CORP_ID):
+    return {
+        'contract_id': contract_id,
+        'type': 'item_exchange',
+        'status': 'outstanding',
+        'start_location_id': STRUCTURE_ID,
+        'issuer_corporation_id': corp_id,
+        'title': '',
+        'price': 1.0,
+    }
+
+
+class TestScanContractsItemsSweep:
+    """ESI serves bursts of 520s on the contract-items endpoint; a contract that
+    fails the first pass usually succeeds moments later. The scan retries the
+    stragglers once rather than reporting them as missing stock."""
+
+    CID = 9101
+
+    def setup_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    def teardown_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    @contextmanager
+    def _patched(self, side_effect):
+        from esi_retry import DEFAULT_ATTEMPTS  # noqa: F401 - documents the budget
+        patches = [patch(t, return_value=v) for t, v in _COMMON_PATCHES.items()]
+        patches += [
+            patch('server.fetch_character_info', return_value=_char_info()),
+            patch('server.fetch_corp_contracts', return_value=[_outstanding(self.CID)]),
+            patch('server.fetch_contract_items', side_effect=side_effect),
+            patch('server.resolve_names', return_value={}),
+            patch('server.ITEMS_SWEEP_DELAY_SECONDS', 0),
+            patch('esi_retry.time.sleep'),
+        ]
+        started = [p.start() for p in patches]
+        try:
+            yield started[-4]  # the fetch_contract_items mock
+        finally:
+            for p in patches:
+                p.stop()
+
+    def test_sweep_recovers_a_contract_that_failed_the_first_pass(self):
+        from server import _scan_contracts_stream
+        from esi_retry import DEFAULT_ATTEMPTS
+        calls = []
+
+        def flaky(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) <= DEFAULT_ATTEMPTS:      # burn the whole first pass
+                raise _http_error(520)
+            return [{'type_id': 123, 'quantity': 2, 'is_included': True}]
+
+        with self._patched(flaky):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        contracts = _done(events)['payload']['contracts']
+        assert len(contracts) == 1
+        assert contracts[0]['items_error'] is None, 'sweep should have cleared the error'
+        assert contracts[0]['items'][0]['quantity'] == 2
+
+    def test_sweep_reports_progress(self):
+        from server import _scan_contracts_stream
+        from esi_retry import DEFAULT_ATTEMPTS
+        calls = []
+
+        def flaky(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) <= DEFAULT_ATTEMPTS:
+                raise _http_error(520)
+            return []
+
+        with self._patched(flaky):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        steps = ' | '.join(_steps(events))
+        assert 'retrying in' in steps
+        assert 'Sweep recovered 1 of 1' in steps
+
+    def test_persistent_failure_still_reported(self):
+        from server import _scan_contracts_stream
+
+        def always_520(*_args, **_kwargs):
+            raise _http_error(520)
+
+        with self._patched(always_520):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        contracts = _done(events)['payload']['contracts']
+        assert contracts[0]['items_error'] is not None
+        assert '520' in contracts[0]['items_error']
+
+    def test_4xx_is_not_retried(self):
+        """A 403 can't be fixed by retrying, and each attempt eats ESI's error
+        budget — one try per pass, not one per attempt."""
+        from server import _scan_contracts_stream
+
+        def forbidden(*_args, **_kwargs):
+            raise _http_error(403)
+
+        with self._patched(forbidden) as mock_items:
+            _collect(_scan_contracts_stream(alliance='main'))
+
+        assert mock_items.call_count == 2, 'one first-pass try + one sweep try'

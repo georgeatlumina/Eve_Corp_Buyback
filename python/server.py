@@ -71,6 +71,7 @@ from esi import (
     fetch_type_info,
     fetch_group_info,
 )
+from esi_retry import call_with_retry
 from janice import (
     appraise_items,
     create_appraisal,
@@ -3017,6 +3018,9 @@ def liquidation_courier_contracts():
 
 # Module-scope cache so repeat scans don't re-download the same items.
 _contract_items_cache: dict[int, list] = {}
+# Pause before re-trying contracts ESI refused on the first pass. Long enough to
+# outlast the 520 bursts we measured, short enough not to stall the scan.
+ITEMS_SWEEP_DELAY_SECONDS = 15
 # Sold (finished) contracts collected during the most recent scan; used by the lazy sold-30d endpoint.
 _sold_contracts_cache: dict[str, dict[int, dict]] = {}  # alliance -> {contract_id -> rec}
 
@@ -3228,15 +3232,35 @@ def _scan_contracts_stream(alliance: str = 'all'):
 
     def _fetch_items(cid_rec):
         cid, rec = cid_rec
-        last_err = None
-        for attempt in range(3):
-            try:
-                return cid, fetch_contract_items(rec['corp_id'], cid, rec['token'], ua), None
-            except Exception as e:
-                last_err = e
-                if attempt < 2:
-                    time.sleep(1.5 ** attempt)
-        return cid, [], str(last_err)
+        try:
+            items = call_with_retry(
+                lambda: fetch_contract_items(rec['corp_id'], cid, rec['token'], ua)
+            )
+            return cid, items, None
+        except Exception as e:
+            return cid, [], str(e)
+
+    def _items_pass(targets, done_start, pass_total, label):
+        """One parallel fetch pass over `targets`, yielding progress as it goes.
+
+        Successes populate the cache and clear any earlier error for that
+        contract, so a sweep pass can heal what the first pass failed on.
+        """
+        done = done_start
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in targets.items()}
+            for future in as_completed(futures):
+                cid, items, err = future.result()
+                if err:
+                    items_by_id.setdefault(cid, [])
+                    items_errors[cid] = err
+                else:
+                    items_by_id[cid] = items
+                    items_errors.pop(cid, None)
+                    _contract_items_cache[cid] = items
+                done += 1
+                yield _emit('progress', step=f'{label}: {done}/{pass_total}',
+                            current=done, total=pass_total, phase='items')
 
     uncached = {cid: rec for cid, rec in found.items() if _contract_items_cache.get(cid) is None}
     for cid in found:
@@ -3245,19 +3269,23 @@ def _scan_contracts_stream(alliance: str = 'all'):
 
     if uncached:
         yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
+        yield from _items_pass(uncached, len(found) - len(uncached), total, 'Items')
 
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
-            done = len(found) - len(uncached)
-            for future in as_completed(futures):
-                cid, items, err = future.result()
-                items_by_id[cid] = items
-                if err:
-                    items_errors[cid] = err
-                else:
-                    _contract_items_cache[cid] = items
-                done += 1
-                yield _emit('progress', step=f'Items: {done}/{total}', current=done, total=total, phase='items')
+        # ESI's contract-items endpoint serves bursts of 520s that can outlast
+        # even the widened per-request backoff. Rather than report those as
+        # missing stock, pause and sweep the stragglers once — by then the
+        # burst has almost always passed. Non-transient failures (4xx) cost a
+        # single request here, since call_with_retry won't retry them.
+        if items_errors:
+            stragglers = {cid: uncached[cid] for cid in list(items_errors) if cid in uncached}
+            if stragglers:
+                yield _emit('progress', step=f'ESI rejected {len(stragglers)} contract(s) — '
+                                             f'retrying in {ITEMS_SWEEP_DELAY_SECONDS}s…')
+                time.sleep(ITEMS_SWEEP_DELAY_SECONDS)
+                yield from _items_pass(stragglers, 0, len(stragglers), 'Retrying')
+                recovered = len(stragglers) - len(items_errors)
+                yield _emit('progress', step=f'Sweep recovered {recovered} of {len(stragglers)} '
+                                             f'contract(s)')
 
     # ---- Resolve type and issuer names ----
     type_ids = sorted({int(i.get('type_id') or 0) for items in items_by_id.values() for i in items})
