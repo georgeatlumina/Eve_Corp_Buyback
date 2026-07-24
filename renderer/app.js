@@ -4416,9 +4416,38 @@ function haulxUpdateTotals() {
 
   const anySelected = Object.values(haulxQty).some((q) => q > 0);
   if (copyBtn) copyBtn.disabled = !anySelected;
+  const clearBtn = $('#haulx-clear');
+  if (clearBtn) clearBtn.disabled = !anySelected;
+}
+
+// Flag a row as un-addable (empty `reason` clears the flag). Blocked rows get the
+// same red treatment as a hull with no fit in Auth, their qty is forced to 0, and
+// the qty input + max button are locked so they can't enter a haul.
+function haulxSetRowBlocked(row, tid, reason) {
+  if (!row) return;
+  const blocked = !!reason;
+  const cell = row.querySelector('.haulx-ship-cell');
+  const flag = row.querySelector('.haulx-row-flag');
+  const input = row.querySelector('.haulx-qty');
+  const maxBtn = row.querySelector('.haulx-max');
+  if (cell) cell.style.color = blocked ? '#ef4444' : '';
+  if (flag) flag.textContent = blocked ? `(${reason})` : '';
+  if (input) {
+    input.disabled = blocked;
+    if (blocked) input.value = 0;
+  }
+  if (maxBtn) maxBtn.disabled = blocked;
+  if (blocked) delete haulxQty[tid];
+  row.dataset.blocked = blocked ? '1' : '';
 }
 
 async function haulxFetchPrices(quotas) {
+  // "Fill by priority" divides by per-ship volume and price, so it stays
+  // disabled until every lookup below has settled — otherwise it would fill
+  // against unit costs of 0 and blow straight past the volume/collateral caps.
+  const fillBtn = $('#haulx-fill-priority');
+  if (fillBtn) fillBtn.disabled = true;
+
   const fits = readinessState.scan?.fits || {};
   const fitsByHull = {};
   for (const fit of Object.values(fits)) {
@@ -4436,33 +4465,60 @@ async function haulxFetchPrices(quotas) {
     for (const item of fit?.items || []) allTypeIds.add(String(item.typeId));
   }
 
-  // Fetch any uncached sell prices
+  // Both lists are derived up front so the progress bar knows its total. Safe
+  // to compute the buy list before the sell fetches run — they touch different
+  // caches.
   const uncachedIds = [...allTypeIds].filter((tid) => !(tid in haulxItemPriceCache));
-  await Promise.all(
-    uncachedIds.map((tid) =>
-      fetch(`${API}/api/market/jita-sell?type_id=${tid}`)
-        .then((r) => r.json())
-        .then((data) => {
-          haulxItemPriceCache[tid] = { min_sell: data.min_sell ?? null, vol: data.packaged_volume ?? null };
-          // Hull entries also get volume stored in haulxPriceCache
-          if (!haulxPriceCache[tid]) {
-            haulxPriceCache[tid] = { min_sell: data.min_sell, packaged_volume: data.packaged_volume };
-          }
-        })
-        .catch(() => { haulxItemPriceCache[tid] = { min_sell: null, vol: null }; })
-    )
-  );
-
-  // Fetch any uncached buy prices (in parallel with next block)
   const uncachedBuyIds = [...allTypeIds].filter((tid) => !(tid in haulxItemBuyCache));
-  await Promise.all(
-    uncachedBuyIds.map((tid) =>
-      fetch(`${API}/api/market/jita-buy?type_id=${tid}`)
-        .then((r) => r.json())
-        .then((data) => { haulxItemBuyCache[tid] = data.max_buy ?? null; })
-        .catch(() => { haulxItemBuyCache[tid] = null; })
-    )
-  );
+
+  const progress = $('#haulx-price-progress');
+  const progressFill = progress?.querySelector('.progress-fill');
+  const progressStep = progress?.querySelector('.progress-step');
+  const totalLookups = uncachedIds.length + uncachedBuyIds.length;
+  let doneLookups = 0;
+  if (progress && totalLookups > 0) {
+    progress.hidden = false;
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressStep) progressStep.textContent = `looking up volume & price — 0 / ${totalLookups}`;
+  }
+  const bumpProgress = () => {
+    doneLookups += 1;
+    if (!progress || totalLookups === 0) return;
+    if (progressFill) progressFill.style.width = `${(doneLookups / totalLookups) * 100}%`;
+    if (progressStep) progressStep.textContent = `looking up volume & price — ${doneLookups} / ${totalLookups}`;
+  };
+
+  try {
+    // Fetch any uncached sell prices
+    await Promise.all(
+      uncachedIds.map((tid) =>
+        fetch(`${API}/api/market/jita-sell?type_id=${tid}`)
+          .then((r) => r.json())
+          .then((data) => {
+            haulxItemPriceCache[tid] = { min_sell: data.min_sell ?? null, vol: data.packaged_volume ?? null };
+            // Hull entries also get volume stored in haulxPriceCache
+            if (!haulxPriceCache[tid]) {
+              haulxPriceCache[tid] = { min_sell: data.min_sell, packaged_volume: data.packaged_volume };
+            }
+          })
+          .catch(() => { haulxItemPriceCache[tid] = { min_sell: null, vol: null }; })
+          .finally(bumpProgress)
+      )
+    );
+
+    // Fetch any uncached buy prices
+    await Promise.all(
+      uncachedBuyIds.map((tid) =>
+        fetch(`${API}/api/market/jita-buy?type_id=${tid}`)
+          .then((r) => r.json())
+          .then((data) => { haulxItemBuyCache[tid] = data.max_buy ?? null; })
+          .catch(() => { haulxItemBuyCache[tid] = null; })
+          .finally(bumpProgress)
+      )
+    );
+  } finally {
+    if (progress) progress.hidden = true;
+  }
 
   // Now compute fit_price per quota and update rows
   for (const q of quotas || []) {
@@ -4517,17 +4573,49 @@ async function haulxFetchPrices(quotas) {
         if (displayVol != null) volEl.title = `${displayVol.toLocaleString()} m³`;
       }
       if (priceEl) {
+        // No hull-only fallback: a hull price for a ship whose fit can't be
+        // totalled would understate the real cost. Show nothing and block the row.
         priceEl.textContent = fitTotal != null
           ? `${(fitTotal / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
-          : (fit ? '…' : '—');
-        if (fitTotal != null) priceEl.title = `${fitTotal.toLocaleString()} ISK`;
+          : '—';
+        priceEl.title = fitTotal != null ? `${fitTotal.toLocaleString()} ISK` : '';
       }
       row.querySelector('.haulx-loading')?.remove();
+
+      // A row is only addable once we know both the full fit volume and the full
+      // fit price — anything else would let a haul be planned against costs we
+      // can't stand behind. Blocked rows are flagged and locked to 0.
+      const reason = !fit ? 'no fit in Auth'
+        : fitTotal == null ? 'no price'
+        : fitVolume == null ? 'no volume'
+        : '';
+      haulxSetRowBlocked(row, tid, reason);
     }
   }
   haulxUpdateTotals();
-  const fillBtn = $('#haulx-fill-priority');
-  if (fillBtn) fillBtn.disabled = false;
+
+  // Unlock "Fill by priority" only once every row it could add has a full fit
+  // volume and price. Rows missing either are blocked above, so they neither
+  // hold the button hostage nor end up in the haul.
+  const fillable = (quotas || []).filter((q) => haulxOverQuota || (Number(q.missing) || 0) > 0);
+  const usable = fillable.filter((q) => {
+    const p = haulxPriceCache[String(q.ship_type_id)];
+    return p?.fit_volume != null && p?.fit_price != null;
+  });
+  const blockedCount = fillable.length - usable.length;
+  if (fillBtn) {
+    fillBtn.disabled = usable.length === 0;
+    fillBtn.title = usable.length === 0
+      ? (fillable.length === 0 ? 'Nothing under quota to fill' : 'No under-quota ship has a full fit volume and price')
+      : '';
+  }
+  const note = $('#haulx-fill-note');
+  if (note) {
+    note.textContent = blockedCount > 0 ? `${blockedCount} unavailable` : '';
+    note.title = blockedCount > 0
+      ? 'Ships with no fit in Auth, or whose fit has an unpriced item, can\'t be added'
+      : '';
+  }
 }
 
 function renderHaulxTab() {
@@ -4553,7 +4641,7 @@ function renderHaulxTab() {
 
   root.innerHTML = `
     <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
-    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
+    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Amarr to Jita. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Rows use the same sort order as the <strong>Contracts</strong> page — change the sort there and re-open this tab to reorder them. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
     <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
       <span style="font-weight:600">HaulX</span>
       <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
@@ -4562,9 +4650,15 @@ function renderHaulxTab() {
       <span style="font-size:0.85rem">Profit: <strong id="haulx-profit" style="color:#8899aa">…</strong></span>
       <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
       <button id="haulx-fill-priority" class="link-btn" disabled>Fill by priority</button>
+      <span id="haulx-fill-note" class="muted" style="font-size:0.78rem;color:#ef4444"></span>
+      <button id="haulx-clear" class="link-btn" disabled>Clear</button>
       <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
         <input type="checkbox" id="haulx-over-quota" ${haulxOverQuota ? 'checked' : ''}> Allow over quota
       </label>
+    </div>
+    <div class="progress-area" id="haulx-price-progress" style="padding:0.5rem 1rem" hidden>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <div class="progress-step muted">looking up volume &amp; price…</div>
     </div>
     <table id="haulx-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">
       <thead style="position:sticky;top:calc(var(--app-header-h,0px) + 48px);z-index:9;background:#1e1e1e">
@@ -4623,16 +4717,16 @@ function renderHaulxTab() {
     tr.id = `haulx-row-${tid}`;
     tr.style.cssText = atQuota ? 'opacity:0.45;border-bottom:1px solid #1e2533' : 'border-bottom:1px solid #1e2533';
     tr.innerHTML = `
-      <td style="padding:0.5rem 1rem${hasFit ? '' : ';color:#ef4444'}">
+      <td class="haulx-ship-cell" style="padding:0.5rem 1rem${hasFit ? '' : ';color:#ef4444'}">
         <strong>${escapeHtml(q.ship_name || q.name || `type ${tid}`)}</strong>
         ${q.name && q.ship_name && q.name !== q.ship_name ? `<span style="font-size:0.8rem;margin-left:0.4rem;opacity:0.7">${escapeHtml(q.name)}</span>` : ''}
-        ${hasFit ? '' : '<span style="font-size:0.75rem;margin-left:0.4rem;opacity:0.8">(no fit)</span>'}
+        <span class="haulx-row-flag" style="font-size:0.75rem;margin-left:0.4rem;opacity:0.8">${hasFit ? '' : '(no fit in Auth)'}</span>
       </td>
       <td style="padding:0.5rem 0.5rem;color:${missing > 0 ? '#e8a838' : '#4a8'}">${missing > 0 ? missing : '✓'}</td>
       <td style="padding:0.5rem 0.5rem;color:${onHand > 0 ? '#4a8' : '#8899aa'}">${onHand > 0 ? onHand : '—'}</td>
       <td style="padding:0.5rem 0.5rem">
-        <input type="number" class="haulx-qty" data-tid="${tid}" value="${qty}" min="0" max="${rowMax}" style="width:4rem;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:3px;padding:2px 6px;text-align:center">
-        <button class="haulx-max link-btn" data-tid="${tid}" data-max="${rowMax}" style="margin-left:0.3rem;font-size:0.75rem">max</button>
+        <input type="number" class="haulx-qty" data-tid="${tid}" value="${qty}" min="0" max="${rowMax}" ${hasFit ? '' : 'disabled'} style="width:4rem;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:3px;padding:2px 6px;text-align:center">
+        <button class="haulx-max link-btn" data-tid="${tid}" data-max="${rowMax}" ${hasFit ? '' : 'disabled'} style="margin-left:0.3rem;font-size:0.75rem">max</button>
       </td>
       <td class="haulx-row-vol" style="padding:0.5rem 0.5rem;color:#8899aa" ${volTitle}>${volText}</td>
       <td class="haulx-row-price" style="padding:0.5rem 1rem;color:#8899aa" ${priceTitle}>${priceText}</td>`;
@@ -4724,8 +4818,10 @@ function renderHaulxTab() {
       if (!haulxOverQuota && missing <= 0) continue;
       const tid = String(q.ship_type_id);
       const p = haulxPriceCache[tid];
-      const unitVol = p?.fit_volume != null ? p.fit_volume : (p?.packaged_volume || 0);
-      const unitIsk = p?.fit_price != null ? p.fit_price : (p?.min_sell || 0);
+      // Skip ships we can't fully price/measure — same rows the table locks to 0.
+      if (p?.fit_volume == null || p?.fit_price == null) continue;
+      const unitVol = p.fit_volume;
+      const unitIsk = p.fit_price;
       let canFit = haulxOverQuota ? 999 : missing;
       if (unitVol > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_VOLUME - vol) / unitVol));
       if (unitIsk > 0) canFit = Math.min(canFit, Math.floor((HAULX_MAX_COLLATERAL - isk) / unitIsk));
@@ -4738,6 +4834,12 @@ function renderHaulxTab() {
     for (const input of tbody.querySelectorAll('.haulx-qty')) {
       input.value = haulxQty[input.dataset.tid] || 0;
     }
+    haulxUpdateTotals();
+  });
+
+  $('#haulx-clear')?.addEventListener('click', () => {
+    haulxQty = {};
+    for (const input of tbody.querySelectorAll('.haulx-qty')) input.value = 0;
     haulxUpdateTotals();
   });
 
