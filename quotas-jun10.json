@@ -220,7 +220,7 @@
     "ship_type_id": 634,
     "ship_name": "Exequror",
     "required": 5,
-    "title_filter": "",
+    "title_filter": "Mk3",
     "fit_id": 0
   },
   {
@@ -245,6 +245,14 @@
     "ship_name": "Kirin",
     "required": 2,
     "title_filter": "",
+    "fit_id": 0
+  },
+  {
+    "name": "Navy Logi Mk2",
+    "ship_type_id": 634,
+    "ship_name": "Exequror",
+    "required": 2,
+    "title_filter": "Mk2",
     "fit_id": 0
   }
 ]
