@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Naval Defence Alliance Management Tool
+GenericName=EVE Alliance Management
+Comment=EVE Online alliance buyback, doctrines, market and industry planner
+Exec=naval-defence
+Icon=naval-defence
+Terminal=false
+Categories=Utility;
+Keywords=EVE;Online;buyback;industry;market;alliance;
+StartupNotify=true
+StartupWMClass=naval-defence

@@ -11,6 +11,9 @@
     "build:python": "pyinstaller python/sidecar.spec --distpath build/python-sidecar --workpath build/pyinstaller-work --clean --noconfirm",
     "build:mac": "npm run build:python && electron-builder --mac --publish never",
     "build:win": "npm run build:python && electron-builder --win --publish never",
+    "build:linux-dir": "npm run build:python && electron-builder --linux dir --publish never",
+    "build:linux-rpm": "npm run build:python && electron-builder --linux rpm --publish never",
+    "build:rpm": "packaging/rpm/build-rpm.sh",
     "build": "npm run build:mac"
   },
   "jest": {
@@ -62,6 +65,19 @@
       "target": [
         "nsis"
       ]
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "category": "Utility",
+      "executableName": "naval-defence",
+      "icon": "assets/icon.png",
+      "synopsis": "EVE Online alliance management tool",
+      "maintainer": "Wolf <wolf.vdz@protonmail.com>",
+      "desktop": {
+        "StartupWMClass": "naval-defence"
+      }
     },
     "nsis": {
       "oneClick": false,
