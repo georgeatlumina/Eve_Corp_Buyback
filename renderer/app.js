@@ -4207,7 +4207,7 @@ function renderAcquisitionsResults(hullsEl, itemsEl) {
   itemsEl.innerHTML = renderAcquisitionsTable(acquisitionsItems, 'No modules or ammo found.');
 }
 
-async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
+async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, mode = 'replace') {
   const text = textarea.value.trim();
   if (!text) { statusEl.textContent = 'Nothing to parse.'; return; }
   statusEl.textContent = 'Parsing…';
@@ -4256,10 +4256,18 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
       }
     }
 
-    acquisitionsHulls = all.filter((it) => it.category_id === 6);
-    acquisitionsItems = all.filter((it) => it.category_id !== 6);
+    if (mode === 'add') {
+      const merged = mergeInventory(acquisitionsHulls, acquisitionsItems, all);
+      acquisitionsHulls = merged.hulls;
+      acquisitionsItems = merged.items;
+      statusEl.textContent = `Added: ${merged.newTypes} new, ${merged.updatedTypes} updated — inventory now ${acquisitionsHulls.length} hull${acquisitionsHulls.length !== 1 ? 's' : ''}, ${acquisitionsItems.length} module${acquisitionsItems.length !== 1 ? 's' : ''}.`;
+    } else {
+      const split = splitInventory(all);
+      acquisitionsHulls = split.hulls;
+      acquisitionsItems = split.items;
+      statusEl.textContent = `${all.length} item${all.length !== 1 ? 's' : ''} resolved — ${acquisitionsHulls.length} hull${acquisitionsHulls.length !== 1 ? 's' : ''}, ${acquisitionsItems.length} module${acquisitionsItems.length !== 1 ? 's' : ''}.`;
+    }
     renderAcquisitionsResults(hullsEl, itemsEl);
-    statusEl.textContent = `${all.length} item${all.length !== 1 ? 's' : ''} resolved — ${acquisitionsHulls.length} hull${acquisitionsHulls.length !== 1 ? 's' : ''}, ${acquisitionsItems.length} module${acquisitionsItems.length !== 1 ? 's' : ''}.`;
 
     const ignoredSection = root.querySelector('#acq-ignored-section');
     const ignoredSummary = root.querySelector('#acq-ignored-summary');
@@ -4301,12 +4309,14 @@ function renderAcquisitionsTab() {
   if (!root) return;
   root.innerHTML = `
     <h2>Acquisitions Inventory <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
-    <p class="muted">Paste your full inventory (hulls and modules together) in EVE clipboard format
-    — Name, tab, quantity, one line per item. Hulls and modules will be split automatically.</p>
+    <p class="muted">Paste inventory (hulls and modules together) in EVE clipboard format
+    — Name, tab, quantity, one line per item. Hulls and modules are split automatically.
+    <strong>Add to inventory</strong> sums the paste into what's already stored; <strong>Replace inventory</strong> discards the current inventory first.</p>
     <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
       placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
     <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
-      <button id="acq-parse" class="btn">Parse</button>
+      <button id="acq-add" class="btn">Add to inventory</button>
+      <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
@@ -4332,7 +4342,8 @@ function renderAcquisitionsTab() {
     </div>`;
 
   const textarea = root.querySelector('#acq-paste');
-  const parseBtn = root.querySelector('#acq-parse');
+  const addBtn = root.querySelector('#acq-add');
+  const replaceBtn = root.querySelector('#acq-replace');
   const clearBtn = root.querySelector('#acq-clear');
   const statusEl = root.querySelector('#acq-status');
   const hullsEl = root.querySelector('#acq-hulls-table');
@@ -4340,12 +4351,14 @@ function renderAcquisitionsTab() {
 
   renderAcquisitionsResults(hullsEl, itemsEl);
 
-  parseBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl));
+  addBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add'));
+  replaceBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'replace'));
   clearBtn.addEventListener('click', () => acquisitionsClear(textarea, hullsEl, itemsEl, statusEl));
+  // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      acquisitionsParse(textarea, hullsEl, itemsEl, statusEl);
+      acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add');
     }
   });
 }
