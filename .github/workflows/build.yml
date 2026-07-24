@@ -58,9 +58,118 @@ jobs:
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
 
+  build-linux:
+    name: Build openSUSE RPM
+    runs-on: ubuntu-latest
+    container: opensuse/tumbleweed
+    defaults:
+      run:
+        shell: bash
+    env:
+      # See the GITHUB_PATH seeding in the first step for why this is needed.
+      # This covers steps before any action calls addPath; that covers after.
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    steps:
+      # Runs before bash exists, so it must ask for sh explicitly.
+      #
+      # bash and less are not optional. The image ships neither bash nor less,
+      # and git pulls in a pager: zypper satisfies that with busybox-less, which
+      # drags in busybox + libalternatives, and busybox then takes over
+      # /usr/bin/sh. That leaves the container with no working shell at all, and
+      # the next `run:` step dies with `exec: "sh": executable file not found`.
+      # Naming the real less keeps busybox out; naming bash guarantees a shell.
+      #
+      # git and tar are needed by actions/checkout and actions/setup-node in a
+      # minimal container; binutils is needed by PyInstaller (objdump, ldd).
+      - name: Install build tools
+        shell: sh -e {0}
+        run: |
+          zypper --non-interactive --gpg-auto-import-keys refresh
+          zypper --non-interactive install \
+            bash less git tar gzip binutils rpm-build python3 python3-pip
+          command -v bash sh
+
+          # opensuse/tumbleweed ships an empty image config (Config.Env is null),
+          # so it declares no PATH. Docker's default covers that until an action
+          # calls addPath — actions/setup-node does — at which point the runner
+          # recomputes the container PATH as (prepended entries + the image's
+          # declared PATH). With nothing declared, PATH collapses to just the
+          # node bin directory, /usr/bin vanishes, and the next `run:` step dies
+          # with `exec: "bash": executable file not found in $PATH`.
+          #
+          # A job-level env.PATH does not help: it is not part of that
+          # calculation. Seeding GITHUB_PATH here is, and this step still has a
+          # working shell to do it from.
+          for d in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+            echo "$d" >> "$GITHUB_PATH"
+          done
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # Guards the PATH rewrite described above: this is the first step after
+      # setup-node, so it fails here with a readable message rather than as an
+      # OCI exec error in whatever step happens to come next.
+      - name: Check toolchain is on PATH
+        run: command -v bash sh node npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # npm 11+ gates package lifecycle scripts. If electron's postinstall is
+      # ever blocked, dist/ is empty and electron-builder fails later without
+      # naming the cause.
+      - name: Check Electron binary was downloaded
+        run: test -x node_modules/electron/dist/electron
+
+      # The distro python, not actions/setup-python: the latter ships CPython
+      # builds linked against Ubuntu libraries and is unreliable in a non-Ubuntu
+      # container. A venv also avoids PEP 668 on a global pip install, and
+      # build-rpm.sh picks up .venv/bin/pyinstaller on its own.
+      - name: Install Python dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r python/requirements.txt pyinstaller
+
+      - name: Build RPM
+        run: packaging/rpm/build-rpm.sh
+
+      - name: Collect RPM
+        run: |
+          mkdir -p dist
+          cp "$HOME"/rpmbuild/RPMS/x86_64/*.rpm dist/
+
+      # build-rpm.sh only warns on a lost setuid bit, which is right locally but
+      # would let CI publish a package that cannot start.
+      - name: Verify package
+        run: |
+          RPM=$(ls dist/*.rpm)
+          CONTENTS=$(rpm -qplv "$RPM")
+          case "$(printf '%s\n' "$CONTENTS" | grep 'chrome-sandbox$')" in
+            -rws*) echo "chrome-sandbox setuid: ok" ;;
+            *)     echo "chrome-sandbox is not setuid"; exit 1 ;;
+          esac
+          if rpm -qp --provides "$RPM" | grep -qE '^lib.*\.so'; then
+            echo "bundled sonames leaked into Provides"; exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: dist/*.rpm
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: build
+    needs: [build, build-linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -77,6 +186,7 @@ jobs:
           files: |
             artifacts/macos-dmg/*.dmg
             artifacts/windows-exe/*.exe
+            artifacts/linux-rpm/*.rpm
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}
