@@ -77,6 +77,57 @@ function splitInventory(parsedItems) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Build finder — which quota ships this inventory can actually deliver.
+// Design: docs/superpowers/specs/2026-07-24-acquisitions-build-finder-design.md
+// ---------------------------------------------------------------------------
+
+// Fraction of a fit's required units that must already be in inventory before
+// the remainder is worth buying on the UEXO market. Constant by design.
+const ACQ_MARKET_THRESHOLD = 0.8;
+
+const ACQ_MODES = {
+  FULL: 'full',
+  FITS_NO_HULL: 'fitsNoHull',
+  MARKET: 'marketCompletable',
+};
+
+/** Flatten the page's hulls + modules into one type_id -> quantity map. */
+function buildPool(hulls, items) {
+  const pool = new Map();
+  for (const row of [...(hulls || []), ...(items || [])]) {
+    if (row?.type_id == null) continue;
+    const key = String(row.type_id);
+    pool.set(key, (pool.get(key) || 0) + (Number(row.quantity) || 0));
+  }
+  return pool;
+}
+
+/**
+ * A fit's module requirements as type_id -> units.
+ *
+ * The hull row is always dropped: fits list their own hull, and leaving it in
+ * would make every build demand a second one. This deliberately does NOT use
+ * app.js's fitItemsForReadiness, which only strips the hull when the
+ * excludeHulls display toggle is on — a UI preference must not change which
+ * ships come out buildable.
+ */
+function fitModuleUnits(fit) {
+  const units = new Map();
+  let unevaluatable = false;
+  const hullKey = fit?.hullTypeId != null ? String(fit.hullTypeId) : null;
+  for (const item of fit?.items || []) {
+    if (item?.typeId == null) { unevaluatable = true; continue; }
+    const key = String(item.typeId);
+    if (key === hullKey) continue;
+    units.set(key, (units.get(key) || 0) + (Number(item.qty) || 0));
+  }
+  return { units, unevaluatable };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { mergeInventory, splitInventory, ACQ_HULL_CATEGORY_ID };
+  module.exports = {
+    mergeInventory, splitInventory, ACQ_HULL_CATEGORY_ID,
+    ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits,
+  };
 }

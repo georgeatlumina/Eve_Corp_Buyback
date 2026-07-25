@@ -108,3 +108,84 @@ describe('mergeInventory', () => {
     expect(existingItems[0].quantity).toBe(500);
   });
 });
+
+// ── build finder: pool + fit units ───────────────────────────────────────────
+
+const {
+  ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits,
+} = require('../renderer/acquisitions-utils');
+
+describe('buildPool', () => {
+  test('sums hulls and items into one type_id -> qty map', () => {
+    const pool = buildPool([hull(24698, 'Drake', 2)], [mod(2048, 'Damage Control II', 5)]);
+    expect(pool.get('24698')).toBe(2);
+    expect(pool.get('2048')).toBe(5);
+  });
+
+  test('merges duplicate type_ids across both lists', () => {
+    const pool = buildPool([hull(24698, 'Drake', 2)], [hull(24698, 'Drake', 3)]);
+    expect(pool.get('24698')).toBe(5);
+  });
+
+  test('tolerates null lists and missing quantities', () => {
+    const pool = buildPool(null, [{ type_id: 34, name: 'Tritanium' }]);
+    expect(pool.get('34')).toBe(0);
+  });
+});
+
+describe('fitModuleUnits', () => {
+  const fit = {
+    hullTypeId: 24698,
+    items: [
+      { name: 'Drake', qty: 1, typeId: 24698 },
+      { name: 'Damage Control II', qty: 1, typeId: 2048 },
+      { name: 'Invulnerability Field II', qty: 2, typeId: 2281 },
+    ],
+  };
+
+  test('strips the hull row so a fit does not demand a second hull', () => {
+    const { units } = fitModuleUnits(fit);
+    expect(units.has('24698')).toBe(false);
+    expect(units.get('2048')).toBe(1);
+    expect(units.get('2281')).toBe(2);
+  });
+
+  test('sums repeated rows of the same module', () => {
+    const { units } = fitModuleUnits({
+      hullTypeId: 1,
+      items: [
+        { name: 'Mag Stab', qty: 3, typeId: 9944 },
+        { name: 'Mag Stab', qty: 5, typeId: 9944 },
+      ],
+    });
+    expect(units.get('9944')).toBe(8);
+  });
+
+  test('flags a fit with an unresolved typeId as unevaluatable', () => {
+    const { unevaluatable } = fitModuleUnits({
+      hullTypeId: 1,
+      items: [{ name: 'Mystery Module', qty: 1, typeId: null }],
+    });
+    expect(unevaluatable).toBe(true);
+  });
+
+  test('a clean fit is evaluatable', () => {
+    expect(fitModuleUnits(fit).unevaluatable).toBe(false);
+  });
+
+  test('handles a missing items array', () => {
+    const { units, unevaluatable } = fitModuleUnits({ hullTypeId: 1 });
+    expect(units.size).toBe(0);
+    expect(unevaluatable).toBe(false);
+  });
+});
+
+describe('constants', () => {
+  test('threshold is 80%', () => {
+    expect(ACQ_MARKET_THRESHOLD).toBe(0.8);
+  });
+
+  test('modes are named', () => {
+    expect(ACQ_MODES).toEqual({ FULL: 'full', FITS_NO_HULL: 'fitsNoHull', MARKET: 'marketCompletable' });
+  });
+});
