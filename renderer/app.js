@@ -3614,7 +3614,9 @@ function renderContractsDashboard(payload) {
   if (!quotas.length) {
     root.innerHTML = '<p class="muted">No quotas configured. Add some in Config.</p>';
   } else {
-    quotas.forEach((q, i) => root.appendChild(renderQuotaBar(q, i)));
+    // Snapshot, not live: computed once per dashboard render (Scan, or
+    // alliance-toggle switch), matching every other number on the bar.
+    quotas.forEach((q, i) => root.appendChild(renderQuotaBar(q, i, acqHullCountFor(q.ship_type_id))));
     sortQuotaDashboard();
   }
 
@@ -3722,7 +3724,7 @@ function sortQuotaDashboard() {
 
 $('#contracts-sort')?.addEventListener('change', sortQuotaDashboard);
 
-function renderQuotaBar(q, priority = 0) {
+function renderQuotaBar(q, priority = 0, hullCount = 0) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
   const missing = Number(q.missing) || 0;
@@ -3754,6 +3756,10 @@ function renderQuotaBar(q, priority = 0) {
       <div class="quota-expand-row">
         <span class="quota-expand-label">Sold last 30 days</span>
         <span class="quota-sold-count muted">—</span>
+      </div>
+      <div class="quota-expand-row">
+        <span class="quota-expand-label">Bare hulls in Acquisitions</span>
+        <span class="quota-hull-count muted">${hullCount}</span>
       </div>
     </div>
   `;
