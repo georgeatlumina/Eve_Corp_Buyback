@@ -189,3 +189,120 @@ describe('constants', () => {
     expect(ACQ_MODES).toEqual({ FULL: 'full', FITS_NO_HULL: 'fitsNoHull', MARKET: 'marketCompletable' });
   });
 });
+
+// ── build finder: single-build evaluation ────────────────────────────────────
+
+const { evaluateBuild } = require('../renderer/acquisitions-utils');
+
+const units = (pairs) => new Map(pairs);
+
+describe('evaluateBuild — full mode', () => {
+  test('accepts when hull and every module are present', () => {
+    const pool = new Map([['24698', 1], ['2048', 2]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 2]]), mode: ACQ_MODES.FULL,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.missing).toEqual([]);
+    expect(r.coverage).toBe(1);
+  });
+
+  test('rejects when the hull is absent', () => {
+    const pool = new Map([['2048', 2]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 2]]), mode: ACQ_MODES.FULL,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.hullPresent).toBe(false);
+  });
+
+  test('rejects on a short module quantity and reports the gap', () => {
+    const pool = new Map([['24698', 1], ['2048', 1]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 3]]), mode: ACQ_MODES.FULL,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.missing).toEqual([{ type_id: '2048', qty: 2 }]);
+  });
+});
+
+describe('evaluateBuild — fitsNoHull mode', () => {
+  test('accepts when modules are present and the hull is not', () => {
+    const pool = new Map([['2048', 1]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 1]]), mode: ACQ_MODES.FITS_NO_HULL,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  test('rejects when the hull IS present', () => {
+    const pool = new Map([['24698', 1], ['2048', 1]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 1]]), mode: ACQ_MODES.FITS_NO_HULL,
+    });
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe('evaluateBuild — marketCompletable mode', () => {
+  const market = { by_type: { 2281: { min_price: 500, total_volume: 10, order_count: 2 } } };
+
+  test('accepts at exactly the threshold when the gap is on the market', () => {
+    const pool = new Map([['24698', 1], ['2048', 8]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 8], ['2281', 2]]),
+      mode: ACQ_MODES.MARKET, market, threshold: ACQ_MARKET_THRESHOLD,
+    });
+    expect(r.coverage).toBeCloseTo(0.8);
+    expect(r.ok).toBe(true);
+    expect(r.missing).toEqual([{ type_id: '2281', qty: 2 }]);
+  });
+
+  test('rejects just under the threshold', () => {
+    const pool = new Map([['24698', 1], ['2048', 7]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 8], ['2281', 2]]),
+      mode: ACQ_MODES.MARKET, market, threshold: ACQ_MARKET_THRESHOLD,
+    });
+    expect(r.coverage).toBeCloseTo(0.7);
+    expect(r.ok).toBe(false);
+  });
+
+  test('rejects when the market has the type but too few units', () => {
+    const thin = { by_type: { 2281: { min_price: 500, total_volume: 1, order_count: 1 } } };
+    const pool = new Map([['24698', 1], ['2048', 8]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 8], ['2281', 2]]),
+      mode: ACQ_MODES.MARKET, market: thin, threshold: ACQ_MARKET_THRESHOLD,
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  test('rejects when the market lacks the type entirely', () => {
+    const pool = new Map([['24698', 1], ['2048', 8]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 8], ['9999', 2]]),
+      mode: ACQ_MODES.MARKET, market, threshold: ACQ_MARKET_THRESHOLD,
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  test('rejects when the hull is absent even at full module coverage', () => {
+    const pool = new Map([['2048', 8], ['2281', 2]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([['2048', 8], ['2281', 2]]),
+      mode: ACQ_MODES.MARKET, market, threshold: ACQ_MARKET_THRESHOLD,
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  test('a fit needing nothing scores full coverage', () => {
+    const pool = new Map([['24698', 1]]);
+    const r = evaluateBuild({
+      pool, hullTypeId: 24698, units: units([]), mode: ACQ_MODES.MARKET,
+      market, threshold: ACQ_MARKET_THRESHOLD,
+    });
+    expect(r.coverage).toBe(1);
+    expect(r.ok).toBe(true);
+  });
+});

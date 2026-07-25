@@ -125,9 +125,49 @@ function fitModuleUnits(fit) {
   return { units, unevaluatable };
 }
 
+/**
+ * Test one build of one ship against the pool as it currently stands.
+ *
+ * Pure: never mutates `pool`. The caller deducts on acceptance, which is what
+ * stops two ships being promised the same module.
+ */
+function evaluateBuild({ pool, hullTypeId, units, mode, market, threshold = ACQ_MARKET_THRESHOLD }) {
+  const hullKey = hullTypeId != null ? String(hullTypeId) : null;
+  const hullPresent = hullKey != null && (pool.get(hullKey) || 0) >= 1;
+
+  let required = 0;
+  let held = 0;
+  const missing = [];
+  for (const [tid, need] of units) {
+    const have = Math.min(pool.get(tid) || 0, need);
+    required += need;
+    held += have;
+    if (have < need) missing.push({ type_id: tid, qty: need - have });
+  }
+  const coverage = required === 0 ? 1 : held / required;
+
+  let ok;
+  if (mode === ACQ_MODES.FULL) {
+    ok = hullPresent && missing.length === 0;
+  } else if (mode === ACQ_MODES.FITS_NO_HULL) {
+    ok = !hullPresent && missing.length === 0;
+  } else {
+    // Every shortfall must be buyable in the quantity needed — a type that is
+    // listed but nearly sold out does not make the build completable.
+    const buyable = missing.every((m) => {
+      const byType = market?.by_type || {};
+      const entry = byType[m.type_id] || byType[Number(m.type_id)];
+      return !!entry && (entry.total_volume || 0) >= m.qty;
+    });
+    ok = hullPresent && coverage >= threshold && buyable;
+  }
+
+  return { ok, hullPresent, coverage, missing };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     mergeInventory, splitInventory, ACQ_HULL_CATEGORY_ID,
-    ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits,
+    ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits, evaluateBuild,
   };
 }
