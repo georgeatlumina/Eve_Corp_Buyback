@@ -10,7 +10,10 @@ import json
 import sys
 import os
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -35,7 +38,11 @@ def _char_info(alliance_id=ALLIANCE_ID_MAIN, corp_id=CORP_ID):
     return {'corporation_id': corp_id, 'alliance_id': alliance_id}
 
 
-def _sold_contract(contract_id=1, date_completed='2026-06-20T12:00:00+00:00', corp_id=CORP_ID):
+def _sold_contract(contract_id=1, date_completed=None, corp_id=CORP_ID):
+    # Default to a completion date safely inside the scan's 30-day window,
+    # computed relative to now so the fixture doesn't age out over real time.
+    if date_completed is None:
+        date_completed = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
     return {
         'contract_id': contract_id,
         'status': 'finished',
@@ -364,3 +371,241 @@ class TestContractsSold30dEndpoint:
             from server import contracts_sold_30d
             result = contracts_sold_30d(ship_type_id=123, alliance='institute')
         assert result == {'sold_30d': None}
+
+
+# ---------------------------------------------------------------------------
+# Deferred sweep for ESI's transient 520 bursts
+# ---------------------------------------------------------------------------
+
+def _http_error(status):
+    """The HTTPError requests raises out of resp.raise_for_status()."""
+    resp = requests.Response()
+    resp.status_code = status
+    return requests.exceptions.HTTPError(f'{status} Server Error', response=resp)
+
+
+def _outstanding(contract_id, corp_id=CORP_ID):
+    return {
+        'contract_id': contract_id,
+        'type': 'item_exchange',
+        'status': 'outstanding',
+        'start_location_id': STRUCTURE_ID,
+        'issuer_corporation_id': corp_id,
+        'title': '',
+        'price': 1.0,
+    }
+
+
+class TestScanContractsItemsSweep:
+    """ESI serves bursts of 520s on the contract-items endpoint; a contract that
+    fails the first pass usually succeeds moments later. The scan retries the
+    stragglers once rather than reporting them as missing stock."""
+
+    CID = 9101
+
+    def setup_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    def teardown_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    @contextmanager
+    def _patched(self, side_effect):
+        from esi_retry import DEFAULT_ATTEMPTS  # noqa: F401 - documents the budget
+        patches = [patch(t, return_value=v) for t, v in _COMMON_PATCHES.items()]
+        patches += [
+            patch('server.fetch_character_info', return_value=_char_info()),
+            patch('server.fetch_corp_contracts', return_value=[_outstanding(self.CID)]),
+            patch('server.fetch_contract_items', side_effect=side_effect),
+            patch('server.resolve_names', return_value={}),
+            patch('server.ITEMS_SWEEP_DELAY_SECONDS', 0),
+            patch('esi_retry.time.sleep'),
+        ]
+        started = [p.start() for p in patches]
+        try:
+            yield started[-4]  # the fetch_contract_items mock
+        finally:
+            for p in patches:
+                p.stop()
+
+    def test_sweep_recovers_a_contract_that_failed_the_first_pass(self):
+        from server import _scan_contracts_stream
+        from esi_retry import DEFAULT_ATTEMPTS
+        calls = []
+
+        def flaky(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) <= DEFAULT_ATTEMPTS:      # burn the whole first pass
+                raise _http_error(520)
+            return [{'type_id': 123, 'quantity': 2, 'is_included': True}]
+
+        with self._patched(flaky):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        contracts = _done(events)['payload']['contracts']
+        assert len(contracts) == 1
+        assert contracts[0]['items_error'] is None, 'sweep should have cleared the error'
+        assert contracts[0]['items'][0]['quantity'] == 2
+
+    def test_sweep_reports_progress(self):
+        from server import _scan_contracts_stream
+        from esi_retry import DEFAULT_ATTEMPTS
+        calls = []
+
+        def flaky(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) <= DEFAULT_ATTEMPTS:
+                raise _http_error(520)
+            return []
+
+        with self._patched(flaky):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        steps = ' | '.join(_steps(events))
+        assert 'retrying in' in steps
+        assert 'Sweep recovered 1 of 1' in steps
+
+    def test_persistent_failure_still_reported(self):
+        from server import _scan_contracts_stream
+
+        def always_520(*_args, **_kwargs):
+            raise _http_error(520)
+
+        with self._patched(always_520):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        contracts = _done(events)['payload']['contracts']
+        assert contracts[0]['items_error'] is not None
+        assert '520' in contracts[0]['items_error']
+
+    def test_4xx_is_not_retried(self):
+        """A 403 can't be fixed by retrying, and each attempt eats ESI's error
+        budget — one try per pass, not one per attempt."""
+        from server import _scan_contracts_stream
+
+        def forbidden(*_args, **_kwargs):
+            raise _http_error(403)
+
+        with self._patched(forbidden) as mock_items:
+            _collect(_scan_contracts_stream(alliance='main'))
+
+        assert mock_items.call_count == 2, 'one first-pass try + one sweep try'
+
+
+# ---------------------------------------------------------------------------
+# Scan run history
+# ---------------------------------------------------------------------------
+
+class TestScanRunHistory:
+    """One record per scan, and a broken store never breaks the scan.
+
+    Design: docs/superpowers/specs/2026-07-24-scan-history-design.md
+    """
+
+    CID = 9201
+
+    def setup_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    def teardown_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    @contextmanager
+    def _patched(self, appended, items_side_effect=None, append_impl=None):
+        kwargs = ({'side_effect': items_side_effect} if items_side_effect
+                  else {'return_value': [{'type_id': 123, 'quantity': 1, 'is_included': True}]})
+        patches = [patch(t, return_value=v) for t, v in _COMMON_PATCHES.items()]
+        patches += [
+            patch('server.fetch_character_info', return_value=_char_info()),
+            patch('server.fetch_corp_contracts', return_value=[_outstanding(self.CID)]),
+            patch('server.fetch_contract_items', **kwargs),
+            patch('server.resolve_names', return_value={}),
+            patch('server.ITEMS_SWEEP_DELAY_SECONDS', 0),
+            patch('esi_retry.time.sleep'),
+            patch('server.append_run', side_effect=append_impl or appended.append),
+        ]
+        started = [p.start() for p in patches]
+        try:
+            yield started[-1]
+        finally:
+            for p in patches:
+                p.stop()
+
+    def test_scan_appends_exactly_one_record(self):
+        from server import _scan_contracts_stream
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        assert len(appended) == 1
+
+    def test_record_has_the_documented_shape(self):
+        from server import _scan_contracts_stream
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        for field in ('started', 'seconds', 'alliance', 'contracts', 'corps_scanned',
+                      'items_fetched', 'items_cached', 'items_failed', 'esi_errors',
+                      'retries', 'sweep_attempted', 'sweep_recovered', 'phases',
+                      'git', 'dirty', 'app_version'):
+            assert field in rec, f'missing {field}'
+        assert rec['alliance'] == 'main'
+        assert rec['contracts'] == 1
+        assert rec['items_fetched'] == 1
+        assert rec['items_failed'] == 0
+        assert set(rec['phases']) == {'contracts', 'items', 'names'}
+
+    def test_fetch_totals_reconcile(self):
+        from server import _scan_contracts_stream
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        assert rec['items_fetched'] + rec['items_cached'] + rec['items_failed'] == rec['contracts']
+
+    def test_records_esi_errors_and_retries(self):
+        from server import _scan_contracts_stream
+        from esi_retry import DEFAULT_ATTEMPTS
+        appended = []
+        calls = []
+
+        def flaky(*_a, **_k):
+            calls.append(1)
+            if len(calls) <= DEFAULT_ATTEMPTS:
+                raise _http_error(520)
+            return []
+
+        with self._patched(appended, items_side_effect=flaky):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        assert rec['esi_errors']['520'] == DEFAULT_ATTEMPTS
+        assert rec['retries'] == DEFAULT_ATTEMPTS - 1
+        assert rec['sweep_attempted'] == 1
+        assert rec['sweep_recovered'] == 1
+        assert rec['items_failed'] == 0
+
+    def test_cached_items_counted_as_cached_not_fetched(self):
+        from server import _scan_contracts_stream
+        import server
+        server._contract_items_cache[self.CID] = [{'type_id': 123, 'quantity': 1, 'is_included': True}]
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        assert rec['items_cached'] == 1
+        assert rec['items_fetched'] == 0
+
+    def test_store_failure_does_not_break_the_scan(self):
+        from server import _scan_contracts_stream
+
+        def boom(_record):
+            raise OSError('disk full')
+
+        with self._patched([], append_impl=boom):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+        done = _done(events)
+        assert done['payload']['contracts'][0]['contract_id'] == self.CID
