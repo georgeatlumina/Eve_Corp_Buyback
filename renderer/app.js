@@ -4422,6 +4422,31 @@ function haulxUpdateTotals() {
   if (clearBtn) clearBtn.disabled = !anySelected;
 }
 
+// The button is the only signal that a lookup failed: it stays hidden while
+// every price and volume settles cleanly, and its count is of failed *lookups*
+// rather than of ships, matching how the progress bar totals its work.
+function haulxUpdateRetryButton(inFlight = false) {
+  const btn = $('#haulx-retry');
+  if (!btn) return;
+  if (inFlight) {
+    btn.hidden = false;
+    btn.disabled = true;
+    btn.textContent = 'Retrying…';
+    btn.title = '';
+    return;
+  }
+  const priceFails = haulxFailedPrice.size;
+  const buyFails = haulxFailedBuy.size;
+  const total = priceFails + buyFails;
+  btn.hidden = total === 0;
+  btn.disabled = false;
+  btn.textContent = `↻ Retry ${total}`;
+  const parts = [];
+  if (priceFails) parts.push(`${priceFails} volume/price lookup${priceFails === 1 ? '' : 's'}`);
+  if (buyFails) parts.push(`${buyFails} buy-price lookup${buyFails === 1 ? '' : 's'}`);
+  btn.title = parts.length ? `${parts.join(' and ')} failed — click to try again` : '';
+}
+
 // Flag a row as un-addable (empty `reason` clears the flag). Blocked rows get the
 // same red treatment as a hull with no fit in Auth, their qty is forced to 0, and
 // the qty input + max button are locked so they can't enter a haul.
@@ -4617,6 +4642,25 @@ async function haulxFetchPrices(quotas) {
       ? 'Ships with no fit in Auth, or whose fit has an unpriced item, can\'t be added'
       : '';
   }
+
+  haulxUpdateRetryButton();
+}
+
+// Re-run only the lookups that errored. Eviction is the whole trick:
+// haulxFetchPrices skips any type id already present in a cache, so deleting
+// the failed entries is what makes them fetch again. The haulxPriceCache entry
+// goes too — its packaged_volume is written only when the entry is first
+// created, so a stale one would survive a successful refetch.
+async function haulxRetryFailed(quotas) {
+  haulxUpdateRetryButton(true);
+  for (const tid of haulxFailedPrice) {
+    delete haulxItemPriceCache[tid];
+    delete haulxPriceCache[tid];
+  }
+  for (const tid of haulxFailedBuy) delete haulxItemBuyCache[tid];
+  haulxFailedPrice.clear();
+  haulxFailedBuy.clear();
+  await haulxFetchPrices(quotas);
 }
 
 function renderHaulxTab() {
@@ -4652,6 +4696,7 @@ function renderHaulxTab() {
       <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
       <button id="haulx-fill-priority" class="link-btn" disabled>Fill by priority</button>
       <span id="haulx-fill-note" class="muted" style="font-size:0.78rem;color:#ef4444"></span>
+      <button id="haulx-retry" class="link-btn" hidden>↻ Retry</button>
       <button id="haulx-clear" class="link-btn" disabled>Clear</button>
       <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
         <input type="checkbox" id="haulx-over-quota" ${haulxOverQuota ? 'checked' : ''}> Allow over quota
@@ -4826,6 +4871,8 @@ function renderHaulxTab() {
     for (const input of tbody.querySelectorAll('.haulx-qty')) input.value = 0;
     haulxUpdateTotals();
   });
+
+  $('#haulx-retry')?.addEventListener('click', () => haulxRetryFailed(orderedQuotas));
 
   $('#haulx-over-quota')?.addEventListener('change', (e) => {
     haulxOverQuota = e.target.checked;
