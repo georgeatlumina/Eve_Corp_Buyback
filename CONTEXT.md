@@ -194,6 +194,25 @@ market snapshot via `fetch_structure_orders_paged` — streamed because the EVE
 structure-markets endpoint is paginated and slow. Readiness state persists in
 localStorage so a fresh app launch can resume the previous scan.
 
+### Module Sorter (doctrine vs non-doctrine split)
+
+A General-tab utility ([renderer/module-sorter.js](renderer/module-sorter.js))
+that takes a pasted EVE inventory (or any multibuy list) and splits it into
+**doctrine** vs **non-doctrine** items in two copy/download panes. It's a pure
+renderer feature — **no new endpoint**. The doctrine set is the union of every
+item across every fit in the **Market Readiness scan** (`readinessState.scan` in
+localStorage, read as a cross-script global — the same source the Market
+doctrine lens and HaulX use), matched by normalised (trim / lowercase /
+whitespace-collapsed) name since EVE emits the same spelling on both sides.
+The paste parser handles tab-separated inventory rows (`Name⇥Qty⇥Group⇥…`),
+`Name xN` multibuy, and bare names, summing duplicate stacks; output is sorted
+multibuy (`Name xQty`). An "exclude hulls" toggle reclassifies the doctrine ship
+hulls (tracked separately from modules) to the non-doctrine side. Because the
+feature is useless without a scan, opening the tab with no scan present
+**auto-triggers `scanAllFits()` in the background** (once per session; skips if a
+scan already exists or a manual scan is running), then re-renders when it lands
+— the convenience path for a machine that's never run Readiness.
+
 ### Contracts dashboard (`GET /api/contracts/scan`)
 
 Streamed from `_scan_contracts_stream` in [python/server.py](python/server.py):

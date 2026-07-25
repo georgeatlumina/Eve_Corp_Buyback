@@ -23,6 +23,7 @@
           <button class="tab-btn" data-tab="doctrines">Doctrines</button>
           <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
           <button class="tab-btn" data-tab="readiness">Market Readiness</button>
+          <button class="tab-btn" data-tab="module-sorter">Module Sorter</button>
           <button class="tab-btn" data-tab="market">Market</button>
         </div>
       </div>
@@ -431,6 +432,45 @@
       </div>
       <p id="readiness-status" class="muted"></p>
       <div id="readiness-content"></div>
+    </section>
+
+    <section id="tab-module-sorter" class="tab">
+      <h2>Doctrine Module Sorter</h2>
+      <p class="muted">Paste a copied EVE inventory (select all in the inventory window, <kbd>Ctrl</kbd>+<kbd>C</kbd>) or any multibuy list. Every line is split into <strong>doctrine</strong> vs <strong>non-doctrine</strong> items, matched against every fit from the <a href="#" data-tab-link="readiness">Market Readiness</a> scan. Copy or download either side as a multibuy list.</p>
+      <p id="module-sorter-source" class="muted"></p>
+      <div class="ms-input">
+        <textarea id="module-sorter-input" placeholder="Damage Control II&#9;3&#10;Multispectrum Coating II&#9;5&#10;Tritanium&#9;120000&#10;…or…&#10;Warden II x5&#10;Scourge Fury Heavy Missile x1000" spellcheck="false"></textarea>
+      </div>
+      <div class="actions">
+        <button id="btn-module-sorter-sort" type="button">Sort</button>
+        <button id="btn-module-sorter-clear" type="button" class="secondary">Clear</button>
+        <label class="ms-hide-hulls"><input type="checkbox" id="module-sorter-exclude-hulls" /> Treat doctrine hulls as non-doctrine</label>
+      </div>
+      <p id="module-sorter-status" class="muted"></p>
+      <div class="ms-columns">
+        <div class="ms-pane">
+          <div class="ms-pane-head">
+            <strong>Doctrine modules</strong>
+            <span id="module-sorter-doctrine-count" class="muted"></span>
+          </div>
+          <textarea id="module-sorter-doctrine-out" class="ms-out" readonly spellcheck="false"></textarea>
+          <div class="actions">
+            <button id="btn-module-sorter-copy-doctrine" type="button" class="secondary">Copy</button>
+            <button id="btn-module-sorter-download-doctrine" type="button" class="secondary">Download</button>
+          </div>
+        </div>
+        <div class="ms-pane">
+          <div class="ms-pane-head">
+            <strong>Non-doctrine modules</strong>
+            <span id="module-sorter-other-count" class="muted"></span>
+          </div>
+          <textarea id="module-sorter-other-out" class="ms-out" readonly spellcheck="false"></textarea>
+          <div class="actions">
+            <button id="btn-module-sorter-copy-other" type="button" class="secondary">Copy</button>
+            <button id="btn-module-sorter-download-other" type="button" class="secondary">Download</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="tab-contracts" class="tab">
@@ -863,6 +903,7 @@
   <script src="market.js"></script>
   <script src="stockpile.js"></script>
   <script src="doctrine-stock.js"></script>
+  <script src="module-sorter.js"></script>
   <script src="indy.js"></script>
   <script src="builds-overview.js"></script>
 </body>

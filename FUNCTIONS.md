@@ -732,6 +732,27 @@ Tab-open handlers call `loadMine(false)` / `loadFulfil(false)` for lazy first lo
 
 ---
 
+## `renderer/module-sorter.js` — Module Sorter tab (~240 LOC)
+
+[renderer/module-sorter.js](renderer/module-sorter.js). Self-contained IIFE loaded after `app.js` (reuses `$`/`escapeHtml`/`downloadBlob`; reads `readinessState`/`scanAllFits`/`activateTab` as cross-script globals). Splits a pasted EVE inventory / multibuy list into **doctrine** vs **non-doctrine** panes against the Market Readiness scan. Pure renderer — no endpoint.
+
+| Function | Purpose |
+|---|---|
+| `norm(s)` | Normalise a type name for matching (trim / lowercase / whitespace-collapse) — EVE emits the same spelling on both sides so this is enough. |
+| `parseQty(s)` | Pull an integer quantity out of a string, stripping thousands separators (any locale); `null` when there's no positive number. |
+| `doctrineSet()` | Build the doctrine item set from `readinessState.scan.fits`: `byName` (normName → canonical display name, union across all fits), `hullNames` (per-fit `hullName`, so hulls can be excluded), plus `fitCount`/`itemCount`/`scannedAt`. |
+| `hasUsableScan()` | True when `readinessState.scan.fits` is present and non-empty (guards the auto-scan + source line). |
+| `parseInventory(text)` | Parse a paste into `[{name, qty}]` — tab-separated inventory rows (`Name⇥Qty⇥Group⇥…`, scanning later columns for the qty), `Name xN` multibuy, or bare names (qty 1). |
+| `aggregate(items, byName)` | Sum duplicate names into `Map(normName → {name, qty})`, preferring the doctrine spelling for matched items. |
+| `toMultibuy(rows)` / `sumUnits(rows)` | Name-sorted `Name xQty` block; total unit count. |
+| `renderSource()` | The doctrine-set status line — item/fit counts + scan time, or the "no scan / scan running / auto-starting" message. |
+| `maybeAutoScan()` | First-run convenience: if no usable scan and none running, set `autoScanTried` and `await scanAllFits()` in the background, then re-render + reclassify. Once per session; a failed attempt (e.g. not signed in to AA) waits until restart. |
+| `sort()` | Classify every aggregated line (in `byName`, honouring the exclude-hulls toggle → doctrine, else non-doctrine), write both output textareas + counts + status. Bound to input/change for live sorting. |
+| `copyOut(id, label)` / `downloadOut(id, filename, label)` | Clipboard copy / `downloadBlob` a pane's multibuy text. |
+| `initTab()` + static wiring | On tab open: render source, fire `maybeAutoScan()`, and (first time) wire the Sort/Clear/copy/download buttons, the exclude-hulls toggle, live-input sorting, and the in-tab "Market Readiness" `data-tab-link` shortcut. |
+
+---
+
 ## `renderer/calculator.js` — popout calculator (211 LOC)
 
 [renderer/calculator.js](renderer/calculator.js)

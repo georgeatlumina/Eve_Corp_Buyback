@@ -1052,3 +1052,13 @@ body.liq-full main { max-width: none; }
 /* Plan HaulX tab */
 .haulx-metric { color: #4a8; transition: color 0.15s; }
 .haulx-metric.haulx-over { color: #ef4444; }
+
+/* Doctrine Module Sorter tab */
+.ms-input textarea { width: 100%; min-height: 140px; padding: 0.6em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; resize: vertical; box-sizing: border-box; }
+.ms-hide-hulls { display: inline-flex; align-items: center; gap: 0.3em; font-size: 0.9em; color: #ccc; }
+.ms-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 1em; margin-top: 0.6em; }
+.ms-pane { display: flex; flex-direction: column; gap: 0.4em; }
+.ms-pane-head { display: flex; align-items: baseline; gap: 0.6em; }
+.ms-pane-head strong { color: #cfe6da; }
+.ms-out { width: 100%; min-height: 240px; padding: 0.6em; background: #181818; color: #dfe; border: 1px solid #3a3a3a; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; resize: vertical; box-sizing: border-box; }
+.ms-pane .actions { margin: 0.2em 0 0; }

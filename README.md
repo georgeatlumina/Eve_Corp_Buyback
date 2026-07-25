@@ -8,10 +8,11 @@ that they were issued to the correct structure for their item category, and —
 for moon contracts — refines the compressed ore and reports a recommended ISK
 payout. Highlights:
 
-- **Buyback + Moon** tabs with click-to-copy payout figures, EVE-mail
-  templates for one-click accept/reject, an **outstanding-to-be-accepted
-  total** at the top of each page (counts only the rows you'd actually pay
-  out), and live progress as the streaming fetch runs.
+- A **Buybacks** tab with **General Buyback** and **Ore Buyback** (moon)
+  sub-panes: click-to-copy payout figures, EVE-mail templates for one-click
+  accept/reject, an **outstanding-to-be-accepted total** at the top of each
+  pane (counts only the rows you'd actually pay out), and live progress as the
+  streaming fetch runs.
 - A **Working** tab for offline admin processing — pin any moon row, paste
   the real refined minerals from the refinery into a per-pin Janice paste
   box, get back the buy total × the contract's blended payout fraction.
@@ -25,6 +26,9 @@ payout. Highlights:
   once and everyone pulls.
 - An **Alliance Auth doctrine readiness scanner** that cross-references
   each fit against the configured structure's market.
+- A **Module Sorter** that splits a pasted EVE inventory into doctrine vs
+  non-doctrine items against the readiness scan's fit list — two copyable /
+  downloadable multibuy panes.
 - A **Sov** tab built on public ESI (IHUB ADM, system jumps/kills,
   incursions) — no auth required.
 - An **Indy** section (Build Planner + Build Fulfilment) for industry
@@ -64,15 +68,16 @@ matching package to `~/Downloads`, and hands it to your package manager to finis
    2 & 3** are optional alts: if they hold director / Contract Manager roles
    in *other* alliance corps, logging them in widens the Contracts-tab
    coverage to those corps.
-3. **Fetch buyback contracts** — go to the **Buyback** tab and click *Fetch &
-   validate*. Each outstanding contract is appraised against Janice and
-   checked against your routing rules. Green = approve, red = reject, with the
-   failure reason shown inline.
-4. **Process moon contracts** — go to the **Moon** tab and click *Fetch &
-   process*. Each moon (item-exchange, price = 0) contract is refined using
-   your configured efficiencies and a recommended payout is shown. Use the
-   built-in calculator sidebar to quickly multiply by 70/80/90% if you want
-   to adjust on the fly.
+3. **Fetch buyback contracts** — go to the **Buybacks** tab (the **General
+   Buyback** sub-pane, selected by default) and click *Fetch & validate*. Each
+   outstanding contract is appraised against Janice and checked against your
+   routing rules. Green = approve, red = reject, with the failure reason shown
+   inline.
+4. **Process moon contracts** — on the **Buybacks** tab, switch to the **Ore
+   Buyback** sub-pane and click *Fetch & process*. Each moon (item-exchange,
+   price = 0) contract is refined using your configured efficiencies and a
+   recommended payout is shown. Use the built-in calculator sidebar to quickly
+   multiply by 70/80/90% if you want to adjust on the fly.
 5. **Check doctrine stocking** — go to the **Contracts** tab and click *Scan
    contracts*. The app walks every authenticated slot's corp endpoint,
    filters to outstanding item-exchange contracts at your home structure,
@@ -81,20 +86,203 @@ matching package to `~/Downloads`, and hands it to your package manager to finis
    buttons make it easy to top up missing stock. If the alliance is on the
    private-repo workflow, ticking *Auto-sync on app start* keeps your local
    quotas in lockstep with the shared `quotas.json`.
-6. **Process pinned contracts offline (Working tab).** On the Moon tab,
-   click *📌 Pin to Working* on any result row to copy the full snapshot
+6. **Process pinned contracts offline (Working tab).** On the **Ore Buyback**
+   pane, click *📌 Pin to Working* on any result row to copy the full snapshot
    into the Working tab. Open the pin, paste the actual refined-mineral
    output from your refinery into the Janice paste box, hit *Appraise &
    apply N%* — the app re-runs the Janice appraisal and multiplies by the
    contract's blended payout fraction. Notes + status (`pending` / `paid`
-   / `disputed`) persist on disk; pins survive app restarts and Moon-tab
+   / `disputed`) persist on disk; pins survive app restarts and Ore-Buyback
    re-fetches.
 7. **One-shot appraisals (Appraisal tab).** Paste any EVE-format inventory
    (Ctrl/Cmd-Enter to fire), get a Janice block with Buy / Split / Sell
    totals. Click any headline or percentage chip to copy the integer.
-8. **Send mail** — once mail presets are configured (Mail tab), every contract
+8. **Sort loot into doctrine vs not (Module Sorter tab).** Paste a copied EVE
+   inventory; it splits into doctrine and non-doctrine modules against your
+   Market Readiness scan, each pane copyable / downloadable as a multibuy. If
+   you've never run a readiness scan, opening the tab starts one automatically.
+9. **Send mail** — once mail presets are configured (Mail tab), every contract
    row gets a button per preset. Click it to preview the rendered mail and
    send it to that contract's issuer.
+
+## How each page works
+
+The nav bar groups the tabs into **General**, **Operations**, **Indy**, and
+**Settings** dropdowns, with a **Member / Admin** toggle on the left. Member
+view hides the admin-heavy Operations tabs; Admin view shows everything. The
+**Indy** group only appears for characters in the Alliance Auth "Industry
+Pilot" group (or in Admin view). Below is what each page does and how you drive
+it.
+
+### General
+
+- **Appraisal.** A one-shot Janice pad. Paste anything from an in-game
+  inventory window, pick a trade hub, and hit *Appraise* (or `Ctrl/Cmd +
+  Enter`). You get three side-by-side price columns — Buy / Split / Sell — each
+  with a click-to-copy headline and a row of 80 / 90 / 100 / 110 / 120 %
+  modifier chips, an effective-prices drawer when smoothed prices differ from
+  the book, and an optional shareable `janice.e-351.com/a/…` link. No config or
+  login needed.
+
+- **Sov.** A read-only sovereignty dashboard built entirely on **public ESI** —
+  no auth. One *Refresh* pulls IHUB ADM, the system ownership map, active
+  campaigns, per-system jumps/kills, and incursions into a single view.
+
+- **Doctrines.** Browses the alliance's fittings from Alliance Auth
+  (`auth.navaldefence.org`). Sign in once via the in-app button (the session is
+  remembered); the tab then drills doctrine list → a doctrine's fits → a fit's
+  modules + hull. This is the login other AA-backed tabs (Readiness, SRP) reuse.
+
+- **Doctrine Stock.** A **read-only member view** of the Contracts-tab quota
+  results — current hull stock and gaps at the home structure — published by an
+  admin's Contracts scan. No login or special role: it reads a GitHub-hosted
+  snapshot (with a local-cache fallback). Toggle **NLDF / NLDO**, sort by
+  biggest gap, tick *Only show gaps*, and use *Export gap CSV* / *Copy shopping
+  list* to top up what's short. Green = stocked, amber = partial, red = empty.
+
+- **Market Readiness.** *Scan all fits* walks every doctrine/fit on Alliance
+  Auth and cross-references each against the first configured structure's live
+  market, reporting per-fit availability and per-doctrine readiness. Capital-tier
+  fits are off by default (toggle in *Settings ▾*); a search box filters by
+  doctrine/fit name. **This scan is the data source** for the Module Sorter, the
+  Market tab's doctrine lens, and HaulX — it persists to disk so a fresh launch
+  resumes it.
+
+- **Module Sorter.** Paste a copied EVE inventory (select-all in the inventory
+  window, `Ctrl+C`) or any multibuy list; every line is split into **doctrine**
+  vs **non-doctrine** items in two panes, each copyable and downloadable as a
+  multibuy list. The doctrine set is the union of every item across every fit
+  from the Market Readiness scan, matched by name (duplicate stacks are summed).
+  Sorting is live as you type. A **"Treat doctrine hulls as non-doctrine"**
+  toggle moves the doctrine ship hulls to the non-doctrine side when you're only
+  sorting loot/modules. If this machine has **never run a readiness scan**, the
+  tab kicks one off automatically in the background the first time you open it
+  (once per session — a failed attempt, e.g. not signed in to Alliance Auth,
+  waits until restart); until a scan exists everything is treated as
+  non-doctrine.
+
+- **Market.** Analytics over the **first configured structure's** live order
+  book: best sell/buy, order counts, ISK depth and spread per type in a
+  sortable / searchable / category-filterable table, plus market-wide totals. A
+  **doctrine lens** toggle swaps the table to doctrine-required items only (read
+  from the Readiness scan) with quantity-aware shortfall. **Turnover** cards
+  show net on-book change over 24h / 72h / weekly / monthly, filling in as the
+  app's daily snapshot archive accrues. Snapshot-based — ESI exposes no
+  per-structure history.
+
+### Operations
+
+- **Buybacks.** Two sub-panes toggled at the top. **General Buyback** — *Fetch &
+  validate* pulls outstanding buyback contracts, re-appraises each against
+  Janice, and checks the price threshold + structure routing; rows go
+  green (approve) / red (reject) with the failure reason inline, filterable by
+  All / Approve / Reject / Errors, with an *outstanding-to-be-accepted* total up
+  top. **Ore Buyback** — *Fetch & process* refines each moon (price-0
+  item-exchange) contract to a recommended refined-mineral payout, with a
+  numpad calculator sidebar (70/80/90 % copy) you can pop out. Both panes show
+  wallet tiles and per-row mail buttons once presets exist. See
+  [Configuration](#configuration) for the pricing/routing rules.
+
+- **Working.** An offline workspace for moon-contract triage. On the Ore Buyback
+  pane click *📌 Pin to Working* on any row; open its card here, paste the
+  **actual refined minerals** from your refinery, and *Appraise & apply N%*
+  re-runs Janice and multiplies by the contract's snapshot-derived blended
+  payout fraction. Status (`pending`/`paid`/`disputed`) and notes persist on
+  disk; pins survive re-fetches and restarts.
+
+- **Contracts.** The admin doctrine-stocking scan. *Scan contracts* walks every
+  authenticated slot's corp contracts endpoint, filters to outstanding
+  item-exchange contracts at the home structure, and tallies each against the
+  configured quotas — per-quota green/amber/red bars with *Export gap CSV* /
+  *Copy shopping list*. Each scan **auto-publishes** the Doctrine Stock snapshot
+  members read. Needs a Contract Manager / Director token; see
+  [Configuration](#contracts-dashboard--home-structure--quotas).
+
+- **Acquisitions** *(experimental)*. Paste your full inventory (hulls and
+  modules together, EVE `Name⇥Qty` format); it auto-splits into a **Hulls**
+  table and a **Modules & Ammo** table, resolving each line to a type, and
+  persists the result across restarts.
+
+- **HaulX.** Plans a **PushX haul** (Jita → UEXO) of doctrine fits: it prices
+  each addable fit (full fit price + volume, from the Readiness scan), lets you
+  set quantities, and fills toward the per-haul volume (360 km³) and collateral
+  (5 B ISK) caps — surfacing the flat shipping cost and the projected profit at
+  the alliance's 1.20× sell markup, with a copyable multibuy.
+
+- **SRP.** Pulls outstanding Ship Replacement requests from
+  `auth.navaldefence.org/srp/` (reusing the Doctrines-tab AA login) and computes
+  a recommended payout = scheme rate × the killboard loss value. Each request's
+  category is inferred from the killmail's fitted modules (command bursts ⇒
+  Links, remote reps ⇒ Logistics 100 %, interdictors ⇒ 100 %; else Standard
+  75 %), each hull is flagged if not in the doctrine list, and a per-row dropdown
+  lets you switch scheme (Fight Club ≤10 M / Hisec-NPC ≤5 M) or correct a guess.
+  Recommended figures and pilot names are click-to-copy. Eligibility stays your
+  call — this only does the math.
+
+- **Liquidation.** Turns bought-back inventory back into ISK. **Analyze / Plan** —
+  paste a courier contract (or one-click *Analyze →* one from its Janice-URL
+  title) for a per-item margin table ranked by annualized ROI, each recommending
+  *list* (with the tightest window that fits its sell time), *dump* (hit a buy
+  order now), or *underwater*; exportable, with a slide-out price+volume chart.
+  **Shipments** — live ESI courier contracts plus a shared tracked-shipment
+  board (PushX cost + ETA). **Open orders** — the corp's live Jita sell orders
+  with fill %, undercut and **STALE** flags.
+
+- **Hooks & Hubs** *(admin — Director slot 4)*. *Refresh fuel* reads Orbital
+  Skyhook + Sovereignty Hub `fuel_expires` live from ESI into per-type overview
+  tiles + a time-remaining table (red < 3 days, amber < 7). Below it, a **manual**
+  upgrade/workforce planner (Equinox power/workforce/upgrades aren't in ESI)
+  live-checks feasibility — power is local, workforce transfers between systems —
+  and persists locally. *Import systems from my sov hubs* seeds it from the fuel
+  half.
+
+- **Build Overview** *(admin)*. A read-only timeline of every planned build
+  (same source as Build Fulfilment): a **month calendar** placing each build on
+  its estimated completion date, and a **gantt** from created → due grouped by
+  builder. Alliance-coloured, with a click-to-open detail panel (build → slots →
+  missing materials) and CSV export.
+
+- **Stockpile** *(admin — password-gated)*. A read-only view of the alliance's
+  on-hand stock (minerals / PI / other), pulled from the shared market-history
+  repo. Unlock it with the password on the Config tab (remembered per machine).
+  Officers in the Industry / Acquisitions Officer AA groups with *Allow stock
+  edits* on get a paste/save panel to publish new stock; a *Copy Janice
+  appraisal* button copies a shareable valuation of the whole pile.
+
+### Indy
+
+*(Visible only to Alliance Auth "Industry Pilot" group members, or in Admin
+view — see [Indy](#indy--build-planner--fulfilment) in Configuration.)*
+
+- **Build Planner.** Plan manufacturing jobs. *+ New build* → pick a doctrine
+  (dropdown of *Ship — Doctrine* from the published Doctrine Stock), set an
+  alliance (NLDF/NLDO), an estimated completion date and note, then paste the
+  in-game job's **missing materials** into the side drawer (parsed into a
+  categorised list). *Save & submit* writes it to your own file on the shared
+  repo (your builder name auto-fills). A **"Most in demand"** strip highlights
+  the hulls most short of quota.
+
+- **Build Fulfilment** *(directors)*. Aggregates every builder's missing
+  materials into one list and compares the total against alliance stock (the
+  Stockpile), colour-coded by how much can be filled now, sortable by biggest
+  shortfall or soonest deadline, with CSV / shopping-list exports.
+
+### Settings
+
+- **Config.** Every persisted setting — corp ID, structures & routing, Janice
+  market + API key, refining/payout fractions, home structure & quotas, the
+  alliance-quota and market-history repo URLs + PATs, and access toggles. See
+  [Configuration](#configuration) below for each field.
+
+- **Auth.** Multi-slot EVE SSO. **Slot 1** (required) drives wallets, corp
+  contracts, and mail. **Slots 2 & 3** are optional alts that widen Contracts
+  coverage to other corps. **Slot 4** is for a Director character (structure
+  fuel on Hooks & Hubs). Each slot has its own login/logout and shows the
+  signed-in character + token expiry.
+
+- **Mail.** Up to four named templates with variables like `{issuer_name}` /
+  `{payout}` / `{errors}`. Each becomes a button on every contract row; clicking
+  it renders the template into a preview/edit modal and sends via ESI.
 
 ## Configuration
 
@@ -162,7 +350,7 @@ roles in) at one structure.
 
 - **Home structure ID** — the numeric `start_location_id` ESI uses for that
   station/citadel. Right-click the structure in-game → *Set Destination* →
-  copy from the URL, or pull from one of the contracts in the Buyback tab.
+  copy from the URL, or pull from one of the contracts in the Buybacks tab.
   Despite the name, this field accepts both NPC station IDs and player
   structure (citadel) IDs.
 - **Home region ID (optional)** — only used by the *Lookup region* button
@@ -256,11 +444,11 @@ many contracts.
 The **Working** tab is an offline workspace for moon-contract triage.
 Workflow:
 
-1. On the **Moon** tab, click *📌 Pin to Working* on any row. The full
-   snapshot (items, refined breakdown, recommended payout, flags) is
-   POSTed to the sidecar and persisted at
+1. On the **Buybacks** tab's **Ore Buyback** pane, click *📌 Pin to Working*
+   on any row. The full snapshot (items, refined breakdown, recommended
+   payout, flags) is POSTed to the sidecar and persisted at
    `<userData>/eve_auth/pinned_contracts.json`. Survives app close + the
-   next Moon-tab re-fetch.
+   next Ore-Buyback re-fetch.
 2. Open the pin's card on the Working tab. The header shows the original
    snapshot's recommended payout + the **blended payout fraction** the app
    derived once at pin time (`(moon_payout + non_moon_payout) /
@@ -277,8 +465,8 @@ Workflow:
    border colour. *Notes* auto-save on blur. Both persist on disk with
    the pin.
 
-A calculator sidebar identical to the Moon tab's lives on the right; toggle
-with *Hide calculator* or pop it out into its own window.
+A calculator sidebar identical to the Ore Buyback pane's lives on the right;
+toggle with *Hide calculator* or pop it out into its own window.
 
 ### Appraisal tab (no config needed)
 
@@ -317,7 +505,10 @@ If you run Alliance Auth at `auth.navaldefence.org`, the **Doctrines** tab
 will pull fittings and the **Readiness** tab will cross-reference them
 against the first configured structure's market. Sign in once via the in-app
 button; the session is remembered. Capital-tier fits are excluded by default
-— toggle in the Readiness *Settings* drawer.
+— toggle in the Readiness *Settings* drawer. The readiness scan also feeds the
+**Module Sorter** (doctrine vs non-doctrine split), the **Market** tab's
+doctrine lens, and **HaulX** — so running it once unlocks those too (the Module
+Sorter will trigger it automatically the first time if you haven't).
 
 ### Sov tab (no config needed)
 
@@ -511,9 +702,9 @@ Common gotchas:
 - Read PAT needs *Contents: Read-only*; Write PAT needs *Contents: Read
   and Write*. The app surfaces a hint that distinguishes the two.
 
-### Working-tab pin disappears after re-running Moon-tab fetch
+### Working-tab pin disappears after re-running Ore-Buyback fetch
 
-Pins are stored independently of the live Moon-tab result list, so they
+Pins are stored independently of the live Ore-Buyback result list, so they
 survive re-fetches by design. If a pin vanished, the on-disk file at
 `<userData>/eve_auth/pinned_contracts.json` was either deleted or
 corrupted. Check the file — invalid JSON is treated as "no pins".
