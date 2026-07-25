@@ -4219,6 +4219,40 @@ function acqFinderInputs() {
   };
 }
 
+// What the finder is still missing, in plain language. lastContractsScan and
+// readinessState.scan are only ever set from a completed scan's payload (see
+// their assignments in the Contracts/Readiness tab code), so truthiness here
+// really does mean "ran successfully", not just "attempted".
+function acqFinderMissingScans() {
+  const missing = [];
+  if (!lastContractsScan) missing.push('a Contracts scan');
+  if (!readinessState.scan?.fits) missing.push('a Readiness scan');
+  return missing;
+}
+
+// Disables the three buttons and shows why until both prerequisite scans have
+// completed. Re-run at every render of the tab (renderAcquisitionsTab runs
+// fresh on each tab switch), so returning from Contracts/Readiness picks up
+// the new state automatically — no live listener needed.
+function acqUpdateFinderAvailability(root) {
+  const missing = acqFinderMissingScans();
+  const warnEl = root.querySelector('#acq-find-warning');
+  const buttons = [
+    root.querySelector('#acq-find-full'),
+    root.querySelector('#acq-find-nohull'),
+    root.querySelector('#acq-find-market'),
+  ];
+  if (missing.length) {
+    warnEl.hidden = false;
+    warnEl.textContent = `Run ${missing.join(' and ')} first — the build finder needs both to match inventory against quota gaps.`;
+    buttons.forEach((b) => { b.disabled = true; });
+  } else {
+    warnEl.hidden = true;
+    warnEl.textContent = '';
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
 function renderAcqFinderResults(el, result) {
   const { builds, blocked } = result;
   if (!builds.length && !blocked.length) {
@@ -4490,6 +4524,7 @@ function renderAcquisitionsTab() {
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
+    <div id="acq-find-warning" class="muted" style="font-size:0.8rem;color:#e8a838;margin-top:0.6rem" hidden></div>
     <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
       <button id="acq-find-full" class="btn" title="Quota ships this inventory can build outright">Find full hull + fits</button>
       <button id="acq-find-nohull" class="btn" title="Every module present, hull missing">Find fits without hulls</button>
@@ -4530,6 +4565,7 @@ function renderAcquisitionsTab() {
 
   const findStatusEl = root.querySelector('#acq-find-status');
   const findResultsEl = root.querySelector('#acq-find-results');
+  acqUpdateFinderAvailability(root);
   root.querySelector('#acq-find-full').addEventListener('click',
     () => acqRunFinder(ACQ_MODES.FULL, findResultsEl, findStatusEl));
   root.querySelector('#acq-find-nohull').addEventListener('click',
