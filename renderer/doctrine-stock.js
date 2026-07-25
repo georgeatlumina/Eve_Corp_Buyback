@@ -31,6 +31,7 @@
     const snap = dsState.data[dsState.alliance];
     let rows = (snap && Array.isArray(snap.quotas)) ? snap.quotas.slice() : [];
     if (dsState.hideOk) rows = rows.filter((q) => quotaState(q) !== 'ok');
+    if (dsState.sort === 'priority') return rows;
     rows.sort((a, b) => {
       if (dsState.sort === 'under-quota') {
         const am = Number(a.missing) || 0;
