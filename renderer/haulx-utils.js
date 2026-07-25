@@ -82,6 +82,35 @@ function haulxFillByPriority(quotas, priceCache, overQuota, maxVol = HAULX_MAX_V
   return qty;
 }
 
+/**
+ * Read a /api/market/jita-sell response, separating a real failure from a null
+ * we should believe.
+ *
+ * A null `min_sell` is honest: the item has no Jita sell order. A null
+ * `packaged_volume` is not — every type has a volume, so it only appears when
+ * the server's type-info lookup threw and swallowed the error behind a 200.
+ * Only failures are worth retrying.
+ */
+function haulxClassifySell(ok, status, data) {
+  if (!ok) return { minSell: null, vol: null, failed: true };
+  const minSell = data?.min_sell ?? null;
+  const vol = data?.packaged_volume ?? null;
+  return { minSell, vol, failed: vol == null };
+}
+
+/**
+ * Read a /api/market/jita-buy response.
+ *
+ * 422 is the server saying no Janice API key is configured. That is a settled
+ * answer rather than a blip: without this case every item on a keyless install
+ * would count as failed and the retry button would offer hundreds of lookups
+ * that can only fail again.
+ */
+function haulxClassifyBuy(ok, status, data) {
+  if (!ok) return { maxBuy: null, failed: status !== 422 };
+  return { maxBuy: data?.max_buy ?? null, failed: false };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     haulxTotals,
@@ -89,6 +118,8 @@ if (typeof module !== 'undefined' && module.exports) {
     haulxBlockReason,
     haulxIsAddable,
     haulxProfit,
+    haulxClassifySell,
+    haulxClassifyBuy,
     HAULX_MAX_VOLUME,
     HAULX_MAX_COLLATERAL,
     HAULX_SHIPPING_COST,

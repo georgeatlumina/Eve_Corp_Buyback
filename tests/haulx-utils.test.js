@@ -6,6 +6,8 @@ const {
   haulxBlockReason,
   haulxIsAddable,
   haulxProfit,
+  haulxClassifySell,
+  haulxClassifyBuy,
   HAULX_MAX_VOLUME,
   HAULX_MAX_COLLATERAL,
   HAULX_SHIPPING_COST,
@@ -282,5 +284,61 @@ describe('haulxFillByPriority', () => {
     const ships = [ship(1, 200, 3000, 1_000_000)];
     const qty = haulxFillByPriority(ships, makeCache(ships), false);
     expect(qty['1']).toBe(HAULX_MAX_VOLUME / 3000);
+  });
+});
+
+// ── haulxClassifySell / haulxClassifyBuy ─────────────────────────────────────
+
+describe('haulxClassifySell', () => {
+  test('a good response yields both numbers and is not a failure', () => {
+    expect(haulxClassifySell(true, 200, { min_sell: 1000, packaged_volume: 2500 }))
+      .toEqual({ minSell: 1000, vol: 2500, failed: false });
+  });
+
+  test('a null min_sell is an honest answer, not a failure', () => {
+    // The item is simply not on the Jita sell book. Retrying cannot change it.
+    expect(haulxClassifySell(true, 200, { min_sell: null, packaged_volume: 2500 }))
+      .toEqual({ minSell: null, vol: 2500, failed: false });
+  });
+
+  test('a null packaged_volume is a failure', () => {
+    // Every EVE type has a volume, so a null one means the server's type-info
+    // lookup threw and swallowed the error while still returning 200.
+    expect(haulxClassifySell(true, 200, { min_sell: 1000, packaged_volume: null }))
+      .toEqual({ minSell: 1000, vol: null, failed: true });
+  });
+
+  test('a non-ok response is a failure', () => {
+    expect(haulxClassifySell(false, 502, null))
+      .toEqual({ minSell: null, vol: null, failed: true });
+  });
+
+  test('a network throw, passed as ok=false with no status, is a failure', () => {
+    expect(haulxClassifySell(false, 0, null))
+      .toEqual({ minSell: null, vol: null, failed: true });
+  });
+});
+
+describe('haulxClassifyBuy', () => {
+  test('a good response yields the buy price and is not a failure', () => {
+    expect(haulxClassifyBuy(true, 200, { max_buy: 900 }))
+      .toEqual({ maxBuy: 900, failed: false });
+  });
+
+  test('a missing max_buy is an honest answer, not a failure', () => {
+    expect(haulxClassifyBuy(true, 200, { max_buy: null }))
+      .toEqual({ maxBuy: null, failed: false });
+  });
+
+  test('422 means no Janice key is configured, so it is not retryable', () => {
+    // Retrying would fail identically every time and would leave the button
+    // permanently offering hundreds of doomed lookups.
+    expect(haulxClassifyBuy(false, 422, null))
+      .toEqual({ maxBuy: null, failed: false });
+  });
+
+  test('any other non-ok response is a failure', () => {
+    expect(haulxClassifyBuy(false, 502, null))
+      .toEqual({ maxBuy: null, failed: true });
   });
 });
