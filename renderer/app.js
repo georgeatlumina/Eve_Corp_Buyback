@@ -4202,6 +4202,72 @@ function renderAcquisitionsTable(items, emptyMsg) {
   </table>`;
 }
 
+// ---------------------------------------------------------------------------
+// Build finder. All matching maths lives in acquisitions-utils.js; these only
+// gather inputs and render. Two scans outside this tab supply those inputs, so
+// their absence is reported plainly rather than guessed around.
+// ---------------------------------------------------------------------------
+
+function acqFinderInputs() {
+  const quotas = lastContractsScan?.quotas || null;
+  const fits = readinessState.scan?.fits || null;
+  if (!quotas) return { error: 'Run a Contracts scan first — quota gaps come from it.' };
+  if (!fits) return { error: 'Run a Readiness scan first — fits come from it.' };
+  return {
+    pool: buildPool(acquisitionsHulls, acquisitionsItems),
+    targets: buildTargets(quotas, fits),
+  };
+}
+
+function renderAcqFinderResults(el, result) {
+  const { builds, blocked } = result;
+  if (!builds.length && !blocked.length) {
+    el.innerHTML = '<p class="muted" style="font-size:0.875rem">No quota gaps to evaluate.</p>';
+    return;
+  }
+  // Identical builds collapse into a count — five of the same fit is one row.
+  const counts = new Map();
+  for (const b of builds) {
+    const key = `${b.shipName}||${b.fitName || ''}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const rows = [...counts.entries()].map(([key, n]) => {
+    const [ship, fit] = key.split('||');
+    return `<tr style="border-bottom:1px solid #1e2533">
+        <td style="padding:0.35rem 0.5rem">${escapeHtml(ship)}</td>
+        <td style="padding:0.35rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
+        <td style="padding:0.35rem 0.75rem;text-align:right">${n}</td>
+      </tr>`;
+  }).join('');
+  const unevaluatable = blocked.filter((b) => b.reason === 'unevaluatable');
+  const note = unevaluatable.length
+    ? `<p class="muted" style="font-size:0.8rem;margin-top:0.4rem">${unevaluatable.length} fit(s) could not be evaluated — a module in Auth has no resolved type.</p>`
+    : '';
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:0.875rem;margin-top:0.5rem">
+      <thead>
+        <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
+          <th style="padding:0.35rem 0.5rem">Ship</th>
+          <th style="padding:0.35rem 0.5rem">Fit</th>
+          <th style="padding:0.35rem 0.75rem;text-align:right">Count</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="3" style="padding:0.35rem 0.5rem;color:#8899aa">Nothing matched.</td></tr>'}</tbody>
+    </table>${note}`;
+}
+
+function acqRunFinder(mode, resultsEl, statusEl) {
+  const inputs = acqFinderInputs();
+  if (inputs.error) {
+    statusEl.textContent = inputs.error;
+    resultsEl.innerHTML = '';
+    return;
+  }
+  const result = planAcquisitions({ pool: inputs.pool, targets: inputs.targets, mode });
+  statusEl.textContent = `${result.builds.length} build(s) found.`;
+  renderAcqFinderResults(resultsEl, result);
+}
+
 function renderAcquisitionsResults(hullsEl, itemsEl) {
   hullsEl.innerHTML = renderAcquisitionsTable(acquisitionsHulls, 'No hulls found.');
   itemsEl.innerHTML = renderAcquisitionsTable(acquisitionsItems, 'No modules or ammo found.');
@@ -4320,6 +4386,13 @@ function renderAcquisitionsTab() {
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
+      <button id="acq-find-full" class="btn" title="Quota ships this inventory can build outright">Find full hull + fits</button>
+      <button id="acq-find-nohull" class="btn" title="Every module present, hull missing">Find fits without hulls</button>
+      <button id="acq-find-market" class="btn" title="80%+ complete, remainder buyable at UEXO">Find market-completable</button>
+      <span id="acq-find-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
+    </div>
+    <div id="acq-find-results" style="margin-top:0.75rem"></div>
     <div class="progress-area" id="acq-progress" hidden>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="progress-step muted">starting…</div>
@@ -4350,6 +4423,13 @@ function renderAcquisitionsTab() {
   const itemsEl = root.querySelector('#acq-items-table');
 
   renderAcquisitionsResults(hullsEl, itemsEl);
+
+  const findStatusEl = root.querySelector('#acq-find-status');
+  const findResultsEl = root.querySelector('#acq-find-results');
+  root.querySelector('#acq-find-full').addEventListener('click',
+    () => acqRunFinder(ACQ_MODES.FULL, findResultsEl, findStatusEl));
+  root.querySelector('#acq-find-nohull').addEventListener('click',
+    () => acqRunFinder(ACQ_MODES.FITS_NO_HULL, findResultsEl, findStatusEl));
 
   addBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add'));
   replaceBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'replace'));
