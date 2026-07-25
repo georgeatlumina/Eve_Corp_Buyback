@@ -4163,6 +4163,17 @@ async function copyShoppingList() {
 let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
 
+// How many bare hulls of a given type are in the Acquisitions inventory right
+// now. Shared by the Contracts dashboard's expand-panel row (called once per
+// render, giving it snapshot semantics) and by copyShoppingList (called fresh
+// on every click, giving it live semantics) — the freshness difference is a
+// property of when each caller calls this, not of the helper itself.
+function acqHullCountFor(typeId) {
+  const key = String(typeId);
+  const row = acquisitionsHulls.find((h) => String(h.type_id) === key);
+  return row ? Number(row.quantity) || 0 : 0;
+}
+
 async function acquisitionsLoad() {
   try {
     const data = await fetch(`${API}/api/acquisitions`).then((r) => r.json());
