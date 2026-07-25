@@ -502,7 +502,11 @@ async function checkForUpdate({ interactive = false } = {}) {
     detail:
       process.platform === 'darwin'
         ? 'Open the .dmg and drag the new app into Applications, then re-launch.'
-        : 'Run the installer to complete the update. The app will close so the installer can replace it.',
+        : process.platform === 'linux'
+          ? (/\.rpm$/i.test(asset.name)
+              ? `Install it with your package manager, e.g.\n  sudo rpm -U "${destPath}"\n(or: sudo zypper install / sudo dnf install), then re-launch.`
+              : `Install it with your package manager, e.g.\n  sudo apt install "${destPath}"\n(or double-click it in your software centre), then re-launch.`)
+          : 'Run the installer to complete the update. The app will close so the installer can replace it.',
     buttons: ['Open & quit', 'Show in folder', 'Cancel'],
     defaultId: 0,
     cancelId: 2,
@@ -515,12 +519,43 @@ async function checkForUpdate({ interactive = false } = {}) {
   }
 }
 
+// Which Linux package format matches this machine: 'deb' (Debian/Ubuntu) or
+// 'rpm' (Fedora/RHEL/openSUSE). We ship both, so pick the one the system can
+// actually install. Prefer /etc/os-release (the modern standard), then fall
+// back to package-manager presence, then to legacy release files. Defaults to
+// 'deb' since Debian/Ubuntu derivatives dominate the desktop.
+function detectLinuxPackageKind() {
+  try {
+    const osRelease = fs.readFileSync('/etc/os-release', 'utf8').toLowerCase();
+    const idMatch = osRelease.match(/^id(?:_like)?=(.*)$/gm) || [];
+    const ids = idMatch.join(' ');
+    if (/\b(fedora|rhel|centos|suse|opensuse|mandriva|amzn)\b/.test(ids)) return 'rpm';
+    if (/\b(debian|ubuntu)\b/.test(ids)) return 'deb';
+  } catch (_) { /* no os-release — fall through */ }
+  try {
+    if (spawnSync('rpm', ['--version'], { windowsHide: true }).status === 0
+        && spawnSync('dpkg', ['--version'], { windowsHide: true }).status !== 0) {
+      return 'rpm';
+    }
+  } catch (_) { /* ignore */ }
+  if (fs.existsSync('/etc/redhat-release') || fs.existsSync('/etc/SuSE-release')) return 'rpm';
+  return 'deb';
+}
+
 function pickPlatformAsset(assets) {
   if (process.platform === 'darwin') {
     return assets.find((a) => /\.dmg$/i.test(a.name) && !/\.blockmap$/i.test(a.name));
   }
   if (process.platform === 'win32') {
     return assets.find((a) => /\.exe$/i.test(a.name) && !/\.blockmap$/i.test(a.name));
+  }
+  if (process.platform === 'linux') {
+    const kind = detectLinuxPackageKind();
+    const ext = kind === 'rpm' ? /\.rpm$/i : /\.deb$/i;
+    // Fall back to the other format if the preferred one wasn't attached.
+    return assets.find((a) => ext.test(a.name))
+      || assets.find((a) => /\.(deb|rpm)$/i.test(a.name))
+      || null;
   }
   return null;
 }
