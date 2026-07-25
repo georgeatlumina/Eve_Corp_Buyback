@@ -45,6 +45,12 @@ https://github.com/georgeatlumina/Eve_Corp_Buyback/releases/latest
 
 - macOS (Apple Silicon): `EVE-Corp-Buyback-X.Y.Z-arm64.dmg`
 - Windows: `EVE-Corp-Buyback-Setup-X.Y.Z.exe`
+- Linux (Debian / Ubuntu): `*.deb` — `sudo apt install ./<file>.deb`
+- Linux (Fedora / RHEL / openSUSE): `*.rpm` — `sudo rpm -U <file>.rpm` (or `sudo dnf install ./<file>.rpm`)
+
+The in-app updater (top-bar ⟳ button, and the automatic check on launch) works on
+Linux too: it detects whether your system uses `.deb` or `.rpm`, downloads the
+matching package to `~/Downloads`, and hands it to your package manager to finish.
 
 ## Quick start
 
@@ -446,6 +452,32 @@ remembers the choice for future launches.
 
 Windows SmartScreen will show *"Windows protected your PC"* on first run
 because the installer is unsigned. Click **More info → Run anyway**.
+
+### Linux — installing and updating
+
+Grab the package that matches your distro's format:
+
+```bash
+# Debian / Ubuntu / Mint …
+sudo apt install ./naval-defence-*_amd64.deb
+
+# Fedora / RHEL / openSUSE …
+sudo rpm -U naval-defence-*.x86_64.rpm     # or: sudo dnf install ./naval-defence-*.rpm
+```
+
+The packages are **unsigned** — on RPM distros `rpm`/`dnf` may warn about a
+missing GPG signature; that's expected for a self-published build.
+
+When a new version is out, the in-app updater downloads the correct package for
+your system to `~/Downloads` and prints the exact install command in the
+"Update downloaded" dialog — deb/rpm can't self-replace without root, so you run
+that one command to finish (same as installing the first time). The updater
+picks the format from `/etc/os-release`; if it can't tell, it defaults to `.deb`
+but will still fall back to whichever package the release actually has.
+
+> **glibc note:** the bundled Python sidecar is built on Ubuntu's CI runner, so
+> very old distributions (older glibc than the runner's) may fail to launch the
+> sidecar. Build from source (see below) if your distro is older than the CI base.
 
 ### Auth says "not authenticated" after login
 
