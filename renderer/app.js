@@ -4381,6 +4381,12 @@ let haulxQty = {};  // type_id (string) -> qty (number)
 let haulxOverQuota = false;
 let haulxReadinessScanDone = false;  // true only after a readiness scan in this session
 
+// Type ids whose last lookup *errored*, as opposed to settling on a legitimate
+// null. Only these are worth retrying, and only these get evicted from the
+// caches above when the user clicks Retry.
+const haulxFailedPrice = new Set();  // sell price / packaged volume lookups
+const haulxFailedBuy = new Set();    // buy price lookups
+
 function haulxUpdateTotals() {
   const { vol, isk, sellValue, buyValue } = haulxTotals(haulxQty, haulxPriceCache);
   const volEl = $('#haulx-vol');
@@ -4489,15 +4495,17 @@ async function haulxFetchPrices(quotas) {
     await Promise.all(
       uncachedIds.map((tid) =>
         fetch(`${API}/api/market/jita-sell?type_id=${tid}`)
-          .then((r) => r.json())
-          .then((data) => {
-            haulxItemPriceCache[tid] = { min_sell: data.min_sell ?? null, vol: data.packaged_volume ?? null };
+          .then(async (r) => haulxClassifySell(r.ok, r.status, r.ok ? await r.json() : null))
+          .catch(() => haulxClassifySell(false, 0, null))
+          .then(({ minSell, vol, failed }) => {
+            haulxItemPriceCache[tid] = { min_sell: minSell, vol };
+            if (failed) haulxFailedPrice.add(tid);
+            else haulxFailedPrice.delete(tid);
             // Hull entries also get volume stored in haulxPriceCache
             if (!haulxPriceCache[tid]) {
-              haulxPriceCache[tid] = { min_sell: data.min_sell, packaged_volume: data.packaged_volume };
+              haulxPriceCache[tid] = { min_sell: minSell, packaged_volume: vol };
             }
           })
-          .catch(() => { haulxItemPriceCache[tid] = { min_sell: null, vol: null }; })
           .finally(bumpProgress)
       )
     );
@@ -4506,9 +4514,13 @@ async function haulxFetchPrices(quotas) {
     await Promise.all(
       uncachedBuyIds.map((tid) =>
         fetch(`${API}/api/market/jita-buy?type_id=${tid}`)
-          .then((r) => r.json())
-          .then((data) => { haulxItemBuyCache[tid] = data.max_buy ?? null; })
-          .catch(() => { haulxItemBuyCache[tid] = null; })
+          .then(async (r) => haulxClassifyBuy(r.ok, r.status, r.ok ? await r.json() : null))
+          .catch(() => haulxClassifyBuy(false, 0, null))
+          .then(({ maxBuy, failed }) => {
+            haulxItemBuyCache[tid] = maxBuy;
+            if (failed) haulxFailedBuy.add(tid);
+            else haulxFailedBuy.delete(tid);
+          })
           .finally(bumpProgress)
       )
     );
