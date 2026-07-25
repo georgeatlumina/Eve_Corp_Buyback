@@ -1,6 +1,6 @@
 // ====================== Liquidation tab ======================
 // Ship buyback Amarr -> Jita (PushX courier) and sell it for more than the 90%
-// Amarr buy we paid. Three sub-views:
+// Jita buy we paid (cost basis market is configurable; Jita by default). Three sub-views:
 //   1. Analyze / Plan — paste a courier contract, get per-item margin +
 //      liquidity + a dump-vs-list recommendation ranked by annualized ROI.
 //   2. Shipments — courier contracts in flight (auto PushX cost + ETA).
@@ -50,7 +50,7 @@
 
   // ---- Analyze columns ----
   const A_COLS = [
-    { key: 'name', label: 'Item', text: true, cell: (r) => `${escapeHtml(r.name)}${r.low_confidence ? ' <span class="liq-warn" title="Near-zero Amarr buy — the margin % is unreliable and the ISK is trivial">⚠</span>' : ''} <button class="liq-info-btn" data-info="${r.type_id}" data-name="${escapeHtml(r.name)}" title="Market detail">ⓘ</button>` },
+    { key: 'name', label: 'Item', text: true, cell: (r) => `${escapeHtml(r.name)}${r.low_confidence ? ' <span class="liq-warn" title="Near-zero cost-basis buy — the margin % is unreliable and the ISK is trivial">⚠</span>' : ''} <button class="liq-info-btn" data-info="${r.type_id}" data-name="${escapeHtml(r.name)}" title="Market detail">ⓘ</button>` },
     { key: 'quantity', label: 'Qty', num: true, cell: (r) => nfmt(r.quantity) },
     { key: 'cost_basis_unit', label: 'Cost basis', num: true, cell: (r) => mIsk(r.cost_basis_unit) },
     { key: 'sell_unit', label: 'Jita sell', num: true, cell: (r) => mIsk(r.sell_unit) },
@@ -139,7 +139,7 @@
       <div class="liq-summary-tiles">
         <div class="market-tile"><div class="market-tile-val">${nfmt(t.items)}</div><div class="market-tile-label">items · ${nfmt(t.quantity)} units</div></div>
         <div class="market-tile"><div class="market-tile-val">${mIsk(t.sell_value)}</div><div class="market-tile-label">Jita sell value</div></div>
-        <div class="market-tile"><div class="market-tile-val">${mIsk(t.cost_basis)}</div><div class="market-tile-label">cost basis (90% Amarr + courier)</div></div>
+        <div class="market-tile"><div class="market-tile-val">${mIsk(t.cost_basis)}</div><div class="market-tile-label">cost basis (90% Jita buy + courier)</div></div>
         <div class="market-tile"><div class="market-tile-val ${t.list_net >= 0 ? 'liq-pos' : 'liq-neg'}">${mIsk(t.list_net)}</div><div class="market-tile-label">net if all listed</div></div>
         <div class="market-tile"><div class="market-tile-val">${mIsk(c.cost)}</div><div class="market-tile-label">courier${a.rush ? ' (rush)' : ''}${overVol}</div></div>
         <div class="market-tile"><div class="market-tile-val">${nfmt(Math.round(t.total_volume_m3))} m³</div><div class="market-tile-label">volume</div></div>

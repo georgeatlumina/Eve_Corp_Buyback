@@ -1997,7 +1997,7 @@ def liquidation_analyze(req: LiquidationAnalyzeRequest):
     ua = get_user_agent()
     api_key = cfg.get('janice_api_key') or None
     sell_market = cfg.get('liquidation_sell_market') or 'Jita 4-4'
-    cost_market = cfg.get('liquidation_cost_market') or 'Amarr'
+    cost_market = cfg.get('liquidation_cost_market') or 'Jita 4-4'
 
     def gen():
         try:
@@ -2024,11 +2024,11 @@ def liquidation_analyze(req: LiquidationAnalyzeRequest):
                 return
             type_ids = [r['type_id'] for r in rows]
 
-            yield _emit('progress', message='Fetching Amarr buy (cost basis)…')
+            yield _emit('progress', message=f'Fetching {cost_market} buy (cost basis)…')
             try:
-                amarr_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua)
+                cost_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua)
             except Exception as e:
-                yield _emit('error', message=f'Amarr price lookup failed: {e}')
+                yield _emit('error', message=f'{cost_market} price lookup failed: {e}')
                 return
 
             signals_holder = {}
@@ -2066,7 +2066,7 @@ def liquidation_analyze(req: LiquidationAnalyzeRequest):
                     'on_book': sig.get('on_book', 0),
                 }
 
-            result = liquidation.analyze_items(rows, amarr_buy, history, depth, courier_total, cfg)
+            result = liquidation.analyze_items(rows, cost_buy, history, depth, courier_total, cfg)
             result['courier'] = courier
             result['rush'] = req.rush
             result['contract_id'] = req.contract_id
@@ -2806,8 +2806,9 @@ def get_doctrine_stock(alliance: str = 'main'):
 @app.get('/api/liquidation/corp-orders')
 def liquidation_corp_orders():
     """Live open Jita sell orders for the corp, enriched with cost basis (live
-    90% Amarr buy), current best sell (are we undercut?), days-to-sell, time
-    remaining in the order window, and a STALE flag when it has sat too long."""
+    90% buy on the configured cost market — Jita by default), current best sell
+    (are we undercut?), days-to-sell, time remaining in the order window, and a
+    STALE flag when it has sat too long."""
     cfg = load_config()
     ua = get_user_agent()
     token, corp_id, reason = _scope_token('esi-markets.read_corporation_orders.v1')
@@ -2826,7 +2827,7 @@ def liquidation_corp_orders():
 
     type_ids = [int(o['type_id']) for o in sells]
     api_key = cfg.get('janice_api_key') or None
-    cost_market = cfg.get('liquidation_cost_market') or 'Amarr'
+    cost_market = cfg.get('liquidation_cost_market') or 'Jita 4-4'
     frac = float(cfg.get('liquidation_buyback_fraction') or 0.90)
     broker = float(cfg.get('liquidation_broker_fee_pct') or 0) / 100.0
     tax = float(cfg.get('liquidation_sales_tax_pct') or 0) / 100.0
@@ -2834,9 +2835,9 @@ def liquidation_corp_orders():
     stale_factor = float(cfg.get('liquidation_stale_factor') or 1.5)
 
     try:
-        amarr_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua) if api_key else {}
+        cost_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua) if api_key else {}
     except Exception:
-        amarr_buy = {}
+        cost_buy = {}
     signals = _fetch_signals(type_ids, cfg, ua)
 
     now = datetime.now(timezone.utc)
@@ -2849,7 +2850,7 @@ def liquidation_corp_orders():
         remain = int(o.get('volume_remain') or 0)
         total = int(o.get('volume_total') or 0)
         avg_vol = sig.get('avg_daily_vol') or 0
-        cost_basis = frac * float(amarr_buy.get(tid, 0) or 0)
+        cost_basis = frac * float(cost_buy.get(tid, 0) or 0)
         net_unit = price * (1 - broker - tax) - cost_basis if cost_basis else None
         days_to_sell = (remain / avg_vol) if avg_vol > 0 else None
         best_sell = sig.get('best_sell')
