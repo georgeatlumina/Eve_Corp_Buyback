@@ -71,7 +71,8 @@ from esi import (
     fetch_type_info,
     fetch_group_info,
 )
-from esi_retry import call_with_retry
+from esi_retry import call_with_retry, status_of
+from scan_history import ScanMetrics, append_run, git_info
 from janice import (
     appraise_items,
     create_appraisal,
@@ -3021,6 +3022,21 @@ _contract_items_cache: dict[int, list] = {}
 # Pause before re-trying contracts ESI refused on the first pass. Long enough to
 # outlast the 520 bursts we measured, short enough not to stall the scan.
 ITEMS_SWEEP_DELAY_SECONDS = 15
+
+
+def _record_scan_run(metrics, contracts, corps_scanned, items_failed):
+    """Append one run to the scan history, swallowing any failure.
+
+    History is diagnostic data — losing a row is a warning, never a broken scan.
+    """
+    try:
+        append_run(metrics.finish(
+            contracts=contracts,
+            corps_scanned=corps_scanned,
+            items_failed=items_failed,
+        ))
+    except Exception as e:  # noqa: BLE001 - deliberately non-fatal
+        logger.warning('scan history not recorded: %s', e)
 # Sold (finished) contracts collected during the most recent scan; used by the lazy sold-30d endpoint.
 _sold_contracts_cache: dict[str, dict[int, dict]] = {}  # alliance -> {contract_id -> rec}
 
@@ -3122,6 +3138,9 @@ def _scan_contracts_stream(alliance: str = 'all'):
     # Tally per corp_id: how many new contracts we kept per slot's corp (for UI summary).
     per_corp_kept: dict[int, int] = {}
 
+    metrics = ScanMetrics(alliance=alliance)
+    metrics.start_phase('contracts')
+
     for slot in slots:
         yield _emit('progress', step=f'Resolving corp for {slot}…')
         try:
@@ -3211,9 +3230,11 @@ def _scan_contracts_stream(alliance: str = 'all'):
                  f'(of {len(corp_contracts)} total)',
         )
 
+    metrics.end_phase('contracts')
     _sold_contracts_cache[alliance] = sold_found
 
     if not found:
+        _record_scan_run(metrics, contracts=0, corps_scanned=len(per_corp_kept), items_failed=0)
         yield _emit('done', payload={
             'structure_id': structure_id,
             'corps_scanned': sorted(per_corp_kept.keys()),
@@ -3232,12 +3253,22 @@ def _scan_contracts_stream(alliance: str = 'all'):
 
     def _fetch_items(cid_rec):
         cid, rec = cid_rec
+
+        def _on_retry(_attempt, _delay, exc):
+            metrics.record_retry()
+            metrics.record_error(status_of(exc))
+
         try:
             items = call_with_retry(
-                lambda: fetch_contract_items(rec['corp_id'], cid, rec['token'], ua)
+                lambda: fetch_contract_items(rec['corp_id'], cid, rec['token'], ua),
+                on_retry=_on_retry,
             )
+            metrics.record_fetch()
             return cid, items, None
         except Exception as e:
+            # on_retry logged the attempts that were followed by a retry; this
+            # is the final one that exhausted them (or was never retryable).
+            metrics.record_error(status_of(e))
             return cid, [], str(e)
 
     def _items_pass(targets, done_start, pass_total, label):
@@ -3266,7 +3297,9 @@ def _scan_contracts_stream(alliance: str = 'all'):
     for cid in found:
         if cid not in uncached:
             items_by_id[cid] = _contract_items_cache[cid]
+            metrics.record_fetch(cached=True)
 
+    metrics.start_phase('items')
     if uncached:
         yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
         yield from _items_pass(uncached, len(found) - len(uncached), total, 'Items')
@@ -3284,8 +3317,12 @@ def _scan_contracts_stream(alliance: str = 'all'):
                 time.sleep(ITEMS_SWEEP_DELAY_SECONDS)
                 yield from _items_pass(stragglers, 0, len(stragglers), 'Retrying')
                 recovered = len(stragglers) - len(items_errors)
+                metrics.record_sweep(attempted=len(stragglers), recovered=recovered)
                 yield _emit('progress', step=f'Sweep recovered {recovered} of {len(stragglers)} '
                                              f'contract(s)')
+
+    metrics.end_phase('items')
+    metrics.start_phase('names')
 
     # ---- Resolve type and issuer names ----
     type_ids = sorted({int(i.get('type_id') or 0) for items in items_by_id.values() for i in items})
@@ -3298,6 +3335,8 @@ def _scan_contracts_stream(alliance: str = 'all'):
         issuer_names = resolve_names(issuer_ids, ua) if issuer_ids else {}
     except Exception:
         issuer_names = {}
+
+    metrics.end_phase('names')
 
     contracts_out = []
     for cid, rec in found.items():
@@ -3364,6 +3403,13 @@ def _scan_contracts_stream(alliance: str = 'all'):
             'missing': missing,
             'contracts': matched_ids,
         })
+
+    _record_scan_run(
+        metrics,
+        contracts=len(found),
+        corps_scanned=len(per_corp_kept),
+        items_failed=len(items_errors),
+    )
 
     yield _emit('done', payload={
         'structure_id': structure_id,
@@ -4333,4 +4379,11 @@ def put_workforce_plan(plan: WorkforcePlan):
 
 
 if __name__ == '__main__':
+    # Resolve the build tag now so the first scan doesn't pay for the git
+    # subprocesses, and so the sha recorded is the one whose code this process
+    # actually loaded. Never fatal — git may not exist in a packaged app.
+    try:
+        git_info()
+    except Exception as e:  # noqa: BLE001
+        logger.warning('build tag unavailable: %s', e)
     uvicorn.run(app, host='127.0.0.1', port=PORT, log_level='info')

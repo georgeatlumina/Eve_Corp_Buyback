@@ -492,3 +492,120 @@ class TestScanContractsItemsSweep:
             _collect(_scan_contracts_stream(alliance='main'))
 
         assert mock_items.call_count == 2, 'one first-pass try + one sweep try'
+
+
+# ---------------------------------------------------------------------------
+# Scan run history
+# ---------------------------------------------------------------------------
+
+class TestScanRunHistory:
+    """One record per scan, and a broken store never breaks the scan.
+
+    Design: docs/superpowers/specs/2026-07-24-scan-history-design.md
+    """
+
+    CID = 9201
+
+    def setup_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    def teardown_method(self):
+        import server
+        server._contract_items_cache.clear()
+
+    @contextmanager
+    def _patched(self, appended, items_side_effect=None, append_impl=None):
+        kwargs = ({'side_effect': items_side_effect} if items_side_effect
+                  else {'return_value': [{'type_id': 123, 'quantity': 1, 'is_included': True}]})
+        patches = [patch(t, return_value=v) for t, v in _COMMON_PATCHES.items()]
+        patches += [
+            patch('server.fetch_character_info', return_value=_char_info()),
+            patch('server.fetch_corp_contracts', return_value=[_outstanding(self.CID)]),
+            patch('server.fetch_contract_items', **kwargs),
+            patch('server.resolve_names', return_value={}),
+            patch('server.ITEMS_SWEEP_DELAY_SECONDS', 0),
+            patch('esi_retry.time.sleep'),
+            patch('server.append_run', side_effect=append_impl or appended.append),
+        ]
+        started = [p.start() for p in patches]
+        try:
+            yield started[-1]
+        finally:
+            for p in patches:
+                p.stop()
+
+    def test_scan_appends_exactly_one_record(self):
+        from server import _scan_contracts_stream
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        assert len(appended) == 1
+
+    def test_record_has_the_documented_shape(self):
+        from server import _scan_contracts_stream
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        for field in ('started', 'seconds', 'alliance', 'contracts', 'corps_scanned',
+                      'items_fetched', 'items_cached', 'items_failed', 'esi_errors',
+                      'retries', 'sweep_attempted', 'sweep_recovered', 'phases',
+                      'git', 'dirty', 'app_version'):
+            assert field in rec, f'missing {field}'
+        assert rec['alliance'] == 'main'
+        assert rec['contracts'] == 1
+        assert rec['items_fetched'] == 1
+        assert rec['items_failed'] == 0
+        assert set(rec['phases']) == {'contracts', 'items', 'names'}
+
+    def test_fetch_totals_reconcile(self):
+        from server import _scan_contracts_stream
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        assert rec['items_fetched'] + rec['items_cached'] + rec['items_failed'] == rec['contracts']
+
+    def test_records_esi_errors_and_retries(self):
+        from server import _scan_contracts_stream
+        from esi_retry import DEFAULT_ATTEMPTS
+        appended = []
+        calls = []
+
+        def flaky(*_a, **_k):
+            calls.append(1)
+            if len(calls) <= DEFAULT_ATTEMPTS:
+                raise _http_error(520)
+            return []
+
+        with self._patched(appended, items_side_effect=flaky):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        assert rec['esi_errors']['520'] == DEFAULT_ATTEMPTS
+        assert rec['retries'] == DEFAULT_ATTEMPTS - 1
+        assert rec['sweep_attempted'] == 1
+        assert rec['sweep_recovered'] == 1
+        assert rec['items_failed'] == 0
+
+    def test_cached_items_counted_as_cached_not_fetched(self):
+        from server import _scan_contracts_stream
+        import server
+        server._contract_items_cache[self.CID] = [{'type_id': 123, 'quantity': 1, 'is_included': True}]
+        appended = []
+        with self._patched(appended):
+            _collect(_scan_contracts_stream(alliance='main'))
+        rec = appended[0]
+        assert rec['items_cached'] == 1
+        assert rec['items_fetched'] == 0
+
+    def test_store_failure_does_not_break_the_scan(self):
+        from server import _scan_contracts_stream
+
+        def boom(_record):
+            raise OSError('disk full')
+
+        with self._patched([], append_impl=boom):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+        done = _done(events)
+        assert done['payload']['contracts'][0]['contract_id'] == self.CID
