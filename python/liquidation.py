@@ -6,7 +6,7 @@ Two concerns live here, both IO-light:
   shipments (one per pasted PushX contract), mirroring the `pinned.py` pattern:
   JSON under ``AUTH_DIR``, chmod 600, corrupt-tolerant, keyed upsert.
 * **Decision engine** (`courier_cost`, `analyze_items`) — pure functions that
-  turn per-item Jita/Amarr prices + ESI liquidity into a recommended action
+  turn per-item Jita sell + cost-basis buy prices + ESI liquidity into a recommended action
   (dump now vs list for 7/14/30/90 days) ranked by annualized ROI, so ISK isn't
   locked into orders that aren't moving. No network IO — the caller (server.py)
   fetches prices/history and passes them in, exactly like `validate.py`.
@@ -145,13 +145,14 @@ def _pick_window(days_to_sell, safety):
     return None
 
 
-def analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units,
+def analyze_row(row, cost_buy_unit, avg_daily_vol, depth_units, on_book_units,
                 courier_alloc_unit, cfg):
     """Compute margins + a recommendation for one item. Pure.
 
     ``row`` carries ``type_id, name, quantity, unit_volume_m3, sell_unit,
-    buy_unit`` (Jita immediate prices). ``amarr_buy_unit`` is the live Janice
-    Amarr buy; cost basis = ``buyback_fraction * amarr_buy_unit + courier``.
+    buy_unit`` (Jita immediate prices). ``cost_buy_unit`` is the live Janice
+    buy price on the configured ``liquidation_cost_market`` (Jita by default);
+    cost basis = ``buyback_fraction * cost_buy_unit + courier``.
     """
     frac = float(cfg.get('liquidation_buyback_fraction') or 0.90)
     broker = float(cfg.get('liquidation_broker_fee_pct') or 0) / 100.0
@@ -163,9 +164,9 @@ def analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units,
     qty = int(row.get('quantity') or 0)
     sell = float(row.get('sell_unit') or 0)
     buy = float(row.get('buy_unit') or 0)
-    amarr_buy_unit = float(amarr_buy_unit or 0)
+    cost_buy_unit = float(cost_buy_unit or 0)
 
-    cost_basis = frac * amarr_buy_unit + float(courier_alloc_unit or 0)
+    cost_basis = frac * cost_buy_unit + float(courier_alloc_unit or 0)
     list_net = sell * (1 - broker - tax) - cost_basis
     dump_net = buy * (1 - tax) - cost_basis
     list_margin_pct = (list_net / cost_basis * 100) if cost_basis > 0 else None
@@ -180,8 +181,8 @@ def analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units,
     # Recommendation cascade. Velocity (turning ISK over) is weighted heavily:
     # a thin margin that clears today beats a fat margin that never moves.
     action, reason = 'list', ''
-    if amarr_buy_unit <= 0 or sell <= 0:
-        action, reason = 'no_data', 'missing Amarr or Jita price'
+    if cost_buy_unit <= 0 or sell <= 0:
+        action, reason = 'no_data', 'missing cost or sell price'
     elif list_net <= 0 and dump_net <= 0:
         action, reason = 'underwater', 'loss on both list and dump — buyback rate too high here'
     elif window is None:
@@ -197,10 +198,10 @@ def analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units,
     else:
         action, reason = 'list', f'list {window}d'
 
-    # Near-zero Amarr buy => cost basis is dominated by courier/rounding and the
+    # Near-zero cost buy => cost basis is dominated by courier/rounding and the
     # margin % explodes (SKINs, skill items, etc.). Flag so the UI can down-rank
     # and tag them: their ISK is trivial and their % is not trustworthy.
-    low_confidence = (amarr_buy_unit <= 0) or (list_margin_pct is not None and list_margin_pct > 300)
+    low_confidence = (cost_buy_unit <= 0) or (list_margin_pct is not None and list_margin_pct > 300)
 
     return {
         'type_id': row.get('type_id'),
@@ -209,7 +210,7 @@ def analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units,
         'low_confidence': low_confidence,
         'unit_volume_m3': float(row.get('unit_volume_m3') or 0),
         'total_volume_m3': float(row.get('unit_volume_m3') or 0) * qty,
-        'amarr_buy_unit': amarr_buy_unit,
+        'cost_buy_unit': cost_buy_unit,
         'cost_basis_unit': cost_basis,
         'sell_unit': sell,
         'buy_unit': buy,
@@ -232,10 +233,10 @@ def analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units,
     }
 
 
-def analyze_items(rows, amarr_buy, history, depth, courier_total, cfg):
+def analyze_items(rows, cost_buy, history, depth, courier_total, cfg):
     """Analyze a batch of items. Pure — caller supplies the market data maps.
 
-    ``amarr_buy``: ``{type_id: amarr_buy_unit}``. ``history``: ``{type_id:
+    ``cost_buy``: ``{type_id: cost_buy_unit}``. ``history``: ``{type_id:
     avg_daily_volume}``. ``depth``: ``{type_id: {'ahead': units_cheaper,
     'on_book': total_sell_units}}``. ``courier_total`` is allocated across rows
     by Jita sell value. Returns ``{items: [...], totals: {...}}``.
@@ -254,7 +255,7 @@ def analyze_items(rows, amarr_buy, history, depth, courier_total, cfg):
         d = depth.get(tid) or {}
         out.append(analyze_row(
             r,
-            amarr_buy.get(tid, 0),
+            cost_buy.get(tid, 0),
             history.get(tid, 0),
             d.get('ahead'),
             d.get('on_book'),

@@ -21,10 +21,20 @@ jobs:
             build_script: build:win
             artifact_name: windows-exe
             artifact_glob: dist/*.exe
+          - os: ubuntu-latest
+            build_script: build:linux
+            artifact_name: linux-packages
+            artifact_glob: |
+              dist/*.deb
+              dist/*.rpm
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install rpm tooling (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -77,6 +87,21 @@ jobs:
           files: |
             artifacts/macos-dmg/*.dmg
             artifacts/windows-exe/*.exe
+            artifacts/linux-packages/*.deb
+            artifacts/linux-packages/*.rpm
+          # Custom preamble + GitHub's auto-generated changelog appended below it.
+          body: |
+            ### Downloads
+
+            | Platform | File | Install |
+            |---|---|---|
+            | macOS (Apple Silicon) | `*.dmg` | Open the DMG, drag into Applications |
+            | Windows | `*.exe` | Run the installer |
+            | Linux — Debian/Ubuntu | `*.deb` | `sudo apt install ./<file>.deb` |
+            | Linux — Fedora/RHEL/openSUSE | `*.rpm` | `sudo rpm -U <file>.rpm` (or `sudo dnf install ./<file>.rpm`) |
+
+            The `.deb`/`.rpm` packages are unsigned (RPM tools may warn about a missing GPG
+            signature — expected). The in-app updater picks the format matching your distro.
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}

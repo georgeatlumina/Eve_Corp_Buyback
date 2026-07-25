@@ -54,7 +54,7 @@ and a one-line description.
 | `GET /api/structures/fuel` | `structures_fuel` | [server.py](python/server.py) | Hooks & Hubs fuel: enumerates authenticated slots' corps (slot 4 = Director), fetches `/corporations/{id}/structures/`, dedupes, classifies skyhook/hub/other by resolved type name, returns per-structure `seconds_remaining` + per-type summaries. Per-slot/corp failures (missing scope/role) surface in `auth_errors`. |
 | `GET /api/workforce-plan` | `get_workforce_plan` | [server.py](python/server.py) | Return the manual Hooks & Hubs planner document (`workforce_plan.load_plan`). |
 | `PUT /api/workforce-plan` | `put_workforce_plan` | [server.py](python/server.py) | Replace the whole planner document (`workforce_plan.save_plan`). |
-| `POST /api/liquidation/analyze` | `liquidation_analyze` | [server.py](python/server.py) | NDJSON stream. Analyze a courier contract from `paste_text` **or** a `janice_url` (the contract title). Appraises items at Jita via Janice (type_ids + volumes), overrides sell/buy with the **live ESI order book**, pulls Amarr buy (Janice) for cost basis, gathers ESI signals concurrently, computes courier cost, then `liquidation.analyze_items`. Echoes `contract_id`. |
+| `POST /api/liquidation/analyze` | `liquidation_analyze` | [server.py](python/server.py) | NDJSON stream. Analyze a courier contract from `paste_text` **or** a `janice_url` (the contract title). Appraises items at Jita via Janice (type_ids + volumes), overrides sell/buy with the **live ESI order book**, pulls cost-basis buy (Janice, on the configurable `liquidation_cost_market` — Jita by default), gathers ESI signals concurrently, computes courier cost, then `liquidation.analyze_items`. Echoes `contract_id`. |
 | `GET /api/liquidation/item-history` | `liquidation_item_history` | [server.py](python/server.py) | ESI daily price/volume history (The Forge) + live book signal for one `type_id` — powers the slide-out detail chart. |
 | `GET /api/liquidation/shipments` | `liquidation_shipments` | [server.py](python/server.py) | The shipment board (GitHub-repo-backed, local fallback) + courier accept/deliver days. |
 | `POST /api/liquidation/shipments` | `liquidation_add_shipment` | [server.py](python/server.py) | Add a tracked shipment (via `_liq_mutate_store` → `liquidation.apply_add`). |
@@ -167,8 +167,8 @@ Module constants worth knowing: `ALLOWED_CATEGORY_IDS = {25, 2143}`, `ICE_GROUP_
 | `apply_update(store, id, fields)` | Patch an allowlisted subset (`label/status/delivered_at/notes/rush`). Returns `(new_store, updated_or_None)`. |
 | `apply_remove(store, id)` | Returns `(new_store, removed_bool)`. |
 | `courier_cost(collateral, volume_m3, rush, cfg)` | PushX rate card: base + one step-fee per collateral step over the free ceiling + rush fee; flags `over_volume`. |
-| `analyze_row(row, amarr_buy_unit, avg_daily_vol, depth_units, on_book_units, courier_alloc_unit, cfg)` | Per-item margins (list vs dump, net of broker+tax), days-to-sell, annualized ROI, `low_confidence` (near-zero cost basis), and a recommended `action` (`list`/`dump`/`underwater`/`no_data`) + `window_days`. |
-| `analyze_items(rows, amarr_buy, history, depth, courier_total, cfg)` | Allocates courier across rows by Jita sell value, runs `analyze_row` for each, returns `{items, totals}` (totals include `by_action` counts). |
+| `analyze_row(row, cost_buy_unit, avg_daily_vol, depth_units, on_book_units, courier_alloc_unit, cfg)` | Per-item margins (list vs dump, net of broker+tax), days-to-sell, annualized ROI, `low_confidence` (near-zero cost basis), and a recommended `action` (`list`/`dump`/`underwater`/`no_data`) + `window_days`. |
+| `analyze_items(rows, cost_buy, history, depth, courier_total, cfg)` | Allocates courier across rows by Jita sell value, runs `analyze_row` for each, returns `{items, totals}` (totals include `by_action` counts). |
 
 ---
 
@@ -260,7 +260,7 @@ Module constants: `STORE_PATH`, `CATEGORIES = ('minerals', 'pi', 'other')`, `MIN
 | `_normalize(code, data, source)` | Map raw Janice response → `{percentage, effective_offer, total_buy_price, market_name, items, source, raw}` consumed by `validate.py`. **Single source of truth for the appraisal shape.** |
 | `create_appraisal(items, market_name, api_key=None)` | Build a new appraisal from a list of `{name, quantity}` items. Used for moon Janice references. |
 | `create_appraisal_from_text(input_text, market_name, api_key=None, persist=False)` | Used by the Working tab and Appraisal tab. Takes raw EVE-format paste text (skipping the items→text serialization). Set `persist=True` to ask Janice to save the appraisal so the returned `code` can be turned into a shareable `janice.e-351.com/a/<code>` URL. |
-| `fetch_buy_prices(type_ids, market_name='Jita 4-4', api_key=None, user_agent=None)` | Bulk per-unit immediate **buy** prices via the pricer (concurrent). Requires an API key. Used for Liquidation's Amarr cost basis and moon refining. |
+| `fetch_buy_prices(type_ids, market_name='Jita 4-4', api_key=None, user_agent=None)` | Bulk per-unit immediate **buy** prices via the pricer (concurrent). Requires an API key. Used for Liquidation's cost basis (configurable market) and moon refining. |
 | `appraise_items(paste_text, market_name='Jita 4-4', api_key=None)` | Liquidation helper: create an appraisal and return normalized rows `{type_id, name, quantity, unit_volume_m3, sell_unit, buy_unit}` (immediate prices at `market_name`), dropping unresolved types. |
 | `items_from_appraisal(url, api_key=None)` | Liquidation helper: pull `[{name, quantity}]` from an existing appraisal URL/code — lets a courier contract analyze straight from its Janice-link title. |
 | `fetch_type_sell_price(type_id, market_name='Amarr', api_key=None)` | Janice's pricer endpoint for one type at one market — used by `/api/market/amarr-sell`. Returns `None` if no API key is set (since pricer requires auth). |
@@ -729,6 +729,27 @@ Tab-open handlers call `loadMine(false)` / `loadFulfil(false)` for lazy first lo
 | `renderDetail()` / `chipTitle(it)` / `legend()` | Shared detail panel (slots + missing-material lists) for the selected build; chip tooltip; alliance/today legend. |
 | `exportCsv()` | CSV of all build items (builder, doctrine, alliance, planned, due, slots, material lines, note). |
 | date helpers (`parseDate`/`ymd`/`today`/`daysBetween`/`addDays`) + `wire()` | Local-midnight date math; delegated month-nav / chip-select / detail-close wiring; lazy first load on tab open. |
+
+---
+
+## `renderer/module-sorter.js` — Module Sorter tab (~240 LOC)
+
+[renderer/module-sorter.js](renderer/module-sorter.js). Self-contained IIFE loaded after `app.js` (reuses `$`/`escapeHtml`/`downloadBlob`; reads `readinessState`/`scanAllFits`/`activateTab` as cross-script globals). Splits a pasted EVE inventory / multibuy list into **doctrine** vs **non-doctrine** panes against the Market Readiness scan. Pure renderer — no endpoint.
+
+| Function | Purpose |
+|---|---|
+| `norm(s)` | Normalise a type name for matching (trim / lowercase / whitespace-collapse) — EVE emits the same spelling on both sides so this is enough. |
+| `parseQty(s)` | Pull an integer quantity out of a string, stripping thousands separators (any locale); `null` when there's no positive number. |
+| `doctrineSet()` | Build the doctrine item set from `readinessState.scan.fits`: `byName` (normName → canonical display name, union across all fits), `hullNames` (per-fit `hullName`, so hulls can be excluded), plus `fitCount`/`itemCount`/`scannedAt`. |
+| `hasUsableScan()` | True when `readinessState.scan.fits` is present and non-empty (guards the auto-scan + source line). |
+| `parseInventory(text)` | Parse a paste into `[{name, qty}]` — tab-separated inventory rows (`Name⇥Qty⇥Group⇥…`, scanning later columns for the qty), `Name xN` multibuy, or bare names (qty 1). |
+| `aggregate(items, byName)` | Sum duplicate names into `Map(normName → {name, qty})`, preferring the doctrine spelling for matched items. |
+| `toMultibuy(rows)` / `sumUnits(rows)` | Name-sorted `Name xQty` block; total unit count. |
+| `renderSource()` | The doctrine-set status line — item/fit counts + scan time, or the "no scan / scan running / auto-starting" message. |
+| `maybeAutoScan()` | First-run convenience: if no usable scan and none running, set `autoScanTried` and `await scanAllFits()` in the background, then re-render + reclassify. Once per session; a failed attempt (e.g. not signed in to AA) waits until restart. |
+| `sort()` | Classify every aggregated line (in `byName`, honouring the exclude-hulls toggle → doctrine, else non-doctrine), write both output textareas + counts + status. Bound to input/change for live sorting. |
+| `copyOut(id, label)` / `downloadOut(id, filename, label)` | Clipboard copy / `downloadBlob` a pane's multibuy text. |
+| `initTab()` + static wiring | On tab open: render source, fire `maybeAutoScan()`, and (first time) wire the Sort/Clear/copy/download buttons, the exclude-hulls toggle, live-input sorting, and the in-tab "Market Readiness" `data-tab-link` shortcut. |
 
 ---
 

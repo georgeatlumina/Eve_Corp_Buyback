@@ -1563,6 +1563,76 @@ def archive_market_history(structure_id: Optional[int] = None, force: bool = Fal
             'commit': result.get('commit_html_url')}
 
 
+def _github_pat_capability(owner, repo, pat, user_agent):
+    """Probe a single PAT against `GET /repos/{owner}/{repo}`, returning the
+    token's effective capabilities. GitHub reports the authenticated token's
+    grant in `permissions: {admin, push, pull}`, so one call tells us whether a
+    PAT can read (`pull`) and/or write (`push`) this exact repo — the precise
+    thing the Config check needs. Returns a plain dict (never raises)."""
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Authorization': f'Bearer {pat}',
+    }
+    api = f'https://api.github.com/repos/{owner}/{repo}'
+    try:
+        resp = requests.get(api, headers=headers, timeout=15)
+    except Exception as e:
+        return {'ok': False, 'reason': 'network', 'detail': str(e)}
+    if resp.status_code in (401, 403):
+        return {'ok': False, 'reason': 'rejected', 'status': resp.status_code}
+    if resp.status_code == 404:
+        # Fine-grained PATs not granted the repo see it as non-existent.
+        return {'ok': False, 'reason': 'not_found', 'status': resp.status_code}
+    if resp.status_code >= 400:
+        return {'ok': False, 'reason': 'error', 'status': resp.status_code}
+    perms = (resp.json() or {}).get('permissions') or {}
+    return {'ok': True, 'pull': bool(perms.get('pull')),
+            'push': bool(perms.get('push')), 'admin': bool(perms.get('admin'))}
+
+
+@app.post('/api/market/history/check')
+def check_market_history():
+    """Verify the market-history repo URL and both PATs from the *saved* config.
+
+    Probes each configured PAT against the repo and reports whether the Read PAT
+    can pull and the Write PAT can push — the two capabilities the archive/read
+    paths actually rely on. PATs come from the saved config (they aren't sent by
+    the browser), so save the form first. Returns a structured result and never
+    raises, so the UI can render a per-PAT verdict."""
+    cfg = load_config()
+    repo_url = (cfg.get('market_history_repo_url') or '').strip()
+    read_pat = (cfg.get('market_history_pat_read') or '').strip()
+    write_pat = (cfg.get('market_history_pat_write') or '').strip()
+    if not repo_url:
+        return {'ok': False, 'reason': 'no_repo_url'}
+    parsed = _parse_github_blob_url(repo_url)
+    if not parsed:
+        return {'ok': False, 'reason': 'bad_repo_url'}
+    owner, repo, branch, _ = parsed
+    ua = get_user_agent()
+
+    out = {'ok': True, 'owner': owner, 'repo': repo, 'branch': branch,
+           'read': None, 'write': None}
+    if read_pat:
+        cap = _github_pat_capability(owner, repo, read_pat, ua)
+        out['read'] = cap
+        # A read PAT that can't pull is effectively broken for our reads.
+        if not (cap.get('ok') and cap.get('pull')):
+            out['ok'] = False
+    if write_pat:
+        cap = _github_pat_capability(owner, repo, write_pat, ua)
+        out['write'] = cap
+        # The write PAT is what the daily archive push needs — require push.
+        if not (cap.get('ok') and cap.get('push')):
+            out['ok'] = False
+    if not read_pat and not write_pat:
+        return {'ok': False, 'reason': 'no_pats', 'owner': owner,
+                'repo': repo, 'branch': branch}
+    return out
+
+
 # ----------------------- Market history: turnover (net on-book change) --------
 # Reads back the daily snapshot archive (one gzipped file per day per structure)
 # and reports the change in listed sell/buy value over 24h / 72h / weekly /
@@ -1999,7 +2069,7 @@ def liquidation_analyze(req: LiquidationAnalyzeRequest):
     ua = get_user_agent()
     api_key = cfg.get('janice_api_key') or None
     sell_market = cfg.get('liquidation_sell_market') or 'Jita 4-4'
-    cost_market = cfg.get('liquidation_cost_market') or 'Amarr'
+    cost_market = cfg.get('liquidation_cost_market') or 'Jita 4-4'
 
     def gen():
         try:
@@ -2026,11 +2096,11 @@ def liquidation_analyze(req: LiquidationAnalyzeRequest):
                 return
             type_ids = [r['type_id'] for r in rows]
 
-            yield _emit('progress', message='Fetching Amarr buy (cost basis)…')
+            yield _emit('progress', message=f'Fetching {cost_market} buy (cost basis)…')
             try:
-                amarr_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua)
+                cost_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua)
             except Exception as e:
-                yield _emit('error', message=f'Amarr price lookup failed: {e}')
+                yield _emit('error', message=f'{cost_market} price lookup failed: {e}')
                 return
 
             signals_holder = {}
@@ -2068,7 +2138,7 @@ def liquidation_analyze(req: LiquidationAnalyzeRequest):
                     'on_book': sig.get('on_book', 0),
                 }
 
-            result = liquidation.analyze_items(rows, amarr_buy, history, depth, courier_total, cfg)
+            result = liquidation.analyze_items(rows, cost_buy, history, depth, courier_total, cfg)
             result['courier'] = courier
             result['rush'] = req.rush
             result['contract_id'] = req.contract_id
@@ -2782,6 +2852,14 @@ def get_doctrine_stock(alliance: str = 'main'):
             _doctrine_stock_save_cache(alliance, snapshot)
             return {'storage': 'github', **snapshot}
         except FileNotFoundError:
+            # Repo reachable but nothing published for this alliance yet (404).
+            # Fall back to the local cache like any other read failure — a
+            # configured repo must never leave the machine with *fewer* quotas
+            # than no repo at all. Only report 'none' when there's genuinely no
+            # cache, and say why so an empty dropdown explains itself.
+            cached = _doctrine_stock_load_cache(alliance)
+            if cached:
+                return {'storage': 'local', 'stale': True, 'reason': 'not_published_yet', **cached}
             return {'storage': 'none', 'alliance': alliance, 'quotas': [], 'published_at': None,
                     'reason': 'not_published_yet'}
         except Exception as e:
@@ -2800,8 +2878,9 @@ def get_doctrine_stock(alliance: str = 'main'):
 @app.get('/api/liquidation/corp-orders')
 def liquidation_corp_orders():
     """Live open Jita sell orders for the corp, enriched with cost basis (live
-    90% Amarr buy), current best sell (are we undercut?), days-to-sell, time
-    remaining in the order window, and a STALE flag when it has sat too long."""
+    90% buy on the configured cost market — Jita by default), current best sell
+    (are we undercut?), days-to-sell, time remaining in the order window, and a
+    STALE flag when it has sat too long."""
     cfg = load_config()
     ua = get_user_agent()
     token, corp_id, reason = _scope_token('esi-markets.read_corporation_orders.v1')
@@ -2820,7 +2899,7 @@ def liquidation_corp_orders():
 
     type_ids = [int(o['type_id']) for o in sells]
     api_key = cfg.get('janice_api_key') or None
-    cost_market = cfg.get('liquidation_cost_market') or 'Amarr'
+    cost_market = cfg.get('liquidation_cost_market') or 'Jita 4-4'
     frac = float(cfg.get('liquidation_buyback_fraction') or 0.90)
     broker = float(cfg.get('liquidation_broker_fee_pct') or 0) / 100.0
     tax = float(cfg.get('liquidation_sales_tax_pct') or 0) / 100.0
@@ -2828,9 +2907,9 @@ def liquidation_corp_orders():
     stale_factor = float(cfg.get('liquidation_stale_factor') or 1.5)
 
     try:
-        amarr_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua) if api_key else {}
+        cost_buy = fetch_buy_prices(type_ids, cost_market, api_key=api_key, user_agent=ua) if api_key else {}
     except Exception:
-        amarr_buy = {}
+        cost_buy = {}
     signals = _fetch_signals(type_ids, cfg, ua)
 
     now = datetime.now(timezone.utc)
@@ -2843,7 +2922,7 @@ def liquidation_corp_orders():
         remain = int(o.get('volume_remain') or 0)
         total = int(o.get('volume_total') or 0)
         avg_vol = sig.get('avg_daily_vol') or 0
-        cost_basis = frac * float(amarr_buy.get(tid, 0) or 0)
+        cost_basis = frac * float(cost_buy.get(tid, 0) or 0)
         net_unit = price * (1 - broker - tax) - cost_basis if cost_basis else None
         days_to_sell = (remain / avg_vol) if avg_vol > 0 else None
         best_sell = sig.get('best_sell')
