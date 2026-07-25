@@ -1561,6 +1561,76 @@ def archive_market_history(structure_id: Optional[int] = None, force: bool = Fal
             'commit': result.get('commit_html_url')}
 
 
+def _github_pat_capability(owner, repo, pat, user_agent):
+    """Probe a single PAT against `GET /repos/{owner}/{repo}`, returning the
+    token's effective capabilities. GitHub reports the authenticated token's
+    grant in `permissions: {admin, push, pull}`, so one call tells us whether a
+    PAT can read (`pull`) and/or write (`push`) this exact repo — the precise
+    thing the Config check needs. Returns a plain dict (never raises)."""
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': user_agent,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Authorization': f'Bearer {pat}',
+    }
+    api = f'https://api.github.com/repos/{owner}/{repo}'
+    try:
+        resp = requests.get(api, headers=headers, timeout=15)
+    except Exception as e:
+        return {'ok': False, 'reason': 'network', 'detail': str(e)}
+    if resp.status_code in (401, 403):
+        return {'ok': False, 'reason': 'rejected', 'status': resp.status_code}
+    if resp.status_code == 404:
+        # Fine-grained PATs not granted the repo see it as non-existent.
+        return {'ok': False, 'reason': 'not_found', 'status': resp.status_code}
+    if resp.status_code >= 400:
+        return {'ok': False, 'reason': 'error', 'status': resp.status_code}
+    perms = (resp.json() or {}).get('permissions') or {}
+    return {'ok': True, 'pull': bool(perms.get('pull')),
+            'push': bool(perms.get('push')), 'admin': bool(perms.get('admin'))}
+
+
+@app.post('/api/market/history/check')
+def check_market_history():
+    """Verify the market-history repo URL and both PATs from the *saved* config.
+
+    Probes each configured PAT against the repo and reports whether the Read PAT
+    can pull and the Write PAT can push — the two capabilities the archive/read
+    paths actually rely on. PATs come from the saved config (they aren't sent by
+    the browser), so save the form first. Returns a structured result and never
+    raises, so the UI can render a per-PAT verdict."""
+    cfg = load_config()
+    repo_url = (cfg.get('market_history_repo_url') or '').strip()
+    read_pat = (cfg.get('market_history_pat_read') or '').strip()
+    write_pat = (cfg.get('market_history_pat_write') or '').strip()
+    if not repo_url:
+        return {'ok': False, 'reason': 'no_repo_url'}
+    parsed = _parse_github_blob_url(repo_url)
+    if not parsed:
+        return {'ok': False, 'reason': 'bad_repo_url'}
+    owner, repo, branch, _ = parsed
+    ua = get_user_agent()
+
+    out = {'ok': True, 'owner': owner, 'repo': repo, 'branch': branch,
+           'read': None, 'write': None}
+    if read_pat:
+        cap = _github_pat_capability(owner, repo, read_pat, ua)
+        out['read'] = cap
+        # A read PAT that can't pull is effectively broken for our reads.
+        if not (cap.get('ok') and cap.get('pull')):
+            out['ok'] = False
+    if write_pat:
+        cap = _github_pat_capability(owner, repo, write_pat, ua)
+        out['write'] = cap
+        # The write PAT is what the daily archive push needs — require push.
+        if not (cap.get('ok') and cap.get('push')):
+            out['ok'] = False
+    if not read_pat and not write_pat:
+        return {'ok': False, 'reason': 'no_pats', 'owner': owner,
+                'repo': repo, 'branch': branch}
+    return out
+
+
 # ----------------------- Market history: turnover (net on-book change) --------
 # Reads back the daily snapshot archive (one gzipped file per day per structure)
 # and reports the change in listed sell/buy value over 24h / 72h / weekly /

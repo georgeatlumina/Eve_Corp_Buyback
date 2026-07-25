@@ -582,17 +582,36 @@ function collectConfigForm() {
   };
 }
 
-$('#config-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
+async function saveConfig({ statusText = 'Saved.' } = {}) {
   const res = await fetch(`${API}/api/config`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(collectConfigForm()),
   });
-  $('#config-status').textContent = res.ok ? 'Saved.' : 'Error saving.';
+  $('#config-status').textContent = res.ok ? statusText : 'Error saving.';
   setTimeout(() => ($('#config-status').textContent = ''), 2500);
   if (res.ok) { refreshStockpileAccess(); refreshIndyAccess(); }  // re-evaluate the group gates
+  return res.ok;
+}
+
+$('#config-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  saveConfig();
 });
+
+// Auto-save the config as soon as a market-history PAT is pasted or edited, so
+// the "Check PAT keys" button (which reads the *saved* config) reflects it
+// without a manual Save. `change` covers paste-then-blur and typed edits;
+// `paste` also fires the save immediately, before the field loses focus.
+for (const name of ['market_history_pat_read', 'market_history_pat_write']) {
+  const input = $(`[name=${name}]`);
+  if (!input) continue;
+  input.addEventListener('change', () => saveConfig({ statusText: 'PAT saved.' }));
+  input.addEventListener('paste', () => {
+    // Value isn't updated until after the paste event completes.
+    setTimeout(() => saveConfig({ statusText: 'PAT saved.' }), 0);
+  });
+}
 
 function renderMoonTab() {
   renderPayoutTotal('moon');
@@ -3321,6 +3340,67 @@ async function runQuotaPush() {
 }
 
 $('#btn-quota-push')?.addEventListener('click', runQuotaPush);
+
+// Market-history archive: verify the saved Read/Write PATs against the repo.
+// The PATs live only in the saved config (not the form), so a check reflects
+// what's on disk — save the form first if you just edited them.
+async function runMarketHistoryPatCheck() {
+  const btn = $('#btn-mkt-history-check');
+  const status = $('#market-history-check-status');
+  const url = ($('[name=market_history_repo_url]')?.value || '').trim();
+  if (!url) {
+    if (status) status.textContent = 'enter a history repo URL first';
+    return;
+  }
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'checking…';
+  try {
+    const res = await fetch(`${API}/api/market/history/check`, { method: 'POST' });
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = text;
+      try { msg = JSON.parse(text).detail || text; } catch (_) {}
+      throw new Error(`HTTP ${res.status}: ${msg}`);
+    }
+    const data = await res.json();
+    if (!status) return;
+    if (data.reason === 'no_repo_url' || data.reason === 'bad_repo_url') {
+      status.textContent = data.reason === 'no_repo_url'
+        ? 'no repo URL saved (save the form first)'
+        : "repo URL isn't a recognised GitHub URL";
+      return;
+    }
+    if (data.reason === 'no_pats') {
+      status.textContent = 'no PATs saved — paste a Read/Write PAT and Save first';
+      return;
+    }
+    const verdict = (cap, needKey, label) => {
+      if (!cap) return `${label}: — not set`;
+      if (!cap.ok) {
+        const why = cap.reason === 'rejected' ? 'rejected (bad/expired token)'
+          : cap.reason === 'not_found' ? 'no access to this repo'
+          : cap.reason === 'network' ? 'network error'
+          : `error${cap.status ? ' ' + cap.status : ''}`;
+        return `${label}: ✗ ${why}`;
+      }
+      return cap[needKey]
+        ? `${label}: ✓ ${needKey === 'push' ? 'read+write' : 'read'} OK`
+        : `${label}: ✗ missing ${needKey === 'push' ? 'write' : 'read'} permission`;
+    };
+    const parts = [
+      verdict(data.read, 'pull', 'Read PAT'),
+      verdict(data.write, 'push', 'Write PAT'),
+    ];
+    status.textContent = `${data.ok ? 'all good' : 'problem found'} — ${parts.join('  ·  ')}`;
+  } catch (e) {
+    if (status) status.textContent = `check failed: ${e.message || e}`;
+    console.error('[mkt-history-check]', e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+$('#btn-mkt-history-check')?.addEventListener('click', runMarketHistoryPatCheck);
 
 async function maybeAutoSyncQuotas() {
   if (allianceQuotaAutoSyncDone) return;

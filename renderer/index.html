@@ -207,6 +207,10 @@
             <label>Read PAT <small class="muted">(<code>Contents: read</code> — for future analytics)</small> <input name="market_history_pat_read" type="password" autocomplete="off" placeholder="github_pat_… or ghp_…" /></label>
             <label>Write PAT <small class="muted">(<code>Contents: read+write</code> — required to archive)</small> <input name="market_history_pat_write" type="password" autocomplete="off" placeholder="github_pat_…" /></label>
           </div>
+          <div class="actions">
+            <button type="button" id="btn-mkt-history-check" class="secondary">Check PAT keys</button>
+            <span id="market-history-check-status" class="muted"></span>
+          </div>
           <p id="market-history-status" class="muted"></p>
         </fieldset>
 
