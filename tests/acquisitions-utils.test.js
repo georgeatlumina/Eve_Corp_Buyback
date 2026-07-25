@@ -410,3 +410,64 @@ describe('planAcquisitions — edges', () => {
     expect(blocked).toHaveLength(1);
   });
 });
+
+// ── build finder: target assembly ────────────────────────────────────────────
+
+const { buildTargets } = require('../renderer/acquisitions-utils');
+
+const fitA = { id: 'a', name: 'Drake A', hullName: 'Drake', hullTypeId: 24698,
+  items: [{ name: 'DCII', qty: 1, typeId: 2048 }] };
+const fitB = { id: 'b', name: 'Drake B', hullName: 'Drake', hullTypeId: 24698,
+  items: [{ name: 'Invuln', qty: 2, typeId: 2281 }] };
+
+describe('buildTargets', () => {
+  test('prefers the fit whose name matches the quota', () => {
+    const [t] = buildTargets(
+      [{ ship_type_id: 24698, name: 'Drake B', missing: 2 }], { a: fitA, b: fitB },
+    );
+    expect(t.fitName).toBe('Drake B');
+    expect(t.units.get('2281')).toBe(2);
+  });
+
+  test('falls back to the first fit for the hull when no name matches', () => {
+    const [t] = buildTargets(
+      [{ ship_type_id: 24698, name: 'Nonexistent', missing: 1 }], { a: fitA, b: fitB },
+    );
+    expect(t.fitName).toBe('Drake A');
+  });
+
+  test('carries the quota shortfall through as needed', () => {
+    const [t] = buildTargets([{ ship_type_id: 24698, name: 'Drake A', missing: 3 }], { a: fitA });
+    expect(t.needed).toBe(3);
+  });
+
+  test('treats a missing shortfall as zero', () => {
+    const [t] = buildTargets([{ ship_type_id: 24698, name: 'Drake A' }], { a: fitA });
+    expect(t.needed).toBe(0);
+  });
+
+  test('marks a quota with no fit at all as unevaluatable', () => {
+    const [t] = buildTargets([{ ship_type_id: 99999, name: 'Ghost', missing: 1 }], { a: fitA });
+    expect(t.unevaluatable).toBe(true);
+  });
+
+  test('propagates an unresolved typeId from the chosen fit', () => {
+    const broken = { id: 'c', name: 'Broken', hullTypeId: 24698,
+      items: [{ name: '?', qty: 1, typeId: null }] };
+    const [t] = buildTargets([{ ship_type_id: 24698, name: 'Broken', missing: 1 }], { c: broken });
+    expect(t.unevaluatable).toBe(true);
+  });
+
+  test('preserves quota order', () => {
+    const targets = buildTargets([
+      { ship_type_id: 24698, name: 'Drake B', missing: 1 },
+      { ship_type_id: 24698, name: 'Drake A', missing: 1 },
+    ], { a: fitA, b: fitB });
+    expect(targets.map((t) => t.fitName)).toEqual(['Drake B', 'Drake A']);
+  });
+
+  test('handles empty inputs', () => {
+    expect(buildTargets([], {})).toEqual([]);
+    expect(buildTargets(null, null)).toEqual([]);
+  });
+});

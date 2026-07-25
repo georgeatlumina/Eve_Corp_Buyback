@@ -227,10 +227,44 @@ function planAcquisitions({ pool, targets, mode, market, threshold = ACQ_MARKET_
   return { builds, blocked };
 }
 
+/**
+ * Turn the contracts scan's quota rows into allocator targets, in quota order.
+ *
+ * Fit selection follows the convention already used in app.js: prefer a fit
+ * whose name equals the quota's, else the first fit registered for that hull.
+ * A quota with no fit at all is unevaluatable — we cannot know what it needs.
+ */
+function buildTargets(quotas, fitsById) {
+  const byHull = new Map();
+  for (const fit of Object.values(fitsById || {})) {
+    if (fit?.hullTypeId == null) continue;
+    const key = String(fit.hullTypeId);
+    if (!byHull.has(key)) byHull.set(key, []);
+    byHull.get(key).push(fit);
+  }
+
+  return (quotas || []).map((q) => {
+    const key = String(q.ship_type_id);
+    const candidates = byHull.get(key) || [];
+    const fit = candidates.find((f) => f.name === q.name) || candidates[0] || null;
+    const { units, unevaluatable } = fit
+      ? fitModuleUnits(fit)
+      : { units: new Map(), unevaluatable: true };
+    return {
+      shipTypeId: q.ship_type_id,
+      shipName: fit?.hullName || q.name || String(q.ship_type_id),
+      fitName: fit?.name || null,
+      needed: Number(q.missing) || 0,
+      units,
+      unevaluatable,
+    };
+  });
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     mergeInventory, splitInventory, ACQ_HULL_CATEGORY_ID,
     ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits, evaluateBuild,
-    planAcquisitions,
+    planAcquisitions, buildTargets,
   };
 }
