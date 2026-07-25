@@ -4148,12 +4148,16 @@ async function copyShoppingList() {
     : (lastContractsScan.quotas || []);
   for (const q of orderedQuotas) {
     const missing = Number(q.missing) || 0;
-    if (missing > 0) {
+    // Live read, not the dashboard's snapshot: this button answers "what do I
+    // still need to buy right now", so it should reflect inventory as of the
+    // click, even if it has changed since the last Scan.
+    const remaining = Math.max(0, missing - acqHullCountFor(q.ship_type_id));
+    if (remaining > 0) {
       const name = q.ship_name || q.name || `type ${q.ship_type_id}`;
-      lines.push(`${missing} x ${name}`);
+      lines.push(`${remaining} x ${name}`);
     }
   }
-  const text = lines.length ? lines.join('\n') : 'No gaps — every quota is met.';
+  const text = lines.length ? lines.join('\n') : 'No gaps — every quota is met or covered by Acquisitions inventory.';
   try {
     await navigator.clipboard.writeText(text);
     $('#contracts-status').textContent = `Copied ${lines.length} lines to clipboard.`;
