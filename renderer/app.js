@@ -2,6 +2,13 @@ const API = window.api.base;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+function updateAppHeaderHeight() {
+  const h = document.querySelector('header')?.getBoundingClientRect().height || 0;
+  document.documentElement.style.setProperty('--app-header-h', `${h}px`);
+}
+updateAppHeaderHeight();
+window.addEventListener('resize', updateAppHeaderHeight);
+
 (async () => {
   if (!window.api?.getMeta) return;
   try {
@@ -156,6 +163,8 @@ function activateTab(name) {
   if (name === 'buybacks') refreshWallets();
   closeAllNavMenus();
   updateNavTriggers();
+  if (name === 'haulx') renderHaulxTab();
+  if (name === 'acquisitions') renderAcquisitionsTab();
 }
 
 $$('.tab-btn').forEach((btn) => {
@@ -1619,7 +1628,7 @@ function renderFitDetail(f) {
   const backLabel = aaState.doctrineDetail ? `← Back to ${aaState.doctrineDetail.name}` : '← All doctrines';
   const unknownCount = f.items.filter((it) => !it.typeId).length;
 
-  const avail = computeFitAvailability(f.items, aaState.market);
+  const avail = computeFitAvailability(fitItemsForReadiness(f), aaState.market);
   const itemsForRender = avail ? avail.items : f.items.map((it) => ({ ...it, availability: 'pending' }));
 
   let marketBlock = '';
@@ -1839,7 +1848,7 @@ const readinessState = {
   scanning: false,
   scanProgress: null,   // { phase, current, total, message }
   scanError: null,
-  toggles: { category: { 'Capital Fits': false }, fit: {} },
+  toggles: { category: { 'Capital Fits': false }, fit: {}, excludeHulls: false },
   settingsOpen: false,
   selection: null,      // null | { type: 'doctrine'|'category', id }
   search: '',
@@ -1855,7 +1864,10 @@ function loadReadinessPersistent() {
   } catch (_) {}
   try {
     const t = JSON.parse(localStorage.getItem(LS_TOGGLES_KEY) || 'null');
-    if (t && t.category && t.fit) readinessState.toggles = t;
+    if (t && t.category && t.fit) {
+      readinessState.toggles = t;
+      if (t.excludeHulls == null) readinessState.toggles.excludeHulls = false;
+    }
   } catch (_) {}
 }
 function saveReadinessScan() {
@@ -1871,6 +1883,11 @@ function fitIsEnabled(fit) {
   if (ft === true) return true;
   if (ft === false) return false;
   return readinessState.toggles.category[fit.category] !== false;
+}
+
+function fitItemsForReadiness(fit) {
+  if (!readinessState.toggles.excludeHulls || !fit.hullTypeId) return fit.items || [];
+  return (fit.items || []).filter((it) => it.typeId !== fit.hullTypeId);
 }
 
 async function fetchAaPath(path) {
@@ -1956,6 +1973,7 @@ async function scanAllFits() {
       doctrines: doctrineRecords,
       fits,
     };
+    haulxReadinessScanDone = true;
     saveReadinessScan();
     readinessState.scanProgress = null;
     if (!aaState.market && !aaState.marketLoading) loadMarket(false);
@@ -1981,7 +1999,7 @@ function aggregateMissingFiltered(scan, market, filterFn) {
     if (f.error || !f.items) continue;
     if (!filterFn(f)) continue;
     fitsConsidered += 1;
-    for (const it of f.items) {
+    for (const it of fitItemsForReadiness(f)) {
       totalItemSlots += 1;
       if (it.typeId == null) {
         unknownSlots += 1;
@@ -2520,6 +2538,9 @@ function renderReadinessSettings() {
     <section class="readiness-settings">
       <h3>Settings — which fits to include</h3>
       <p class="muted small">Toggle whole categories or individual fits. Disabled fits are skipped in completeness and missing-items aggregation.</p>
+      <label class="chip ${readinessState.toggles.excludeHulls ? 'on' : 'off'}" style="margin-bottom:0.75rem">
+        <input type="checkbox" id="readiness-exclude-hulls" ${readinessState.toggles.excludeHulls ? 'checked' : ''}> Exclude hulls from readiness check
+      </label>
       <div class="category-chips">
         ${cats.map(([cat, n]) => {
           const enabled = readinessState.toggles.category[cat] !== false;
@@ -2613,6 +2634,13 @@ $('#btn-readiness-search-clear')?.addEventListener('click', () => {
 });
 
 $('#readiness-content')?.addEventListener('change', (e) => {
+  const excludeHullsInput = e.target.closest('#readiness-exclude-hulls');
+  if (excludeHullsInput) {
+    readinessState.toggles.excludeHulls = excludeHullsInput.checked;
+    saveReadinessToggles();
+    renderReadinessDashboard();
+    return;
+  }
   const catInput = e.target.closest('input[data-cat]');
   if (catInput) {
     const cat = catInput.getAttribute('data-cat');
@@ -3429,6 +3457,7 @@ async function runContractsScan() {
         lastContractsScan = evt.payload;
         contractsScanCache[activeContractsAlliance] = evt.payload;
         renderContractsDashboard(evt.payload);
+        haulxQty = {};
         step.textContent = 'done';
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);
@@ -3652,10 +3681,10 @@ async function prefetchHullPrices(quotas) {
   await Promise.all([...typeToBar.entries()].map(async ([typeId, { bar, q }]) => {
     if (bar.dataset.price !== '') return; // already priced from an expanded bar
     try {
-      const res = await fetch(`${API}/api/market/amarr-sell?type_id=${typeId}`);
+      const res = await fetch(`${API}/api/market/jita-sell?type_id=${typeId}`);
       const data = await res.json();
       if (data.min_sell != null && bar.dataset.price === '') {
-        bar.dataset.price = data.min_sell * 1.15;
+        bar.dataset.price = data.min_sell * 1.2;
         if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
       }
     } catch (_) {}
@@ -3676,6 +3705,9 @@ function sortQuotaDashboard() {
       const bEmpty = b.classList.contains('quota-empty') ? 0 : 1;
       if (aEmpty !== bEmpty) return aEmpty - bEmpty;
       return Number(b.dataset.missing) - Number(a.dataset.missing);
+    }
+    if (order === 'under-quota-pct') {
+      return Number(a.dataset.missingPct) - Number(b.dataset.missingPct);
     }
     if (order === 'value') {
       const av = a.dataset.price !== '' ? Number(a.dataset.price) : -1;
@@ -3703,18 +3735,19 @@ function renderQuotaBar(q, priority = 0) {
   div.dataset.shipTypeId = q.ship_type_id || '';
   div.dataset.titleFilter = (q.title_filter || '').toLowerCase();
   div.dataset.missing = missing;
+  div.dataset.missingPct = required > 0 ? (available / required) * 100 : 0;
   div.dataset.price = '';
   div.innerHTML = `
     <div class="quota-bar-head">
       <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
       <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
       <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
-      <span class="quota-expand-caret">▸</span>
+      <span class="quota-expand-caret" style="margin-left:auto">▸</span>
     </div>
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
     <div class="quota-expand-panel">
       <div class="quota-expand-row">
-        <span class="quota-expand-label">Contract price (115% Amarr sell)</span>
+        <span class="quota-expand-label">Contract price (120% Jita sell)</span>
         <span class="quota-amarr-price muted">—</span>
         <button type="button" class="quota-price-refresh" title="Refresh price" hidden>↻</button>
       </div>
@@ -3724,6 +3757,7 @@ function renderQuotaBar(q, priority = 0) {
       </div>
     </div>
   `;
+
   // First click: toggle expand panel. Second click on the price row: fetch price.
   div.addEventListener('click', (e) => {
     if (e.target.closest('.quota-expand-panel')) return; // handled separately
@@ -3772,7 +3806,7 @@ function renderQuotaBar(q, priority = 0) {
         const uniqueIds = [...new Set(contractPricingItems.map((i) => i.typeId))];
         const priceResults = await Promise.all(
           uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/amarr-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
+            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
           )
         );
         const priceMap = new Map();
@@ -3785,14 +3819,14 @@ function renderQuotaBar(q, priority = 0) {
           if (p != null) total += p * item.qty;
           else unpriced.push({ name: item.name, qty: item.qty });
         }
-        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · from contracts)';
+        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · from contracts)';
         if (total > 0) {
-          div.dataset.price = total * 1.15;
-          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
+          div.dataset.price = total * 1.2;
+          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
-          priceEl.textContent = 'no Amarr prices found for contract items';
+          priceEl.textContent = 'no Jita prices found for contract items';
         }
         return;
       }
@@ -3800,6 +3834,10 @@ function renderQuotaBar(q, priority = 0) {
       // Fallback: Auth fit lookup.
       let fitDetail = null;
       let fitFoundOnAuth = false;
+      // Why we couldn't price the full fit, for an informative hull-only message.
+      // One of: 'none' | 'ambiguous' | 'hull-mismatch' | null (resolved fine).
+      let fallbackReason = null;
+      let ambiguousCount = 0;
       if (window.api?.aaFetchHtml && (q.fit_id || q.ship_name || q.name)) {
         priceEl.textContent = 'searching fits…';
         let resolvedFitId = q.fit_id || 0;
@@ -3821,6 +3859,12 @@ function renderQuotaBar(q, priority = 0) {
               const filterLower = q.title_filter.toLowerCase();
               const match = bucket.find((e) => e.fitName.includes(filterLower));
               if (match) resolvedFitId = match.fitId;
+              else { fallbackReason = 'ambiguous'; ambiguousCount = bucket.length; }
+            } else if (bucket.length > 1) {
+              fallbackReason = 'ambiguous';
+              ambiguousCount = bucket.length;
+            } else {
+              fallbackReason = 'none';
             }
           }
         }
@@ -3833,6 +3877,8 @@ function renderQuotaBar(q, priority = 0) {
           const hullMismatch = q.ship_type_id && candidate?.hullTypeId
             && candidate.hullTypeId !== q.ship_type_id;
           if (candidate && !hullMismatch) { fitDetail = candidate; fitFoundOnAuth = true; }
+          else if (hullMismatch) fallbackReason = 'hull-mismatch';
+          else fallbackReason = 'none';
         }
       }
 
@@ -3843,7 +3889,7 @@ function renderQuotaBar(q, priority = 0) {
         const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
         const priceResults = await Promise.all(
           uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/amarr-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
+            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
           )
         );
         const priceMap = new Map();
@@ -3858,38 +3904,54 @@ function renderQuotaBar(q, priority = 0) {
           else unpriced.push({ name: item.name, qty: item.qty });
         }
 
-        if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · full fit)';
+        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · full fit)';
         if (total > 0) {
-          div.dataset.price = total * 1.15;
-          priceEl.textContent = `${fmtM(total * 1.15)}  (base: ${fmt(total)})`;
+          div.dataset.price = total * 1.2;
+          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
-          priceEl.textContent = 'no Amarr prices found for fit items';
+          priceEl.textContent = 'no Jita prices found for fit items';
         }
       } else {
-        const notInAuth = _fitIndexByType.size > 0 && !fitFoundOnAuth;
         priceEl.textContent = 'loading…';
-        const res = await fetch(`${API}/api/market/amarr-sell?type_id=${q.ship_type_id}${bustParam}`);
+        const res = await fetch(`${API}/api/market/jita-sell?type_id=${q.ship_type_id}${bustParam}`);
         const data = await res.json();
-        if (notInAuth) {
+        const shipLabel = q.ship_name || q.name || 'this ship';
+        if (_fitIndexByType.size === 0) {
+          // No Auth fit data at all — not logged in or Auth unreachable.
+          if (labelEl) labelEl.textContent = 'Alliance Auth not connected · 120% Jita sell (hull only)';
+        } else if (fitFoundOnAuth) {
+          // A fit matched but exposes no buy list to price against.
+          const fitName = fitDetail?.name;
           if (labelEl) {
-            labelEl.textContent = '⚠ Not in alliance fits — hull price only';
+            labelEl.textContent = fitName
+              ? `Fit "${fitName}" has no buy list on Auth · hull only`
+              : 'Alliance fit found — no buy list on Auth · hull only';
+          }
+        } else {
+          // Resolution failed — tell the user which cause and how to fix it.
+          let msg;
+          if (fallbackReason === 'ambiguous') {
+            msg = `⚠ ${ambiguousCount} ${shipLabel} fits on Auth — set a title filter to pick one · hull price only`;
+          } else if (fallbackReason === 'hull-mismatch') {
+            msg = '⚠ Matched fit is a different hull — check the fit · hull only';
+          } else {
+            msg = `⚠ No ${shipLabel} fit on alliance Auth · hull only`;
+          }
+          if (labelEl) {
+            labelEl.textContent = msg;
             labelEl.classList.add('quota-not-in-auth');
           }
           expandRow.classList.add('quota-row-warning');
-        } else if (fitFoundOnAuth) {
-          if (labelEl) labelEl.textContent = 'Alliance fit found — hull price only (no buy list on Auth)';
-        } else {
-          if (labelEl) labelEl.textContent = 'Contract price (115% Amarr sell · hull only)';
         }
         if (data.min_sell != null) {
           if (data.source === 'esi') markEsi();
-          div.dataset.price = data.min_sell * 1.15;
-          priceEl.textContent = `${fmtM(data.min_sell * 1.15)}  (base: ${fmt(data.min_sell)})`;
+          div.dataset.price = data.min_sell * 1.2;
+          priceEl.textContent = `${fmtM(data.min_sell * 1.2)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
         } else {
-          priceEl.textContent = 'no sell orders in Amarr';
+          priceEl.textContent = 'no sell orders in Jita';
         }
       }
     } catch {
@@ -4070,7 +4132,15 @@ async function copyShoppingList() {
     return;
   }
   const lines = [];
-  for (const q of lastContractsScan.quotas || []) {
+  const root = $('#contracts-quota-dashboard');
+  const bars = root ? [...root.querySelectorAll('.quota-bar')] : [];
+  const quotasByTypeId = Object.fromEntries(
+    (lastContractsScan.quotas || []).map((q) => [String(q.ship_type_id), q])
+  );
+  const orderedQuotas = bars.length
+    ? bars.map((el) => quotasByTypeId[el.dataset.shipTypeId]).filter(Boolean)
+    : (lastContractsScan.quotas || []);
+  for (const q of orderedQuotas) {
     const missing = Number(q.missing) || 0;
     if (missing > 0) {
       const name = q.ship_name || q.name || `type ${q.ship_type_id}`;
@@ -4084,6 +4154,661 @@ async function copyShoppingList() {
   } catch (e) {
     alert(text);
   }
+}
+
+// ============================================================
+// Acquisitions tab
+// ============================================================
+
+let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
+let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
+
+async function acquisitionsLoad() {
+  try {
+    const data = await fetch(`${API}/api/acquisitions`).then((r) => r.json());
+    acquisitionsHulls = data.hulls || [];
+    acquisitionsItems = data.items || [];
+  } catch (_) {}
+}
+
+async function acquisitionsSave() {
+  try {
+    await fetch(`${API}/api/acquisitions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hulls: acquisitionsHulls, items: acquisitionsItems }),
+    });
+  } catch (_) {}
+}
+
+function renderAcquisitionsTable(items, emptyMsg) {
+  if (!items.length) return `<p class="muted" style="font-size:0.875rem;padding:0.5rem 0">${emptyMsg || 'None.'}</p>`;
+  return `<table style="width:100%;border-collapse:collapse;font-size:0.875rem;margin-top:0.5rem">
+    <thead>
+      <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
+        <th style="padding:0.35rem 0.5rem">Name</th>
+        <th style="padding:0.35rem 0.5rem;text-align:right">Qty</th>
+        <th style="padding:0.35rem 0.75rem;text-align:right">Type ID</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${items.map((it) => `
+      <tr style="border-bottom:1px solid #1e2533">
+        <td style="padding:0.35rem 0.5rem">${escapeHtml(it.name)}</td>
+        <td style="padding:0.35rem 0.5rem;text-align:right">${it.quantity.toLocaleString()}</td>
+        <td style="padding:0.35rem 0.75rem;text-align:right;color:#8899aa">${it.type_id}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function renderAcquisitionsResults(hullsEl, itemsEl) {
+  hullsEl.innerHTML = renderAcquisitionsTable(acquisitionsHulls, 'No hulls found.');
+  itemsEl.innerHTML = renderAcquisitionsTable(acquisitionsItems, 'No modules or ammo found.');
+}
+
+async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl) {
+  const text = textarea.value.trim();
+  if (!text) { statusEl.textContent = 'Nothing to parse.'; return; }
+  statusEl.textContent = 'Parsing…';
+
+  const root = textarea.closest('#acquisitions-root') || document;
+  const progress = root.querySelector('#acq-progress');
+  const fill = progress?.querySelector('.progress-fill');
+  const step = progress?.querySelector('.progress-step');
+  if (progress) progress.hidden = false;
+
+  try {
+    const resp = await fetch(`${API}/api/acquisitions/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paste_text: text }),
+    });
+    if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let all = [];
+    let ignored = [];
+    let zeroQty = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const ev = JSON.parse(line);
+        if (ev.event === 'progress') {
+          const pct = ev.total > 0 ? Math.round((ev.done / ev.total) * 100) : 0;
+          if (fill) fill.style.width = `${pct}%`;
+          if (step) step.textContent = `${ev.name} (${ev.done} / ${ev.total})`;
+        } else if (ev.event === 'done') {
+          all = ev.items || [];
+          ignored = ev.ignored || [];
+          zeroQty = ev.zero_qty || [];
+        } else if (ev.event === 'error') {
+          throw new Error(ev.message);
+        }
+      }
+    }
+
+    acquisitionsHulls = all.filter((it) => it.category_id === 6);
+    acquisitionsItems = all.filter((it) => it.category_id !== 6);
+    renderAcquisitionsResults(hullsEl, itemsEl);
+    statusEl.textContent = `${all.length} item${all.length !== 1 ? 's' : ''} resolved — ${acquisitionsHulls.length} hull${acquisitionsHulls.length !== 1 ? 's' : ''}, ${acquisitionsItems.length} module${acquisitionsItems.length !== 1 ? 's' : ''}.`;
+
+    const ignoredSection = root.querySelector('#acq-ignored-section');
+    const ignoredSummary = root.querySelector('#acq-ignored-summary');
+    const ignoredList = root.querySelector('#acq-ignored-list');
+    const allIgnored = [
+      ...ignored.map((n) => ({ name: n, reason: 'unrecognised' })),
+      ...zeroQty.map((n) => ({ name: n, reason: 'no qty' })),
+    ];
+    if (ignoredSection && ignoredList && allIgnored.length) {
+      ignoredSummary.textContent = `Ignored lines (${allIgnored.length})`;
+      ignoredList.innerHTML = allIgnored.map((it) =>
+        `<div style="padding:1px 0">${escapeHtml(it.name)} <span class="muted" style="font-size:0.75rem">${escapeHtml(it.reason)}</span></div>`
+      ).join('');
+      ignoredSection.hidden = false;
+    } else if (ignoredSection) {
+      ignoredSection.hidden = true;
+    }
+    await acquisitionsSave();
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
+  } finally {
+    if (progress) progress.hidden = true;
+  }
+}
+
+function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
+  textarea.value = '';
+  acquisitionsHulls = [];
+  acquisitionsItems = [];
+  renderAcquisitionsResults(hullsEl, itemsEl);
+  statusEl.textContent = '';
+  const ignoredSection = textarea.closest('#acquisitions-root')?.querySelector('#acq-ignored-section');
+  if (ignoredSection) ignoredSection.hidden = true;
+  acquisitionsSave();
+}
+
+function renderAcquisitionsTab() {
+  const root = $('#acquisitions-root');
+  if (!root) return;
+  root.innerHTML = `
+    <h2>Acquisitions Inventory <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <p class="muted">Paste your full inventory (hulls and modules together) in EVE clipboard format
+    — Name, tab, quantity, one line per item. Hulls and modules will be split automatically.</p>
+    <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
+      placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
+    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
+      <button id="acq-parse" class="btn">Parse</button>
+      <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
+      <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
+    </div>
+    <div class="progress-area" id="acq-progress" hidden>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <div class="progress-step muted">starting…</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1.5rem">
+      <div>
+        <h3 style="margin:0 0 0.5rem">Hulls</h3>
+        <div id="acq-hulls-table"></div>
+      </div>
+      <div>
+        <h3 style="margin:0 0 0.5rem">Modules &amp; Ammo</h3>
+        <div id="acq-items-table"></div>
+      </div>
+    </div>
+    <div id="acq-ignored-section" hidden style="margin-top:1.5rem">
+      <details>
+        <summary style="cursor:pointer;color:#8899aa;font-size:0.85rem" id="acq-ignored-summary">Ignored lines</summary>
+        <div id="acq-ignored-list" style="margin-top:0.5rem;font-size:0.8rem;color:#8899aa;columns:2;column-gap:2rem"></div>
+      </details>
+    </div>`;
+
+  const textarea = root.querySelector('#acq-paste');
+  const parseBtn = root.querySelector('#acq-parse');
+  const clearBtn = root.querySelector('#acq-clear');
+  const statusEl = root.querySelector('#acq-status');
+  const hullsEl = root.querySelector('#acq-hulls-table');
+  const itemsEl = root.querySelector('#acq-items-table');
+
+  renderAcquisitionsResults(hullsEl, itemsEl);
+
+  parseBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl));
+  clearBtn.addEventListener('click', () => acquisitionsClear(textarea, hullsEl, itemsEl, statusEl));
+  textarea.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      acquisitionsParse(textarea, hullsEl, itemsEl, statusEl);
+    }
+  });
+}
+
+// Load acquisitions inventory on startup
+acquisitionsLoad();
+
+// ============================================================
+// Plan HaulX tab
+// ============================================================
+
+// HAULX_MAX_VOLUME, HAULX_MAX_COLLATERAL, HAULX_SHIPPING_COST, HAULX_SELL_MARKUP
+// and the planning maths (haulxTotals / haulxFillByPriority / haulxBlockReason /
+// haulxProfit) all come from haulx-utils.js, loaded before this file.
+
+const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume, fit_price, fit_volume, fit_buy_price }
+const haulxItemPriceCache = {}; // type_id -> { min_sell, vol } (for fit items)
+const haulxItemBuyCache = {};   // type_id -> max_buy (for fit items)
+let haulxQty = {};  // type_id (string) -> qty (number)
+let haulxOverQuota = false;
+let haulxReadinessScanDone = false;  // true only after a readiness scan in this session
+
+function haulxUpdateTotals() {
+  const { vol, isk, sellValue, buyValue } = haulxTotals(haulxQty, haulxPriceCache);
+  const volEl = $('#haulx-vol');
+  const iskEl = $('#haulx-isk');
+  const profitEl = $('#haulx-profit');
+  const copyBtn = $('#haulx-copy');
+  if (!volEl) return;
+
+  const volKm3 = vol / 1000;
+  volEl.textContent = `${volKm3.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / 360.0 km³`;
+  volEl.classList.toggle('haulx-over', vol > HAULX_MAX_VOLUME);
+
+  const iskB = isk / 1_000_000_000;
+  iskEl.textContent = `${iskB.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B / 5.00B ISK`;
+  iskEl.classList.toggle('haulx-over', isk > HAULX_MAX_COLLATERAL);
+
+  if (profitEl) {
+    const hasBuyData = buyValue > 0 || Object.values(haulxQty).some((q) => q > 0 && Object.keys(haulxItemBuyCache).length > 0);
+    if (sellValue > 0 && buyValue > 0) {
+      const profit = haulxProfit(sellValue, buyValue);
+      const profitM = profit / 1_000_000_000;
+      profitEl.textContent = `${profitM >= 0 ? '+' : ''}${profitM.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
+      profitEl.style.color = profit >= 0 ? '#4a8' : '#ef4444';
+    } else {
+      profitEl.textContent = '…';
+      profitEl.style.color = '#8899aa';
+    }
+  }
+
+  const anySelected = Object.values(haulxQty).some((q) => q > 0);
+  if (copyBtn) copyBtn.disabled = !anySelected;
+  const clearBtn = $('#haulx-clear');
+  if (clearBtn) clearBtn.disabled = !anySelected;
+}
+
+// Flag a row as un-addable (empty `reason` clears the flag). Blocked rows get the
+// same red treatment as a hull with no fit in Auth, their qty is forced to 0, and
+// the qty input + max button are locked so they can't enter a haul.
+function haulxSetRowBlocked(row, tid, reason) {
+  if (!row) return;
+  const blocked = !!reason;
+  const cell = row.querySelector('.haulx-ship-cell');
+  const flag = row.querySelector('.haulx-row-flag');
+  const input = row.querySelector('.haulx-qty');
+  const maxBtn = row.querySelector('.haulx-max');
+  if (cell) cell.style.color = blocked ? '#ef4444' : '';
+  if (flag) flag.textContent = blocked ? `(${reason})` : '';
+  if (input) {
+    input.disabled = blocked;
+    if (blocked) input.value = 0;
+  }
+  if (maxBtn) maxBtn.disabled = blocked;
+  if (blocked) delete haulxQty[tid];
+  row.dataset.blocked = blocked ? '1' : '';
+}
+
+async function haulxFetchPrices(quotas) {
+  // "Fill by priority" divides by per-ship volume and price, so it stays
+  // disabled until every lookup below has settled — otherwise it would fill
+  // against unit costs of 0 and blow straight past the volume/collateral caps.
+  const fillBtn = $('#haulx-fill-priority');
+  if (fillBtn) fillBtn.disabled = true;
+
+  const fits = readinessState.scan?.fits || {};
+  const fitsByHull = {};
+  for (const fit of Object.values(fits)) {
+    const key = String(fit.hullTypeId);
+    if (!fitsByHull[key]) fitsByHull[key] = [];
+    fitsByHull[key].push(fit);
+  }
+
+  // Collect all type IDs we need prices for: hulls + all fit items
+  const allTypeIds = new Set();
+  for (const q of quotas || []) {
+    allTypeIds.add(String(q.ship_type_id));
+    const candidates = fitsByHull[String(q.ship_type_id)] || [];
+    const fit = candidates.find((f) => f.name === q.name) || candidates[0];
+    for (const item of fit?.items || []) allTypeIds.add(String(item.typeId));
+  }
+
+  // Both lists are derived up front so the progress bar knows its total. Safe
+  // to compute the buy list before the sell fetches run — they touch different
+  // caches.
+  const uncachedIds = [...allTypeIds].filter((tid) => !(tid in haulxItemPriceCache));
+  const uncachedBuyIds = [...allTypeIds].filter((tid) => !(tid in haulxItemBuyCache));
+
+  const progress = $('#haulx-price-progress');
+  const progressFill = progress?.querySelector('.progress-fill');
+  const progressStep = progress?.querySelector('.progress-step');
+  const totalLookups = uncachedIds.length + uncachedBuyIds.length;
+  let doneLookups = 0;
+  if (progress && totalLookups > 0) {
+    progress.hidden = false;
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressStep) progressStep.textContent = `looking up volume & price — 0 / ${totalLookups}`;
+  }
+  const bumpProgress = () => {
+    doneLookups += 1;
+    if (!progress || totalLookups === 0) return;
+    if (progressFill) progressFill.style.width = `${(doneLookups / totalLookups) * 100}%`;
+    if (progressStep) progressStep.textContent = `looking up volume & price — ${doneLookups} / ${totalLookups}`;
+  };
+
+  try {
+    // Fetch any uncached sell prices
+    await Promise.all(
+      uncachedIds.map((tid) =>
+        fetch(`${API}/api/market/jita-sell?type_id=${tid}`)
+          .then((r) => r.json())
+          .then((data) => {
+            haulxItemPriceCache[tid] = { min_sell: data.min_sell ?? null, vol: data.packaged_volume ?? null };
+            // Hull entries also get volume stored in haulxPriceCache
+            if (!haulxPriceCache[tid]) {
+              haulxPriceCache[tid] = { min_sell: data.min_sell, packaged_volume: data.packaged_volume };
+            }
+          })
+          .catch(() => { haulxItemPriceCache[tid] = { min_sell: null, vol: null }; })
+          .finally(bumpProgress)
+      )
+    );
+
+    // Fetch any uncached buy prices
+    await Promise.all(
+      uncachedBuyIds.map((tid) =>
+        fetch(`${API}/api/market/jita-buy?type_id=${tid}`)
+          .then((r) => r.json())
+          .then((data) => { haulxItemBuyCache[tid] = data.max_buy ?? null; })
+          .catch(() => { haulxItemBuyCache[tid] = null; })
+          .finally(bumpProgress)
+      )
+    );
+  } finally {
+    if (progress) progress.hidden = true;
+  }
+
+  // Now compute fit_price per quota and update rows
+  for (const q of quotas || []) {
+    const tid = String(q.ship_type_id);
+    const candidates = fitsByHull[tid] || [];
+    const fit = candidates.find((f) => f.name === q.name) || candidates[0];
+
+    // Ensure hull cache entry exists
+    if (!haulxPriceCache[tid]) {
+      const entry = haulxItemPriceCache[tid];
+      haulxPriceCache[tid] = { min_sell: entry?.min_sell ?? null, packaged_volume: entry?.vol ?? null };
+    }
+
+    let fitTotal = null;
+    let fitVolume = null;
+    let fitBuyTotal = null;
+    if (fit?.items?.length) {
+      const hullEntry = haulxItemPriceCache[tid];
+      let sumIsk = hullEntry?.min_sell ?? 0;
+      let sumVol = hullEntry?.vol ?? 0;
+      let sumBuy = haulxItemBuyCache[tid] ?? 0;
+      let allPriced = hullEntry?.min_sell != null;
+      let allVolumed = hullEntry?.vol != null;
+      let allBought = haulxItemBuyCache[tid] != null;
+      for (const item of fit.items) {
+        if (String(item.typeId) === tid) continue;  // hull already counted above
+        const p = haulxItemPriceCache[String(item.typeId)];
+        const b = haulxItemBuyCache[String(item.typeId)];
+        if (p?.min_sell == null) { allPriced = false; }
+        else sumIsk += p.min_sell * item.qty;
+        if (p?.vol == null) { allVolumed = false; }
+        else sumVol += p.vol * item.qty;
+        if (b == null) { allBought = false; }
+        else sumBuy += b * item.qty;
+      }
+      if (allPriced) fitTotal = sumIsk;
+      if (allVolumed) fitVolume = sumVol;
+      if (allBought) fitBuyTotal = sumBuy;
+    }
+    haulxPriceCache[tid].fit_price = fitTotal;
+    haulxPriceCache[tid].fit_volume = fitVolume;
+    haulxPriceCache[tid].fit_buy_price = fitBuyTotal;
+
+    // Update rendered row if visible
+    const row = $(`#haulx-row-${tid}`);
+    if (row) {
+      const volEl = row.querySelector('.haulx-row-vol');
+      const priceEl = row.querySelector('.haulx-row-price');
+      const displayVol = fitVolume != null ? fitVolume : haulxPriceCache[tid].packaged_volume;
+      if (volEl) {
+        volEl.textContent = displayVol != null ? `${(displayVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³` : '—';
+        if (displayVol != null) volEl.title = `${displayVol.toLocaleString()} m³`;
+      }
+      if (priceEl) {
+        // No hull-only fallback: a hull price for a ship whose fit can't be
+        // totalled would understate the real cost. Show nothing and block the row.
+        priceEl.textContent = fitTotal != null
+          ? `${(fitTotal / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
+          : '—';
+        priceEl.title = fitTotal != null ? `${fitTotal.toLocaleString()} ISK` : '';
+      }
+      row.querySelector('.haulx-loading')?.remove();
+
+      // A row is only addable once we know both the full fit volume and the full
+      // fit price — anything else would let a haul be planned against costs we
+      // can't stand behind. Blocked rows are flagged and locked to 0.
+      haulxSetRowBlocked(row, tid, haulxBlockReason(haulxPriceCache[tid], !!fit));
+    }
+  }
+  haulxUpdateTotals();
+
+  // Unlock "Fill by priority" only once every row it could add has a full fit
+  // volume and price. Rows missing either are blocked above, so they neither
+  // hold the button hostage nor end up in the haul.
+  const fillable = (quotas || []).filter((q) => haulxOverQuota || (Number(q.missing) || 0) > 0);
+  const usable = fillable.filter((q) => haulxIsAddable(haulxPriceCache[String(q.ship_type_id)]));
+  const blockedCount = fillable.length - usable.length;
+  if (fillBtn) {
+    fillBtn.disabled = usable.length === 0;
+    fillBtn.title = usable.length === 0
+      ? (fillable.length === 0 ? 'Nothing under quota to fill' : 'No under-quota ship has a full fit volume and price')
+      : '';
+  }
+  const note = $('#haulx-fill-note');
+  if (note) {
+    note.textContent = blockedCount > 0 ? `${blockedCount} unavailable` : '';
+    note.title = blockedCount > 0
+      ? 'Ships with no fit in Auth, or whose fit has an unpriced item, can\'t be added'
+      : '';
+  }
+}
+
+function renderHaulxTab() {
+  const root = $('#haulx-root');
+  if (!root) return;
+
+  const hasContracts = !!lastContractsScan;
+  const hasReadiness = haulxReadinessScanDone;
+
+  if (!hasContracts || !hasReadiness) {
+    const items = [
+      !hasContracts && '<li>Run a <strong>Contracts</strong> scan (Contracts tab → Scan)</li>',
+      !hasReadiness && '<li>Run a <strong>Market Readiness</strong> scan (Market Readiness tab → Scan doctrines &amp; fits)</li>',
+    ].filter(Boolean).join('');
+    root.innerHTML = `
+      <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+      <p class="muted">Before you can plan a haul, complete the following:</p>
+      <ul style="color:#e0e8f0;line-height:2">${items}</ul>`;
+    return;
+  }
+
+  const quotas = lastContractsScan.quotas || [];
+
+  root.innerHTML = `
+    <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Jita to UEXO. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Rows use the same sort order as the <strong>Contracts</strong> page — change the sort there and re-open this tab to reorder them. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
+    <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
+      <span style="font-weight:600">HaulX</span>
+      <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
+      <span style="font-size:0.85rem">Collateral: <strong id="haulx-isk" class="haulx-metric">—B / 5.00B ISK</strong></span>
+      <span style="font-size:0.85rem">Shipping: <strong>400M ISK</strong></span>
+      <span style="font-size:0.85rem">Profit: <strong id="haulx-profit" style="color:#8899aa">…</strong></span>
+      <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
+      <button id="haulx-fill-priority" class="link-btn" disabled>Fill by priority</button>
+      <span id="haulx-fill-note" class="muted" style="font-size:0.78rem;color:#ef4444"></span>
+      <button id="haulx-clear" class="link-btn" disabled>Clear</button>
+      <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
+        <input type="checkbox" id="haulx-over-quota" ${haulxOverQuota ? 'checked' : ''}> Allow over quota
+      </label>
+    </div>
+    <div class="progress-area" id="haulx-price-progress" style="padding:0.5rem 1rem" hidden>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <div class="progress-step muted">looking up volume &amp; price…</div>
+    </div>
+    <table id="haulx-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">
+      <thead style="position:sticky;top:calc(var(--app-header-h,0px) + 48px);z-index:9;background:#1e1e1e">
+        <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
+          <th style="padding:0.5rem 1rem">Ship</th>
+          <th style="padding:0.5rem 0.5rem">Missing</th>
+          <th style="padding:0.5rem 0.5rem">On hand</th>
+          <th style="padding:0.5rem 0.5rem">Qty</th>
+          <th style="padding:0.5rem 0.5rem">Vol/ship</th>
+          <th style="padding:0.5rem 1rem">Price (Jita)</th>
+        </tr>
+      </thead>
+      <tbody id="haulx-tbody"></tbody>
+    </table>`;
+
+  const tbody = $('#haulx-tbody');
+
+  // Respect current contracts sort order if bars are rendered
+  const contractsRoot = $('#contracts-quota-dashboard');
+  const bars = contractsRoot ? [...contractsRoot.querySelectorAll('.quota-bar')] : [];
+  const quotasByTypeId = Object.fromEntries(quotas.map((q) => [String(q.ship_type_id), q]));
+  const orderedQuotas = bars.length
+    ? bars.map((el) => quotasByTypeId[el.dataset.shipTypeId]).filter(Boolean)
+    : quotas;
+
+  const onHandByTypeId = Object.fromEntries(acquisitionsHulls.map((h) => [String(h.type_id), h.quantity]));
+
+  const fitsByHull = {};
+  for (const fit of Object.values(readinessState.scan?.fits || {})) {
+    const key = String(fit.hullTypeId);
+    if (!fitsByHull[key]) fitsByHull[key] = [];
+    fitsByHull[key].push(fit);
+  }
+
+  for (const q of orderedQuotas) {
+    const tid = String(q.ship_type_id);
+    const missing = Number(q.missing) || 0;
+    const atQuota = missing <= 0;
+    const price = haulxPriceCache[tid];
+    const qty = haulxQty[tid] || 0;
+    const rowMax = haulxOverQuota ? 999 : (atQuota ? 10 : missing);
+    const onHand = onHandByTypeId[tid] || 0;
+    const hasFit = (fitsByHull[tid]?.length || 0) > 0;
+
+    const rawVol = price?.fit_volume ?? price?.packaged_volume;
+    const volTitle = rawVol != null ? `title="${rawVol.toLocaleString()} m³"` : '';
+    const priceTitle = price?.fit_price != null ? `title="${price.fit_price.toLocaleString()} ISK"` : '';
+    const volText = rawVol != null
+      ? `${(rawVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³`
+      : '<span class="haulx-loading muted">…</span>';
+    const priceText = price?.fit_price != null
+      ? `${(price.fit_price / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
+      : '<span class="haulx-loading muted">…</span>';
+
+    const tr = document.createElement('tr');
+    tr.id = `haulx-row-${tid}`;
+    tr.style.cssText = atQuota ? 'opacity:0.45;border-bottom:1px solid #1e2533' : 'border-bottom:1px solid #1e2533';
+    tr.innerHTML = `
+      <td class="haulx-ship-cell" style="padding:0.5rem 1rem${hasFit ? '' : ';color:#ef4444'}">
+        <strong>${escapeHtml(q.ship_name || q.name || `type ${tid}`)}</strong>
+        ${q.name && q.ship_name && q.name !== q.ship_name ? `<span style="font-size:0.8rem;margin-left:0.4rem;opacity:0.7">${escapeHtml(q.name)}</span>` : ''}
+        <span class="haulx-row-flag" style="font-size:0.75rem;margin-left:0.4rem;opacity:0.8">${hasFit ? '' : '(no fit in Auth)'}</span>
+      </td>
+      <td style="padding:0.5rem 0.5rem;color:${missing > 0 ? '#e8a838' : '#4a8'}">${missing > 0 ? missing : '✓'}</td>
+      <td style="padding:0.5rem 0.5rem;color:${onHand > 0 ? '#4a8' : '#8899aa'}">${onHand > 0 ? onHand : '—'}</td>
+      <td style="padding:0.5rem 0.5rem">
+        <input type="number" class="haulx-qty" data-tid="${tid}" value="${qty}" min="0" max="${rowMax}" ${hasFit ? '' : 'disabled'} style="width:4rem;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:3px;padding:2px 6px;text-align:center">
+        <button class="haulx-max link-btn" data-tid="${tid}" data-max="${rowMax}" ${hasFit ? '' : 'disabled'} style="margin-left:0.3rem;font-size:0.75rem">max</button>
+      </td>
+      <td class="haulx-row-vol" style="padding:0.5rem 0.5rem;color:#8899aa" ${volTitle}>${volText}</td>
+      <td class="haulx-row-price" style="padding:0.5rem 1rem;color:#8899aa" ${priceTitle}>${priceText}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  tbody.addEventListener('input', (e) => {
+    const input = e.target.closest('.haulx-qty');
+    if (!input) return;
+    haulxQty[input.dataset.tid] = Math.max(0, parseInt(input.value) || 0);
+    haulxUpdateTotals();
+  });
+
+  tbody.addEventListener('click', (e) => {
+    const btn = e.target.closest('.haulx-max');
+    if (!btn) return;
+    const tid = btn.dataset.tid;
+    const max = parseInt(btn.dataset.max) || 0;
+    const input = tbody.querySelector(`.haulx-qty[data-tid="${tid}"]`);
+    if (input) input.value = max;
+    haulxQty[tid] = max;
+    haulxUpdateTotals();
+  });
+
+  $('#haulx-copy')?.addEventListener('click', async () => {
+    // Build selected list: [{q, qty}]
+    const selected = [];
+    for (const tr of tbody.querySelectorAll('tr')) {
+      const input = tr.querySelector('.haulx-qty');
+      if (!input) continue;
+      const qty = parseInt(input.value) || 0;
+      if (!qty) continue;
+      const tid = input.dataset.tid;
+      const q = (lastContractsScan.quotas || []).find((x) => String(x.ship_type_id) === tid);
+      if (q) selected.push({ q, qty });
+    }
+
+    // Try to find fit items from readinessState.scan for each selected ship.
+    // Match by hullTypeId + fit name (q.name). Fall back to hull-only if no fit found.
+    const fits = readinessState.scan?.fits || {};
+    const fitsByHull = {};
+    for (const fit of Object.values(fits)) {
+      const key = String(fit.hullTypeId);
+      if (!fitsByHull[key]) fitsByHull[key] = [];
+      fitsByHull[key].push(fit);
+    }
+
+    const hullLines = [];
+    const moduleAgg = {};  // name -> qty
+
+    for (const { q, qty } of selected) {
+      const tid = String(q.ship_type_id);
+      const hullName = q.ship_name || q.name || `type ${tid}`;
+      hullLines.push(`${qty} x ${hullName}`);
+
+      // Find the matching fit by hullTypeId, preferring one whose name matches q.name
+      const candidates = fitsByHull[tid] || [];
+      let fit = candidates.find((f) => f.name === q.name) || candidates[0];
+      if (!fit) continue;
+
+      // Aggregate non-hull items (hull is index 0, typeId === ship_type_id)
+      for (const item of fit.items || []) {
+        if (item.typeId === q.ship_type_id) continue;  // skip hull itself
+        const key = item.name;
+        moduleAgg[key] = (moduleAgg[key] || 0) + item.qty * qty;
+      }
+    }
+
+    const moduleLines = Object.entries(moduleAgg).map(([name, q]) => `${q} x ${name}`);
+    const sections = [];
+    if (hullLines.length) sections.push(hullLines.join('\n'));
+    if (moduleLines.length) sections.push(moduleLines.join('\n'));
+    const text = sections.join('\n\n') || 'Nothing selected.';
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      alert(text);
+    }
+  });
+
+  $('#haulx-fill-priority')?.addEventListener('click', () => {
+    // Reset all qtys, then fill by priority order (config order) until a limit is
+    // hit. lastContractsScan.quotas is always in priority order. Ships without a
+    // full fit volume and price are skipped — the same rows the table locks to 0.
+    haulxQty = haulxFillByPriority(lastContractsScan.quotas, haulxPriceCache, haulxOverQuota);
+    // Sync inputs
+    for (const input of tbody.querySelectorAll('.haulx-qty')) {
+      input.value = haulxQty[input.dataset.tid] || 0;
+    }
+    haulxUpdateTotals();
+  });
+
+  $('#haulx-clear')?.addEventListener('click', () => {
+    haulxQty = {};
+    for (const input of tbody.querySelectorAll('.haulx-qty')) input.value = 0;
+    haulxUpdateTotals();
+  });
+
+  $('#haulx-over-quota')?.addEventListener('change', (e) => {
+    haulxOverQuota = e.target.checked;
+    renderHaulxTab();
+  });
+
+  haulxFetchPrices(orderedQuotas);
+  haulxUpdateTotals();
 }
 
 // ============================================================

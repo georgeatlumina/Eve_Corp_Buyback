@@ -33,6 +33,8 @@
           <button class="tab-btn" data-tab="buybacks">Buybacks</button>
           <button class="tab-btn" data-tab="working">Working</button>
           <button class="tab-btn" data-tab="contracts">Contracts</button>
+          <button class="tab-btn" data-tab="acquisitions">Acquisitions</button>
+          <button class="tab-btn" data-tab="haulx">HaulX</button>
           <button class="tab-btn" data-tab="srp">SRP</button>
           <button class="tab-btn" data-tab="liquidation">Liquidation</button>
           <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
@@ -56,7 +58,6 @@
           <button class="tab-btn" data-tab="auth">Auth</button>
           <button class="tab-btn" data-tab="mail">Mail</button>
         </div>
-      </div>
     </nav>
   </header>
   <main>
@@ -184,7 +185,7 @@
 
           <div class="aq-row">
             <label class="aq-url-label">Alliance quota URL <input name="alliance_quota_url" type="url" placeholder="https://github.com/&lt;owner&gt;/&lt;repo&gt;/blob/main/quotas.json" /></label>
-            <label class="aq-auto-label"><input name="alliance_quota_auto_sync" type="checkbox" /> Auto-sync on app start</label>
+            <label class="aq-auto-label"><input name="alliance_quota_auto_sync" type="checkbox" checked /> Auto-sync on app start</label>
           </div>
           <div class="aq-pat-row">
             <label>Read PAT <small class="muted">(every alliance member; <code>Contents: read</code>)</small> <input name="alliance_quota_pat_read" type="password" autocomplete="off" placeholder="github_pat_… or ghp_…" /></label>
@@ -441,7 +442,8 @@
         <select id="contracts-sort" class="secondary">
           <option value="priority">Sort by priority</option>
           <option value="default">Sort by ship name</option>
-          <option value="under-quota">Sort by under quota</option>
+          <option value="under-quota">Sort by under quota count</option>
+          <option value="under-quota-pct">Sort by under quota percentage</option>
           <option value="value">Sort by value</option>
         </select>
         <button id="btn-contracts-export-discord" type="button" class="secondary">Export for Discord</button>
@@ -696,6 +698,14 @@
       </div>
     </section>
 
+    <section id="tab-acquisitions" class="tab">
+      <div id="acquisitions-root"></div>
+    </section>
+
+    <section id="tab-haulx" class="tab">
+      <div id="haulx-root"></div>
+    </section>
+
     <section id="tab-hooks-hubs" class="tab">
       <h2>Hooks &amp; Hubs</h2>
       <p class="muted">Skyhook &amp; sovereignty-hub <strong>fuel</strong> is read live from ESI via <strong>slot&nbsp;4</strong> (a Director character — set it up on the Auth tab). Power, workforce, installed upgrades and skyhook collection contents are <strong>not exposed by ESI</strong>, so the upgrade/workforce planner below is driven by manual data you maintain here.</p>
@@ -840,6 +850,7 @@
   </div>
 
   <script src="parse-utils.js"></script>
+  <script src="haulx-utils.js"></script>
   <script src="hooks-hubs-utils.js"></script>
   <script src="calculator.js"></script>
   <script src="app.js"></script>

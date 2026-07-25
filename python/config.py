@@ -84,7 +84,7 @@ DEFAULTS = {
     # https endpoint) and users sync from it. Auto-sync hits the URL once
     # at sidecar startup if both URL and flag are set.
     'alliance_quota_url': '',
-    'alliance_quota_auto_sync': False,
+    'alliance_quota_auto_sync': True,
     'alliance_quota_last_synced': '',   # ISO timestamp of last successful sync
     'alliance_quota_last_status': '',   # short human-readable last result
     # Private-repo workflow (GitHub Contents API). Two PATs: a read-only one

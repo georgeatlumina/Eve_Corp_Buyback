@@ -68,6 +68,8 @@ from esi import (
     resolve_ids,
     resolve_type_ids,
     send_evemail,
+    fetch_type_info,
+    fetch_group_info,
 )
 from janice import (
     appraise_items,
@@ -81,6 +83,7 @@ import builds
 import liquidation
 import stockpile
 from market import enrich as enrich_types, missing_ids as meta_missing_ids
+from acquisitions import load_acquisitions, save_acquisitions
 from pinned import (
     append_appraisal,
     load_pinned,
@@ -1798,7 +1801,82 @@ def get_amarr_sell_price(type_id: int, bust: bool = False):
     return result
 
 
-# ----------------------- Liquidation page -----------------------
+_JITA_REGION_ID = 10000002
+_JITA_SYSTEM_ID = 30000142
+_jita_sell_cache: dict[int, dict] = {}
+_JITA_PRICE_TTL = 300  # 5 min
+
+
+@app.get('/api/market/jita-sell')
+def get_jita_sell_price(type_id: int, bust: bool = False):
+    """Return the Jita sell price and packaged volume for a type. Uses Janice when an API key
+    is configured, otherwise falls back to ESI market orders. Cached 5 min; bust=1 forces refresh."""
+    now = time.time()
+    if not bust:
+        cached = _jita_sell_cache.get(type_id)
+        if cached and (now - cached['fetched_at']) < _JITA_PRICE_TTL:
+            return cached['result']
+
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
+
+    if api_key:
+        try:
+            min_sell = fetch_type_sell_price(type_id, 'Jita 4-4', api_key=api_key)
+        except Exception as e:
+            raise HTTPException(502, f'Janice price lookup failed: {e}')
+    else:
+        try:
+            orders = fetch_region_market_orders(_JITA_REGION_ID, type_id, get_user_agent())
+        except Exception as e:
+            raise HTTPException(502, f'ESI market fetch failed: {e}')
+        jita_orders = [o for o in orders if not o.get('is_buy_order') and int(o.get('system_id') or 0) == _JITA_SYSTEM_ID]
+        min_sell = min((float(o['price']) for o in jita_orders), default=None)
+
+    try:
+        type_info = fetch_type_info(type_id, get_user_agent())
+        packaged_volume = float(type_info.get('packaged_volume') or type_info.get('volume') or 0)
+    except Exception:
+        packaged_volume = None
+
+    result = {
+        'type_id': type_id,
+        'min_sell': min_sell,
+        'packaged_volume': packaged_volume,
+        'source': 'janice' if api_key else 'esi',
+    }
+    _jita_sell_cache[type_id] = {'fetched_at': now, 'result': result}
+    return result
+
+
+_jita_buy_cache: dict[int, dict] = {}
+
+@app.get('/api/market/jita-buy')
+def get_jita_buy_price(type_id: int, bust: bool = False):
+    """Return the Jita immediate buy price for a type via Janice. Requires a Janice API key.
+    Cached 5 min; bust=1 forces refresh."""
+    now = time.time()
+    if not bust:
+        cached = _jita_buy_cache.get(type_id)
+        if cached and (now - cached['fetched_at']) < _JITA_PRICE_TTL:
+            return cached['result']
+
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
+    if not api_key:
+        raise HTTPException(422, 'Janice API key required for buy price lookup')
+
+    try:
+        prices = fetch_buy_prices([type_id], 'Jita 4-4', api_key=api_key)
+    except Exception as e:
+        raise HTTPException(502, f'Janice buy price lookup failed: {e}')
+
+    result = {'type_id': type_id, 'max_buy': prices.get(type_id)}
+    _jita_buy_cache[type_id] = {'fetched_at': now, 'result': result}
+    return result
+
+
+
 # Buyback items are shipped Amarr -> Jita (PushX courier) and sold. This block
 # powers the three views: an analyzer (paste a courier contract -> per-item
 # margin + dump/list recommendation), courier-shipment tracking, and live
@@ -3168,7 +3246,7 @@ def _scan_contracts_stream(alliance: str = 'all'):
     if uncached:
         yield _emit('progress', step=f'Fetching items for {len(uncached)} contract(s)…')
 
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
             done = len(found) - len(uncached)
             for future in as_completed(futures):
@@ -3446,6 +3524,91 @@ def appraise_pinned(contract_id: int, req: PinAppraise):
     return {'pin': pin, 'appraisal': appraisal_record}
 
 
+# ----------------------- Acquisitions tab -----------------------
+
+class AcquisitionsParseRequest(BaseModel):
+    paste_text: str
+
+class AcquisitionsSaveRequest(BaseModel):
+    hulls: list
+    items: list
+
+
+@app.post('/api/acquisitions/parse')
+def acquisitions_parse(req: AcquisitionsParseRequest):
+    """Parse an EVE-format inventory paste (Name\\tQty per line) and resolve
+    names to type IDs via Janice. Streams NDJSON progress events then a final
+    'done' event with all resolved items."""
+    if not req.paste_text or not req.paste_text.strip():
+        raise HTTPException(400, 'paste_text is empty')
+
+    def _stream():
+        import json as _json
+        import re as _re
+        cfg = load_config()
+        api_key = cfg.get('janice_api_key') or None
+        market_name = cfg.get('janice_market') or 'Jita 4-4'
+        try:
+            result = appraise_items(req.paste_text, market_name, api_key=api_key)
+            rows = result.get('items') or []
+        except Exception as e:
+            yield _json.dumps({'event': 'error', 'message': f'Parse failed: {e}'}) + '\n'
+            return
+
+        # Collect input line names to detect lines Janice dropped entirely.
+        input_names = []
+        for line in req.paste_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = _re.split(r'\t+|\s{2,}', line)
+            input_names.append(parts[0].strip())
+        resolved_names = {r['name'] for r in rows if r.get('type_id')}
+        unresolved = [n for n in input_names if n not in resolved_names]
+
+        ua = get_user_agent()
+        total = len(rows)
+        resolved = []
+        zero_qty = []
+        for i, r in enumerate(rows):
+            if not r.get('type_id'):
+                continue
+            if not r.get('quantity'):
+                zero_qty.append(r['name'])
+                yield _json.dumps({'event': 'progress', 'done': i + 1, 'total': total, 'name': r['name']}) + '\n'
+                continue
+            category_id = None
+            try:
+                type_info = fetch_type_info(r['type_id'], ua)
+                group_info = fetch_group_info(type_info.get('group_id'), ua)
+                category_id = group_info.get('category_id')
+            except Exception:
+                pass
+            resolved.append({
+                'type_id': r['type_id'],
+                'name': r['name'],
+                'quantity': r['quantity'],
+                'category_id': category_id,
+            })
+            yield _json.dumps({'event': 'progress', 'done': i + 1, 'total': total, 'name': r['name']}) + '\n'
+        yield _json.dumps({'event': 'done', 'items': resolved,
+                           'ignored': unresolved, 'zero_qty': zero_qty}) + '\n'
+
+    return StreamingResponse(_stream(), media_type='application/x-ndjson')
+
+
+@app.get('/api/acquisitions')
+def get_acquisitions():
+    """Return the saved hull and item inventory."""
+    return load_acquisitions()
+
+
+@app.post('/api/acquisitions')
+def post_acquisitions(req: AcquisitionsSaveRequest):
+    """Persist the hull and item inventory to disk."""
+    return save_acquisitions(req.hulls, req.items)
+
+
 @app.get('/api/contracts/scan')
 def scan_contracts(alliance: str = 'all'):
     """NDJSON stream of outstanding item-exchange contracts posted by any
@@ -3564,7 +3727,7 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
         total = len(sold_found)
         done_count = total - len(uncached)
         yield _emit('progress', step=f'Fetching items for {len(uncached)} sold contract(s)…')
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(_fetch_items, (cid, rec)): cid for cid, rec in uncached.items()}
             for future in as_completed(futures):
                 cid, items, err = future.result()
@@ -3640,7 +3803,7 @@ def contracts_sold_30d(ship_type_id: int, title_filter: str = '', alliance: str 
             sold_items_by_id[cid] = _contract_items_cache[cid]
 
     if uncached:
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(_fetch_one, (cid, rec)): cid for cid, rec in uncached.items()}
             for future in as_completed(futures):
                 cid, items, err = future.result()
