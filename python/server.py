@@ -2780,6 +2780,14 @@ def get_doctrine_stock(alliance: str = 'main'):
             _doctrine_stock_save_cache(alliance, snapshot)
             return {'storage': 'github', **snapshot}
         except FileNotFoundError:
+            # Repo reachable but nothing published for this alliance yet (404).
+            # Fall back to the local cache like any other read failure — a
+            # configured repo must never leave the machine with *fewer* quotas
+            # than no repo at all. Only report 'none' when there's genuinely no
+            # cache, and say why so an empty dropdown explains itself.
+            cached = _doctrine_stock_load_cache(alliance)
+            if cached:
+                return {'storage': 'local', 'stale': True, 'reason': 'not_published_yet', **cached}
             return {'storage': 'none', 'alliance': alliance, 'quotas': [], 'published_at': None,
                     'reason': 'not_published_yet'}
         except Exception as e:
