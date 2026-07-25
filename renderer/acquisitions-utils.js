@@ -165,9 +165,72 @@ function evaluateBuild({ pool, hullTypeId, units, mode, market, threshold = ACQ_
   return { ok, hullPresent, coverage, missing };
 }
 
+/**
+ * Walk targets in priority order, building what the remaining pool allows.
+ *
+ * Works on a copy of the pool, so each mode can be run from the same starting
+ * inventory. In FITS_NO_HULL a hull that IS available is consumed along with
+ * its modules: that unit is a complete build, not a hull-less one, and its
+ * modules must not be offered again as a spare set.
+ */
+function planAcquisitions({ pool, targets, mode, market, threshold = ACQ_MARKET_THRESHOLD }) {
+  const remaining = new Map(pool);
+  const builds = [];
+  const blocked = [];
+
+  const take = (tid, qty) => remaining.set(tid, (remaining.get(tid) || 0) - qty);
+
+  for (const t of targets || []) {
+    if ((t.needed || 0) <= 0) continue;
+    if (t.unevaluatable) {
+      blocked.push({
+        shipTypeId: t.shipTypeId, shipName: t.shipName, fitName: t.fitName,
+        reason: 'unevaluatable',
+      });
+      continue;
+    }
+
+    let made = 0;
+    for (let i = 0; i < t.needed; i += 1) {
+      const r = evaluateBuild({
+        pool: remaining, hullTypeId: t.shipTypeId, units: t.units, mode, market, threshold,
+      });
+
+      // A hull-backed unit in FITS_NO_HULL mode is a full build: consume it and
+      // move on, so its modules are not re-reported as a spare fit.
+      if (mode === ACQ_MODES.FITS_NO_HULL && r.hullPresent && r.missing.length === 0) {
+        take(String(t.shipTypeId), 1);
+        for (const [tid, need] of t.units) take(tid, need);
+        continue;
+      }
+      if (!r.ok) break;
+
+      if (mode !== ACQ_MODES.FITS_NO_HULL) take(String(t.shipTypeId), 1);
+      for (const [tid, need] of t.units) {
+        take(tid, Math.min(remaining.get(tid) || 0, need));
+      }
+      builds.push({
+        shipTypeId: t.shipTypeId, shipName: t.shipName, fitName: t.fitName,
+        missing: r.missing, coverage: r.coverage,
+      });
+      made += 1;
+    }
+
+    if (made === 0) {
+      blocked.push({
+        shipTypeId: t.shipTypeId, shipName: t.shipName, fitName: t.fitName,
+        reason: 'no-match',
+      });
+    }
+  }
+
+  return { builds, blocked };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     mergeInventory, splitInventory, ACQ_HULL_CATEGORY_ID,
     ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits, evaluateBuild,
+    planAcquisitions,
   };
 }

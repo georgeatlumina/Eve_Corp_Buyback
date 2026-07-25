@@ -306,3 +306,107 @@ describe('evaluateBuild — marketCompletable mode', () => {
     expect(r.ok).toBe(true);
   });
 });
+
+// ── build finder: consuming allocator ────────────────────────────────────────
+
+const { planAcquisitions } = require('../renderer/acquisitions-utils');
+
+const target = (over) => ({
+  shipTypeId: 24698, shipName: 'Drake', fitName: 'Drake A', needed: 1,
+  units: new Map([['2048', 1]]), unevaluatable: false, ...over,
+});
+
+describe('planAcquisitions — consumption', () => {
+  test('a shared module is claimed by the first target only', () => {
+    const pool = new Map([['24698', 1], ['24699', 1], ['2048', 1]]);
+    const { builds, blocked } = planAcquisitions({
+      pool, mode: ACQ_MODES.FULL,
+      targets: [
+        target({ shipName: 'Drake' }),
+        target({ shipTypeId: 24699, shipName: 'Moa' }),
+      ],
+    });
+    expect(builds).toHaveLength(1);
+    expect(builds[0].shipName).toBe('Drake');
+    expect(blocked[0].shipName).toBe('Moa');
+  });
+
+  test('does not mutate the caller pool', () => {
+    const pool = new Map([['24698', 1], ['2048', 1]]);
+    planAcquisitions({ pool, mode: ACQ_MODES.FULL, targets: [target()] });
+    expect(pool.get('2048')).toBe(1);
+  });
+
+  test('builds up to the shortfall and no further', () => {
+    const pool = new Map([['24698', 3], ['2048', 3]]);
+    const { builds } = planAcquisitions({
+      pool, mode: ACQ_MODES.FULL, targets: [target({ needed: 1 })],
+    });
+    expect(builds).toHaveLength(1);
+  });
+
+  test('builds several units when the shortfall allows', () => {
+    const pool = new Map([['24698', 3], ['2048', 3]]);
+    const { builds } = planAcquisitions({
+      pool, mode: ACQ_MODES.FULL, targets: [target({ needed: 3 })],
+    });
+    expect(builds).toHaveLength(3);
+  });
+
+  test('skips a target whose shortfall is zero, leaving its parts for others', () => {
+    const pool = new Map([['24698', 1], ['24699', 1], ['2048', 1]]);
+    const { builds } = planAcquisitions({
+      pool, mode: ACQ_MODES.FULL,
+      targets: [
+        target({ shipName: 'Stocked', needed: 0 }),
+        target({ shipTypeId: 24699, shipName: 'Gapped' }),
+      ],
+    });
+    expect(builds).toHaveLength(1);
+    expect(builds[0].shipName).toBe('Gapped');
+  });
+
+  test('reports an unevaluatable fit without consuming anything', () => {
+    const pool = new Map([['24698', 1], ['2048', 1]]);
+    const { builds, blocked } = planAcquisitions({
+      pool, mode: ACQ_MODES.FULL,
+      targets: [target({ unevaluatable: true }), target({ shipName: 'Next' })],
+    });
+    expect(blocked[0].reason).toBe('unevaluatable');
+    expect(builds).toHaveLength(1);
+    expect(builds[0].shipName).toBe('Next');
+  });
+});
+
+describe('planAcquisitions — fitsNoHull hull accounting', () => {
+  test('1 hull, modules for 3, shortfall 3 yields 2 hull-less results', () => {
+    const pool = new Map([['24698', 1], ['2048', 3]]);
+    const { builds } = planAcquisitions({
+      pool, mode: ACQ_MODES.FITS_NO_HULL, targets: [target({ needed: 3 })],
+    });
+    expect(builds).toHaveLength(2);
+  });
+
+  test('enough hulls for every unit yields no hull-less results', () => {
+    const pool = new Map([['24698', 3], ['2048', 3]]);
+    const { builds } = planAcquisitions({
+      pool, mode: ACQ_MODES.FITS_NO_HULL, targets: [target({ needed: 3 })],
+    });
+    expect(builds).toHaveLength(0);
+  });
+});
+
+describe('planAcquisitions — edges', () => {
+  test('empty targets return empty results', () => {
+    expect(planAcquisitions({ pool: new Map(), mode: ACQ_MODES.FULL, targets: [] }))
+      .toEqual({ builds: [], blocked: [] });
+  });
+
+  test('empty inventory blocks rather than throws', () => {
+    const { builds, blocked } = planAcquisitions({
+      pool: new Map(), mode: ACQ_MODES.FULL, targets: [target()],
+    });
+    expect(builds).toEqual([]);
+    expect(blocked).toHaveLength(1);
+  });
+});
