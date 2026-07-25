@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  base: 'http://localhost:8765',
+  base: 'http://127.0.0.1:8765',
   getMeta: () => ipcRenderer.invoke('app:meta'),
   checkForUpdate: () => ipcRenderer.invoke('app:check-update'),
   openCalculator: () => ipcRenderer.invoke('open-calculator'),

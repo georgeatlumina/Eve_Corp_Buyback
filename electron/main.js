@@ -144,7 +144,11 @@ async function waitForSidecar(onTick) {
   for (let i = 0; i < maxAttempts; i++) {
     if (onTick) onTick(i, maxAttempts);
     try {
-      const res = await fetch(`http://localhost:${PYTHON_PORT}/api/health`);
+      // 127.0.0.1, not localhost: the sidecar binds 127.0.0.1, and on hosts
+      // where localhost resolves to ::1 first, Node 18's fetch (autoSelectFamily
+      // off) never falls back to IPv4 — every poll ECONNREFUSEs and this times
+      // out after 30s while the sidecar was listening the whole time.
+      const res = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/health`);
       if (res.ok) {
         logSidecar(`health OK after ~${i * 0.5}s`);
         return;
