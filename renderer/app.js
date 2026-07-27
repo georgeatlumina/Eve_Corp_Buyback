@@ -5175,6 +5175,19 @@ function renderHaulxTab() {
     } catch {
       alert(text);
     }
+    downloadBlob('haulx-shopping-list.txt', 'text/plain', text);
+
+    // Game clients cap multibuy-style pastes at 100 lines, so also split into
+    // per-100-item files when the list runs longer.
+    const allLines = [...hullLines, ...moduleLines];
+    const CHUNK_SIZE = 100;
+    if (allLines.length > CHUNK_SIZE) {
+      const chunks = [];
+      for (let i = 0; i < allLines.length; i += CHUNK_SIZE) chunks.push(allLines.slice(i, i + CHUNK_SIZE));
+      chunks.forEach((chunk, idx) => {
+        setTimeout(() => downloadBlob(`haulx-shopping-list-part${idx + 1}.txt`, 'text/plain', chunk.join('\n')), idx * 150);
+      });
+    }
   });
 
   $('#haulx-fill-priority')?.addEventListener('click', () => {
