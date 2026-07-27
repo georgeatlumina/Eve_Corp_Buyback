@@ -120,12 +120,12 @@ DEFAULTS = {
     'stockpile_last_synced': '',   # ISO timestamp of last successful push
     'stockpile_last_status': '',   # short human-readable last result
     # ---- Liquidation page ----
-    # Buyback items are shipped Amarr -> Jita and sold. Cost basis = the payout
-    # fraction of the live Janice *buy* price on `liquidation_cost_market`
-    # (Jita by default); margin is measured against the live Jita sell/buy
-    # prices net of the fees below.
-    'liquidation_buyback_fraction': 0.90,   # what the corp pays vs Jita buy
-    'liquidation_cost_market': 'Jita 4-4',  # Janice market the cost basis (buyback) prices from
+    # Buyback items are shipped to Jita and sold. Cost basis = the payout
+    # fraction of the live Janice *buy* price on the configured market hub
+    # (`janice_market`), so it tracks the buyback hub automatically; margin is
+    # measured against the live Jita sell/buy prices net of the fees below.
+    'liquidation_buyback_fraction': 0.90,   # what the corp pays vs hub buy
+    'liquidation_cost_market': 'Jita 4-4',  # deprecated/unused — cost basis now follows `janice_market`
     'liquidation_sell_market': 'Jita 4-4',  # Janice market items are sold in
     'liquidation_broker_fee_pct': 3.0,      # Jita sell-order listing broker fee (%)
     'liquidation_sales_tax_pct': 3.37,      # sales tax on a completed sale (%)

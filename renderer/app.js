@@ -4130,7 +4130,7 @@ function renderContractRow(c) {
       const uniqueIds = [...new Set(includedItems.filter((i) => i.type_id).map((i) => i.type_id))];
       const priceResults = await Promise.all(
         uniqueIds.map((tid) =>
-          fetch(`${API}/api/market/amarr-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+          fetch(`${API}/api/market/jita-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
         )
       );
       const priceMap = new Map();
@@ -4145,7 +4145,7 @@ function renderContractRow(c) {
       }
 
       if (total === 0) {
-        resultEl.textContent = 'no Amarr prices found';
+        resultEl.textContent = 'no Jita prices found';
       } else {
         const unpricedText = unpriced.length ? ` · ${unpriced.length} unpriced` : '';
         resultEl.textContent = `Janice: ${fmtMillions(total)}${unpricedText}`;

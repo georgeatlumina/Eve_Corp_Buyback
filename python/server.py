@@ -2067,7 +2067,8 @@ def liquidation_analyze(req: LiquidationAnalyzeRequest):
     ua = get_user_agent()
     api_key = cfg.get('janice_api_key') or None
     sell_market = cfg.get('liquidation_sell_market') or 'Jita 4-4'
-    cost_market = cfg.get('liquidation_cost_market') or 'Jita 4-4'
+    # Cost basis = the corp buyback price, so it tracks the configured market hub.
+    cost_market = cfg.get('janice_market') or 'Jita 4-4'
 
     def gen():
         try:
@@ -2897,7 +2898,7 @@ def liquidation_corp_orders():
 
     type_ids = [int(o['type_id']) for o in sells]
     api_key = cfg.get('janice_api_key') or None
-    cost_market = cfg.get('liquidation_cost_market') or 'Jita 4-4'
+    cost_market = cfg.get('janice_market') or 'Jita 4-4'  # cost basis tracks the config hub
     frac = float(cfg.get('liquidation_buyback_fraction') or 0.90)
     broker = float(cfg.get('liquidation_broker_fee_pct') or 0) / 100.0
     tax = float(cfg.get('liquidation_sales_tax_pct') or 0) / 100.0
