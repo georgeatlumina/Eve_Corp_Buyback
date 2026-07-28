@@ -3500,6 +3500,7 @@ async function runContractsScan() {
   $('#contracts-quota-dashboard').innerHTML = '';
   $('#contracts-list').innerHTML = '';
   $('#contracts-count').textContent = '0';
+  $('#contracts-total-value').textContent = '';
   if (btnScan) btnScan.disabled = true;
   if (btnSold) btnSold.disabled = true;
   _contractsScanRunning = true;
@@ -3702,6 +3703,7 @@ function renderContractsDashboard(payload) {
 
   const list = payload.contracts || [];
   $('#contracts-count').textContent = list.length;
+  renderContractsTotalValue(list);
   const listRoot = $('#contracts-list');
   listRoot.innerHTML = '';
   if (!list.length) {
@@ -3709,6 +3711,20 @@ function renderContractsDashboard(payload) {
     return;
   }
   for (const c of list) listRoot.appendChild(renderContractRow(c));
+}
+
+function renderContractsTotalValue(list) {
+  const totalEl = $('#contracts-total-value');
+  if (!totalEl) return;
+  if (!list.length) {
+    totalEl.textContent = '';
+    return;
+  }
+  const priced = list.filter((c) => c.price != null);
+  const total = priced.reduce((sum, c) => sum + Number(c.price), 0);
+  const unpriced = list.length - priced.length;
+  const unpricedText = unpriced ? ` · ${unpriced} unpriced` : '';
+  totalEl.textContent = `Total value: ${fmtMillions(total)} ISK${unpricedText}`;
 }
 
 function renderUnpricedToggle(priceEl, unpriced) {
