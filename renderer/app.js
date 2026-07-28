@@ -2822,7 +2822,7 @@ function collectQuotas(tbody = $('#quotas-tbody')) {
       title_filter: r.querySelector('.q-title').value.trim(),
       fit_id: parseInt(r.querySelector('.q-fitid').value) || 0,
     }))
-    .filter((q) => q.ship_type_id || q.name);
+    .filter((q) => q.ship_type_id || q.name || q.ship_name);
 }
 
 // Bind all interactive controls for one quota table section.
@@ -3049,7 +3049,7 @@ function quotasFromCsvText(text) {
   const first = rows[0];
   const hasHeader = first.some((c) => /^[a-zA-Z_]/.test(c)) && isNaN(parseInt(first[1]));
   const dataRows = hasHeader ? rows.slice(1) : rows;
-  return dataRows.map(rowFromCells).filter((q) => q.ship_type_id || q.name);
+  return dataRows.map(rowFromCells).filter((q) => q.ship_type_id || q.name || q.ship_name);
 }
 
 
