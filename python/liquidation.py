@@ -151,7 +151,7 @@ def analyze_row(row, cost_buy_unit, avg_daily_vol, depth_units, on_book_units,
 
     ``row`` carries ``type_id, name, quantity, unit_volume_m3, sell_unit,
     buy_unit`` (Jita immediate prices). ``cost_buy_unit`` is the live Janice
-    buy price on the configured ``liquidation_cost_market`` (Jita by default);
+    buy price on the configured market hub (``janice_market``, Jita by default);
     cost basis = ``buyback_fraction * cost_buy_unit + courier``.
     """
     frac = float(cfg.get('liquidation_buyback_fraction') or 0.90)
