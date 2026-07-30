@@ -1,6 +1,6 @@
 'use strict';
 
-const { mergeInventory, splitInventory, ACQ_HULL_CATEGORY_ID } = require('../renderer/acquisitions-utils');
+const { mergeInventory, splitInventory, formatJaniceExport, ACQ_HULL_CATEGORY_ID } = require('../renderer/acquisitions-utils');
 
 const hull = (id, name, qty) => ({ type_id: id, name, quantity: qty, category_id: 6 });
 const mod = (id, name, qty) => ({ type_id: id, name, quantity: qty, category_id: 7 });
@@ -106,6 +106,29 @@ describe('mergeInventory', () => {
     const existingItems = [mod(34, 'Tritanium', 500)];
     mergeInventory([], existingItems, [mod(34, 'Tritanium', 5)]);
     expect(existingItems[0].quantity).toBe(500);
+  });
+});
+
+// ── formatJaniceExport ───────────────────────────────────────────────────────
+
+describe('formatJaniceExport', () => {
+  test('lists hulls before items, each as "Name xQty"', () => {
+    const text = formatJaniceExport([hull(671, 'Erebus', 1)], [mod(34, 'Tritanium', 500)]);
+    expect(text).toBe('Erebus x1\nTritanium x500');
+  });
+
+  test('combines multiple hulls and items in list order', () => {
+    const text = formatJaniceExport(
+      [hull(671, 'Erebus', 1), hull(24698, 'Drake', 2)],
+      [mod(34, 'Tritanium', 500), mod(35, 'Pyerite', 10)],
+    );
+    expect(text).toBe('Erebus x1\nDrake x2\nTritanium x500\nPyerite x10');
+  });
+
+  test('handles empty or missing lists', () => {
+    expect(formatJaniceExport([], [])).toBe('');
+    expect(formatJaniceExport(null, null)).toBe('');
+    expect(formatJaniceExport([hull(671, 'Erebus', 1)], null)).toBe('Erebus x1');
   });
 });
 

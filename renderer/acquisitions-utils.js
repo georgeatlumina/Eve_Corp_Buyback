@@ -77,6 +77,18 @@ function splitInventory(parsedItems) {
   };
 }
 
+/**
+ * Render hulls + items as Janice-format paste text: "Name xQty", one per
+ * line, hulls first. Used to refill the Acquisitions paste box with an
+ * export of the current inventory when the user clicks Add/Replace on an
+ * empty box instead of pasting something new.
+ */
+function formatJaniceExport(hulls, items) {
+  return [...(hulls || []), ...(items || [])]
+    .map((it) => `${it.name} x${it.quantity}`)
+    .join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Build finder — which quota ships this inventory can actually deliver.
 // Design: docs/superpowers/specs/2026-07-24-acquisitions-build-finder-design.md
@@ -263,7 +275,7 @@ function buildTargets(quotas, fitsById) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    mergeInventory, splitInventory, ACQ_HULL_CATEGORY_ID,
+    mergeInventory, splitInventory, formatJaniceExport, ACQ_HULL_CATEGORY_ID,
     ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits, evaluateBuild,
     planAcquisitions, buildTargets,
   };

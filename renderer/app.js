@@ -4268,6 +4268,7 @@ async function copyShoppingList() {
 
 let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
+let acquisitionsPasteText = '';  // session-only: survives tab switches, not app restart
 
 // How many bare hulls of a given type are in the Acquisitions inventory right
 // now. Shared by the Contracts dashboard's expand-panel row (called once per
@@ -4530,7 +4531,18 @@ function renderAcquisitionsResults(hullsEl, itemsEl) {
 
 async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, mode = 'replace') {
   const text = textarea.value.trim();
-  if (!text) { statusEl.textContent = 'Nothing to parse.'; return; }
+  if (!text) {
+    // Empty box: don't touch the stored inventory (critical for Replace, which
+    // would otherwise wipe it) — just export what's on the page so it can be
+    // copied into Janice.
+    const exportText = formatJaniceExport(acquisitionsHulls, acquisitionsItems);
+    textarea.value = exportText;
+    acquisitionsPasteText = exportText;
+    statusEl.textContent = exportText
+      ? 'Nothing to add — filled the box with the current inventory (Janice format).'
+      : 'Nothing to add — inventory is empty.';
+    return;
+  }
   statusEl.textContent = 'Parsing…';
 
   const root = textarea.closest('#acquisitions-root') || document;
@@ -4616,6 +4628,7 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, mode = 'r
 
 function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
   textarea.value = '';
+  acquisitionsPasteText = '';
   acquisitionsHulls = [];
   acquisitionsItems = [];
   renderAcquisitionsResults(hullsEl, itemsEl);
@@ -4671,6 +4684,8 @@ function renderAcquisitionsTab() {
     </div>`;
 
   const textarea = root.querySelector('#acq-paste');
+  textarea.value = acquisitionsPasteText;
+  textarea.addEventListener('input', () => { acquisitionsPasteText = textarea.value; });
   const addBtn = root.querySelector('#acq-add');
   const replaceBtn = root.querySelector('#acq-replace');
   const clearBtn = root.querySelector('#acq-clear');
