@@ -186,6 +186,74 @@ class TestScanContractsQuotaKeys:
 
 
 # ---------------------------------------------------------------------------
+# Corp contract-list fetch: retry on transient failure, error surfaced when
+# every corp fails outright.
+#
+# Regression coverage for a bug where fetch_corp_contracts treated a mid-
+# pagination 5xx (ESI 504 gateway timeouts, observed in the wild) as
+# end-of-pagination and silently returned an empty list. That made a real
+# ESI outage indistinguishable from "this corp has zero contracts" — the
+# scan reported a clean 'done' with contracts: [] and no error at all.
+# ---------------------------------------------------------------------------
+
+def _http_error_bare(status):
+    resp = requests.Response()
+    resp.status_code = status
+    return requests.exceptions.HTTPError(f'{status} Server Error', response=resp)
+
+
+class TestScanContractsCorpFetchFailure:
+    @contextmanager
+    def _patched(self, corp_contracts_side_effect):
+        patches = [patch(t, return_value=v) for t, v in _COMMON_PATCHES.items()]
+        patches += [
+            patch('server.fetch_character_info', return_value=_char_info()),
+            patch('server.fetch_corp_contracts', side_effect=corp_contracts_side_effect),
+            patch('esi_retry.time.sleep'),
+        ]
+        started = [p.start() for p in patches]
+        try:
+            yield started[-2]  # the fetch_corp_contracts mock
+        finally:
+            for p in patches:
+                p.stop()
+
+    def test_transient_5xx_is_retried_and_recovers(self):
+        """A 504 on the first attempt must not be the end of the story."""
+        from server import _scan_contracts_stream
+        calls = []
+
+        def flaky(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise _http_error_bare(504)
+            return [_outstanding(9301)]
+
+        with self._patched(flaky):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        assert len(calls) == 2, 'should have retried once after the 504'
+        contracts = _done(events)['payload']['contracts']
+        assert len(contracts) == 1
+
+    def test_all_corps_failing_emits_error_not_empty_done(self):
+        """If every corp's contract fetch fails, that's a real failure and must
+        be reported as one — not a silent 'done' with contracts: []."""
+        from server import _scan_contracts_stream
+
+        def always_504(*_args, **_kwargs):
+            raise _http_error_bare(504)
+
+        with self._patched(always_504):
+            events = _collect(_scan_contracts_stream(alliance='main'))
+
+        error_events = [e for e in events if e.get('event') == 'error']
+        assert len(error_events) == 1
+        assert '504' in error_events[0]['message']
+        assert not any(e.get('event') == 'done' for e in events)
+
+
+# ---------------------------------------------------------------------------
 # _sold_30d_scan_stream
 # ---------------------------------------------------------------------------
 

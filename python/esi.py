@@ -411,7 +411,12 @@ def fetch_structure_orders(structure_id, access_token, user_agent):
 
 
 def fetch_corp_contracts(corp_id, access_token, user_agent):
-    """Fetch all pages of corporation contracts from ESI."""
+    """Fetch all pages of corporation contracts from ESI.
+
+    Raises on any error response (including 5xx) rather than treating it as
+    end-of-pagination — a transient gateway timeout must surface as a
+    failure the caller can retry, not silently look like "zero contracts".
+    """
     url = f'{ESI_BASE}/corporations/{corp_id}/contracts/'
     all_contracts = []
     page = 1
@@ -421,8 +426,6 @@ def fetch_corp_contracts(corp_id, access_token, user_agent):
             headers={'Accept': 'application/json', 'User-Agent': user_agent},
             params={'datasource': 'tranquility', 'token': access_token, 'page': page},
         )
-        if resp.status_code >= 500:
-            break
         resp.raise_for_status()
         batch = resp.json()
         if not batch:

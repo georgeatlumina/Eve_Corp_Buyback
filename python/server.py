@@ -3217,6 +3217,8 @@ def _scan_contracts_stream(alliance: str = 'all'):
     cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     # Tally per corp_id: how many new contracts we kept per slot's corp (for UI summary).
     per_corp_kept: dict[int, int] = {}
+    # corp_id -> error message, for corps whose contract-list fetch never succeeded.
+    corp_fetch_errors: dict[int, str] = {}
 
     metrics = ScanMetrics(alliance=alliance)
     metrics.start_phase('contracts')
@@ -3256,10 +3258,19 @@ def _scan_contracts_stream(alliance: str = 'all'):
             continue
 
         yield _emit('progress', step=f'{slot}: fetching corp {corp_id} contracts…')
+
+        def _on_retry(_attempt, _delay, exc):
+            metrics.record_retry()
+            metrics.record_error(status_of(exc))
+
         try:
-            corp_contracts = fetch_corp_contracts(corp_id, token, ua)
+            corp_contracts = call_with_retry(
+                lambda: fetch_corp_contracts(corp_id, token, ua),
+                on_retry=_on_retry,
+            )
         except Exception as e:
             msg = str(e)
+            corp_fetch_errors[corp_id] = msg
             if '403' in msg or 'Forbidden' in msg:
                 yield _emit(
                     'progress',
@@ -3314,6 +3325,14 @@ def _scan_contracts_stream(alliance: str = 'all'):
     _sold_contracts_cache[alliance] = sold_found
 
     if not found:
+        if not per_corp_kept and corp_fetch_errors:
+            # Every corp we tried to fetch failed outright — this is a real
+            # failure (e.g. ESI down), not "zero contracts", and must not be
+            # reported as a clean empty scan.
+            _record_scan_run(metrics, contracts=0, corps_scanned=0, items_failed=0)
+            summary = '; '.join(f'corp {cid}: {msg}' for cid, msg in corp_fetch_errors.items())
+            yield _emit('error', message=f'Could not fetch contracts from any corp — {summary}')
+            return
         _record_scan_run(metrics, contracts=0, corps_scanned=len(per_corp_kept), items_failed=0)
         yield _emit('done', payload={
             'structure_id': structure_id,
