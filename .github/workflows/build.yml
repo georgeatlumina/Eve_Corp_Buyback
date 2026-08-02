@@ -76,6 +76,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout (for RELEASE_NOTES.md)
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -89,19 +92,9 @@ jobs:
             artifacts/windows-exe/*.exe
             artifacts/linux-packages/*.deb
             artifacts/linux-packages/*.rpm
-          # Custom preamble + GitHub's auto-generated changelog appended below it.
-          body: |
-            ### Downloads
-
-            | Platform | File | Install |
-            |---|---|---|
-            | macOS (Apple Silicon) | `*.dmg` | Open the DMG, drag into Applications |
-            | Windows | `*.exe` | Run the installer |
-            | Linux — Debian/Ubuntu | `*.deb` | `sudo apt install ./<file>.deb` |
-            | Linux — Fedora/RHEL/openSUSE | `*.rpm` | `sudo rpm -U <file>.rpm` (or `sudo dnf install ./<file>.rpm`) |
-
-            The `.deb`/`.rpm` packages are unsigned (RPM tools may warn about a missing GPG
-            signature — expected). The in-app updater picks the format matching your distro.
+          # Curated per-release notes (RELEASE_NOTES.md) prepended above GitHub's
+          # auto-generated changelog. Update RELEASE_NOTES.md before tagging a release.
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}
