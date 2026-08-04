@@ -27,7 +27,7 @@
   let pinsData = null;   // /api/pi/pins
   let piTypes = null;    // /api/pi/data types map (for schematic/commodity names)
   let model = null;      // current colony
-  let view = { theta0: 1.4, phi0: 0.8 };   // camera direction (colat, azimuth) in radians
+  let view = { theta0: 1.4, phi0: 0.8, zoom: 1 };   // camera direction (colat, azimuth) + magnification
   let tool = 'select';   // 'select' or a pin type_id string to place
   let sel = null;        // selected pin index
   let linkFrom = null;   // pin index awaiting a link target
@@ -51,15 +51,17 @@
     return { fwd, right, up };
   }
 
-  // sphere point -> screen; visible when facing the camera.
+  // sphere point -> screen; visible when facing the camera and inside the disc.
   function project(th, ph, cam) {
     const v = V.fromSph(th, ph);
     const front = V.dot(v, cam.fwd);
-    return { x: R * V.dot(v, cam.right), y: -R * V.dot(v, cam.up), visible: front > 0 };
+    const x = R * view.zoom * V.dot(v, cam.right);
+    const y = -R * view.zoom * V.dot(v, cam.up);
+    return { x, y, visible: front > 0 && (x * x + y * y) <= R * R };
   }
   // screen (disc-relative px) -> sphere (colat, azimuth), or null if off-disc.
   function unproject(px, py, cam) {
-    const sx = px / R, sy = -py / R;
+    const sx = px / (R * view.zoom), sy = -py / (R * view.zoom);
     const r2 = sx * sx + sy * sy;
     if (r2 > 1) return null;
     const v = V.add(V.add([0, 0, 0], cam.right, sx), cam.up, sy);
@@ -165,7 +167,19 @@
       const r = pin(p.type_id);
       pg += r.power_load || 0; cpu += r.cpu_load || 0;
     }
-    return { provPg: lv.powergrid, provCpu: lv.cpu, usedPg: pg, usedCpu: cpu, links: model.links.length };
+    // Link cost (level-0 links): CPU = 15 + 0.2*km, PG = 10 + 0.15*km per link.
+    let linkPg = 0, linkCpu = 0, nLinks = 0;
+    for (const l of model.links) {
+      const a = pinAt(l.a), b = pinAt(l.b);
+      if (!a || !b) continue;
+      const km = greatCircleKm(a, b);
+      linkCpu += 15 + 0.2 * km; linkPg += 10 + 0.15 * km; nLinks += 1;
+    }
+    return {
+      provPg: lv.powergrid, provCpu: lv.cpu,
+      usedPg: Math.round(pg + linkPg), usedCpu: Math.round(cpu + linkCpu),
+      pinPg: pg, pinCpu: cpu, linkPg: Math.round(linkPg), linkCpu: Math.round(linkCpu), links: nLinks,
+    };
   }
 
   function bar(label, used, prov) {
@@ -180,7 +194,9 @@
     const b = budget();
     $('#pib-budget').innerHTML =
       bar('CPU', b.usedCpu, b.provCpu) + bar('Powergrid', b.usedPg, b.provPg) +
-      `<div class="muted pib-budget-note">${model.pins.length} pins · ${b.links} links (link CPU/PG not yet counted) · CC level ${model.cmd_ctr_level}</div>`;
+      `<div class="muted pib-budget-note">${model.pins.length} pins (${b.pinCpu.toLocaleString('en-US')} CPU / ${b.pinPg.toLocaleString('en-US')} PG) · `
+      + `${b.links} links (${b.linkCpu.toLocaleString('en-US')} CPU / ${b.linkPg.toLocaleString('en-US')} PG) · CC level ${model.cmd_ctr_level}. `
+      + `Extractor heads add load in-game and aren't counted here.</div>`;
   }
 
   function renderSelection() {
@@ -239,11 +255,15 @@
   function onUp() { drag = null; }
 
   function recenter() {
-    if (!model.pins.length) return;
+    if (!model.pins.length) { view.zoom = 1; return; }
     const c = model.pins.reduce((a, p) => V.add(a, V.fromSph(p.lat, p.lon), 1), [0, 0, 0]);
     const cn = V.norm(c);
     view.theta0 = Math.acos(Math.max(-1, Math.min(1, cn[2])));
     view.phi0 = Math.atan2(cn[1], cn[0]);
+    // Fit zoom: spread the widest pin (angular distance beta from centre) to ~60% of the disc.
+    let maxAng = 0.05;
+    for (const p of model.pins) maxAng = Math.max(maxAng, Math.acos(Math.max(-1, Math.min(1, V.dot(cn, V.fromSph(p.lat, p.lon))))));
+    view.zoom = Math.max(1, Math.min(14, 0.6 / Math.sin(maxAng)));
   }
 
   // ------------------------------ palette ------------------------------
@@ -308,6 +328,11 @@
     svg.addEventListener('mousedown', onDown);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    svg.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      view.zoom = Math.max(1, Math.min(25, view.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+      render();
+    }, { passive: false });
 
     $('#pib-palette').addEventListener('click', (e) => {
       const b = e.target.closest('.pib-tool'); if (!b) return;
