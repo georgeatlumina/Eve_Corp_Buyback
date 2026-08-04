@@ -36,8 +36,8 @@
     }
     if (!d.configured) {
       $('#pic-list').innerHTML = `<div class="pic-empty">No character is authorized for Planetary Interaction yet.<br>
-        Re-authenticate on the <a href="#" data-tab-link="auth">Auth</a> tab (it now requests the
-        <code>manage_planets</code> scope), then hit Refresh.</div>`;
+        Log in a PI character under <strong>PI Characters</strong> on the <a href="#" data-tab-link="auth">Auth</a> tab
+        (a minimal <code>manage_planets</code>-only login), then hit Refresh.</div>`;
       status.textContent = '';
       return;
     }
