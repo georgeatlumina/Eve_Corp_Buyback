@@ -24,6 +24,7 @@
           <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
           <button class="tab-btn" data-tab="readiness">Market Readiness</button>
           <button class="tab-btn" data-tab="module-sorter">Module Sorter</button>
+          <button class="tab-btn" data-tab="pi">PI Planner</button>
           <button class="tab-btn" data-tab="market">Market</button>
         </div>
       </div>
@@ -474,6 +475,26 @@
       </div>
     </section>
 
+    <section id="tab-pi" class="tab">
+      <h2>Planetary Interaction Planner</h2>
+      <p class="muted">Search a solar system to see what its planets can extract, then rank the most profitable P0→P4 production chains buildable there. Priced at Jita (immediate sell) with a configurable POCO export tax; raw P0 is treated as free (extracted). Click any chain for its full recipe tree and raw-P0 basket.</p>
+      <div class="pi-controls">
+        <input id="pi-system" type="text" placeholder="Solar system (e.g. Jita) — blank = all planets" spellcheck="false" />
+        <label class="pi-tax-label">POCO tax <input id="pi-tax" type="number" value="5" min="0" max="100" step="0.5" /> %</label>
+        <span class="pi-tiers">Tiers:
+          <label><input type="checkbox" class="pi-tier" value="1" checked /> P1</label>
+          <label><input type="checkbox" class="pi-tier" value="2" checked /> P2</label>
+          <label><input type="checkbox" class="pi-tier" value="3" checked /> P3</label>
+          <label><input type="checkbox" class="pi-tier" value="4" checked /> P4</label>
+        </span>
+        <button id="pi-analyze" type="button">Analyze</button>
+      </div>
+      <div id="pi-planets" class="pi-planets"></div>
+      <p id="pi-status" class="muted"></p>
+      <div id="pi-results"></div>
+      <div id="pi-popup" class="pi-popup" hidden></div>
+    </section>
+
     <section id="tab-contracts" class="tab">
       <h2>Contracts &amp; quotas</h2>
       <p class="muted">Scans every outstanding item-exchange contract posted at the configured home structure by <strong>any corp that a logged-in slot is a Contract Manager / Director of</strong>. Add more slots on the Auth tab to cover more corps — each one widens the visible set. <strong>ESI limitation:</strong> corps you don't have a director token for stay invisible, even if their contracts show in the in-game alliance tab. Expanding a ship also shows how many bare hulls of that type are currently in the Acquisitions Inventory, as of your last scan.</p>
@@ -907,6 +928,7 @@
   <script src="stockpile.js"></script>
   <script src="doctrine-stock.js"></script>
   <script src="module-sorter.js"></script>
+  <script src="pi.js"></script>
   <script src="indy.js"></script>
   <script src="builds-overview.js"></script>
 </body>

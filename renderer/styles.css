@@ -1062,3 +1062,37 @@ body.liq-full main { max-width: none; }
 .ms-pane-head strong { color: #cfe6da; }
 .ms-out { width: 100%; min-height: 240px; padding: 0.6em; background: #181818; color: #dfe; border: 1px solid #3a3a3a; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; resize: vertical; box-sizing: border-box; }
 .ms-pane .actions { margin: 0.2em 0 0; }
+
+/* Planetary Interaction planner tab */
+.pi-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; margin: 0.4em 0 0.8em; }
+.pi-controls #pi-system { flex: 1 1 280px; min-width: 220px; padding: 0.5em 0.6em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 5px; font-size: 0.95em; }
+.pi-tax-label { display: inline-flex; align-items: center; gap: 0.3em; color: #ccc; font-size: 0.9em; }
+.pi-tax-label input { width: 4.2em; padding: 0.35em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; }
+.pi-tiers { display: inline-flex; align-items: center; gap: 0.5em; color: #ccc; font-size: 0.9em; }
+.pi-tiers label { display: inline-flex; align-items: center; gap: 0.2em; }
+.pi-planets { margin-bottom: 0.4em; }
+.pi-chips { display: flex; flex-wrap: wrap; gap: 0.35em; margin-top: 0.35em; }
+.pi-chip { background: #23303a; color: #bfe0d5; border: 1px solid #35505c; border-radius: 10px; padding: 0.12em 0.6em; font-size: 0.82em; }
+#pi-status.pi-warn { color: #e0b060; }
+.pi-hint { margin-top: 0.4em; }
+.pi-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+.pi-table th, .pi-table td { padding: 0.35em 0.6em; border-bottom: 1px solid #2a2a2a; text-align: left; }
+.pi-table th { color: #9fb4c0; font-weight: 600; position: sticky; top: 0; background: #161616; }
+.pi-table td.num, .pi-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pi-row { cursor: pointer; }
+.pi-row:hover { background: #1c2630; }
+.pi-row:focus { outline: 1px solid #4a8; outline-offset: -1px; }
+.pi-pos { color: #4a8; }
+.pi-neg { color: #ef4444; }
+.pi-popup { position: fixed; right: 1.5em; bottom: 1.5em; max-width: min(680px, 92vw); max-height: 70vh; overflow: auto; background: #14181c; border: 1px solid #3a5563; border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.55); z-index: 40; }
+.pi-popup-head { display: flex; align-items: center; justify-content: space-between; gap: 1em; padding: 0.6em 0.8em; border-bottom: 1px solid #2a3a44; position: sticky; top: 0; background: #14181c; }
+.pi-popup-close { background: none; border: none; color: #ccc; font-size: 1em; cursor: pointer; }
+.pi-popup-body { display: grid; grid-template-columns: 1fr auto; gap: 1em; padding: 0.7em 0.9em; }
+.pi-popup-h { color: #9fb4c0; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.4em; }
+.pi-step { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5em; padding: 0.2em 0; font-size: 0.88em; }
+.pi-step-tier { color: #7fa; min-width: 1.6em; }
+.pi-step-out { color: #dfe; }
+.pi-step-in { color: #9aa; }
+.pi-p0 { border-collapse: collapse; font-size: 0.86em; }
+.pi-p0 td { padding: 0.15em 0.5em; }
+.pi-p0 td.num { text-align: right; font-variant-numeric: tabular-nums; }
