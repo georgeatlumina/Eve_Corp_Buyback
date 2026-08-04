@@ -502,6 +502,47 @@ def pi_colonies():
             'colonies': colonies, 'errors': errors}
 
 
+@app.get('/api/pi/colony')
+def pi_colony_detail(character_id: int, planet_id: int):
+    """Fetch one live colony and convert it to the builder's colony model, so it
+    can be opened on the canvas, tweaked, and re-exported. Planet diameter isn't
+    exposed by ESI, so it defaults (adjustable in the builder)."""
+    ua = get_user_agent()
+    token = None
+    for _slot, tok, cid, _name in _pi_scoped_slots():
+        if cid == character_id:
+            token = tok
+            break
+    if not token:
+        raise HTTPException(404, 'no authorized character matches that character_id')
+
+    # planet type + upgrade level come from the summary list
+    ptype_id, level = None, 1
+    try:
+        for pl in fetch_character_planets(character_id, token, ua):
+            if pl['planet_id'] == planet_id:
+                name = (pl.get('planet_type') or '').title()
+                ptype_id = next((tid for tid, n in _PI_PLANET_TYPE_BY_ID.items() if n == name), None)
+                level = pl.get('upgrade_level', 1)
+                break
+    except Exception as e:
+        raise HTTPException(502, f'planet lookup failed: {e}')
+    if ptype_id is None:
+        raise HTTPException(404, 'planet not found on this character')
+
+    try:
+        detail = fetch_character_planet_detail(character_id, planet_id, token, ua)
+    except Exception as e:
+        raise HTTPException(502, f'colony fetch failed: {e}')
+
+    data = pi_planner.load_pi_data()
+    sch_to_out = {s['schematic_id']: s['outputs'][0][0] for s in data['schematics']}
+    ptname = _PI_PLANET_TYPE_BY_ID.get(ptype_id, '')
+    layout = pi_layout.from_esi_detail(
+        detail, ptype_id, 5000.0, level, f'{ptname} (from live colony)', sch_to_out)
+    return {'layout': layout, 'diameter_default': True}
+
+
 def _slot_status(slot: str) -> dict:
     """Compute current auth state for one slot."""
     client_id, secret_key = get_app_credentials()

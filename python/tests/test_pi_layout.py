@@ -62,6 +62,29 @@ def test_dumps_is_sorted_keys():
     assert json.loads(s) == doc
 
 
+def test_from_esi_detail_converts_ids_and_schematics():
+    detail = {
+        'pins': [
+            {'pin_id': 1001, 'type_id': 2524, 'latitude': 1.0, 'longitude': 1.0},
+            {'pin_id': 1002, 'type_id': 2848, 'latitude': 1.1, 'longitude': 1.0,
+             'extractor_details': {'product_type_id': 2073}},
+            {'pin_id': 1003, 'type_id': 2473, 'latitude': 1.0, 'longitude': 1.1, 'schematic_id': 81},
+        ],
+        'links': [{'source_pin_id': 1002, 'destination_pin_id': 1003, 'link_level': 0}],
+        'routes': [{'source_pin_id': 1002, 'destination_pin_id': 1003, 'content_type_id': 2073, 'quantity': 3000}],
+    }
+    # schematic 81 makes Viral Agent (output type 3775)
+    m = pi_layout.from_esi_detail(detail, 2016, 5000.0, 3, 'test', {81: 3775})
+    assert len(m['pins']) == 3 and len(m['links']) == 1 and len(m['routes']) == 1
+    assert m['pins'][2]['schematic'] == 3775       # factory: schematic_id -> output type
+    assert m['pins'][1]['schematic'] == 2073       # ECU: product type id
+    assert m['links'][0] == {'a': 1, 'b': 2, 'level': 0}   # pin_ids -> array indices
+    assert m['routes'][0] == {'src': 1, 'dst': 2, 'type_id': 2073, 'qty': 3000}
+    # unknown pin references are dropped, not crash
+    detail['links'].append({'source_pin_id': 9999, 'destination_pin_id': 1003, 'link_level': 0})
+    assert len(pi_layout.from_esi_detail(detail, 2016, 5000.0, 3, 't', {81: 3775})['links']) == 1
+
+
 def test_great_circle_distance():
     # Same point -> 0 km; antipodal-ish sanity: distance <= half-circumference.
     assert pi_layout.great_circle_km(1.0, 1.0, 1.0, 1.0, 4000.0) == 0.0

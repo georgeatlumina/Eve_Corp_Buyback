@@ -388,10 +388,24 @@
   }
 
   function initTab() {
+    bindOnce();
     loadStatic().then(() => {
       if (!model) model = emptyModel('Barren');
       renderPalette(); setMeta(); render(); refreshTemplates();
     });
+  }
+
+  // Load a colony model pushed from another tab (e.g. "Open in Builder" on the
+  // live PI Colonies view). Ensures listeners + static data are ready first.
+  async function loadModel(m) {
+    bindOnce();
+    await loadStatic();
+    model = m; sel = null; linkFrom = null; recenter();
+    renderPalette(); setMeta(); render(); refreshTemplates();
+  }
+  window.piBuilderLoad = loadModel;
+
+  function bindOnce() {
     if (initialised) return;
     initialised = true;
 

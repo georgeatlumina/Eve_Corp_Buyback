@@ -102,6 +102,51 @@ def dumps_template(model):
     return json.dumps(export_template(model), sort_keys=True, ensure_ascii=False)
 
 
+def from_esi_detail(detail, planet_type_id, diameter, cmd_ctr_level, comment, schematic_to_output):
+    """Convert an ESI ``/characters/{id}/planets/{planet_id}/`` payload into the
+    internal colony model, so a live colony can be opened in the builder.
+
+    ESI keys pins by absolute ``pin_id`` (we index by array position) and gives
+    factories a ``schematic_id`` — the template/model store the produced
+    *output type id* instead, so we map it via ``schematic_to_output``.
+    Extractors already carry ``extractor_details.product_type_id`` (a type id).
+    ESI lat/lon are radians, matching the template.
+    """
+    pins_raw = detail.get('pins', []) or []
+    idx = {p['pin_id']: i for i, p in enumerate(pins_raw)}
+    pins = []
+    for p in pins_raw:
+        schematic = None
+        if p.get('schematic_id') is not None:
+            schematic = schematic_to_output.get(p['schematic_id'])
+        ed = p.get('extractor_details') or {}
+        if ed.get('product_type_id') is not None:
+            schematic = ed['product_type_id']
+        pins.append({
+            'type_id': p['type_id'],
+            'schematic': schematic,
+            'lat': p.get('latitude', 0.0),
+            'lon': p.get('longitude', 0.0),
+            'height': 0,
+        })
+    links = [{'a': idx[l['source_pin_id']], 'b': idx[l['destination_pin_id']], 'level': l.get('link_level', 0)}
+             for l in (detail.get('links') or [])
+             if l.get('source_pin_id') in idx and l.get('destination_pin_id') in idx]
+    routes = [{'src': idx[r['source_pin_id']], 'dst': idx[r['destination_pin_id']],
+               'type_id': r['content_type_id'], 'qty': r['quantity']}
+              for r in (detail.get('routes') or [])
+              if r.get('source_pin_id') in idx and r.get('destination_pin_id') in idx]
+    return {
+        'planet_type_id': planet_type_id,
+        'diameter': diameter,
+        'cmd_ctr_level': cmd_ctr_level,
+        'comment': comment,
+        'pins': pins,
+        'links': links,
+        'routes': routes,
+    }
+
+
 # ----------------------------- geometry -----------------------------
 
 def great_circle_km(lat1, lon1, lat2, lon2, diameter_km):

@@ -1163,3 +1163,5 @@ body.liq-full main { max-width: none; }
 .pic-cd { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-variant-numeric: tabular-nums; color: #8fd0b0; font-weight: 600; }
 .pic-expired .pic-cd, .pic-cd:empty { color: #ff8a8a; }
 .pic-noext, .pic-ext-meta { color: #8a94a0; }
+.pic-actions { margin-top: 0.5em; text-align: right; }
+.pic-edit { font-size: 0.8em; }

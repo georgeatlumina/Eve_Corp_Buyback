@@ -73,6 +73,7 @@
       </div>
       <div class="muted pic-sub">${escapeHtml(c.character || '')} · CC level ${c.upgrade_level} · ${c.num_pins} pins</div>
       <div class="pic-exts">${ext}</div>
+      <div class="pic-actions"><button class="pic-edit secondary" data-cid="${c.character_id}" data-pid="${c.planet_id}">Open in Builder</button></div>
     </div>`;
   }
 
@@ -93,6 +94,22 @@
     $('#tab-pi-colonies').addEventListener('click', (e) => {
       const a = e.target.closest('[data-tab-link]');
       if (a) { e.preventDefault(); if (typeof activateTab === 'function') activateTab(a.dataset.tabLink); }
+    });
+    // "Open in Builder": pull the live colony into the layout builder.
+    $('#pic-list').addEventListener('click', async (e) => {
+      const b = e.target.closest('.pic-edit');
+      if (!b) return;
+      const orig = b.textContent; b.disabled = true; b.textContent = 'Loading…';
+      try {
+        const d = await fetch(`${API}/api/pi/colony?character_id=${b.dataset.cid}&planet_id=${b.dataset.pid}`).then((r) => r.json());
+        if (d.detail || !d.layout) { b.textContent = 'Error'; return; }
+        if (typeof activateTab === 'function') activateTab('pi-builder');
+        if (typeof window.piBuilderLoad === 'function') await window.piBuilderLoad(d.layout);
+      } catch (err) {
+        b.textContent = 'Error';
+      } finally {
+        b.disabled = false; if (b.textContent === 'Loading…') b.textContent = orig;
+      }
     });
     ticker = setInterval(tick, 1000);
   }
