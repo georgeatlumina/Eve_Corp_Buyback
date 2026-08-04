@@ -60,6 +60,14 @@ and a one-line description.
 | `POST /api/liquidation/shipments` | `liquidation_add_shipment` | [server.py](python/server.py) | Add a tracked shipment (via `_liq_mutate_store` → `liquidation.apply_add`). |
 | `PATCH /api/liquidation/shipments/{id}` | `liquidation_patch_shipment` | [server.py](python/server.py) | Patch status/label/notes/delivered_at (`apply_update`). |
 | `DELETE /api/liquidation/shipments/{id}` | `liquidation_delete_shipment` | [server.py](python/server.py) | Remove a shipment (`apply_remove`). |
+| `GET /api/pi/data` | `pi_data` | [server.py](python/server.py) | Static PI dataset: type metadata (name/tier/volume), the P0→P4 schematic tree, planet→P0 map. |
+| `GET /api/pi/pins` | `pi_pins` | [server.py](python/server.py) | Static PI pin dataset (colony hardware) + CC-per-level CPU/PG budgets, for the builder. |
+| `GET /api/pi/analyze` | `pi_analyze` | [server.py](python/server.py) | Rank PI chains by full-chain profit/unit at Jita; optional `system` restricts to what its planets can extract; `tax_rate`/`tiers` override. Degrades to tax-only with no Janice key. |
+| `GET /api/pi/templates` | `pi_templates_list` | [server.py](python/server.py) | List parsed colony templates in the EVE folder (`pi_templates_dir`, default `<Documents>/EVE/PlanetaryInteractionTemplates`). |
+| `GET /api/pi/templates/read` | `pi_template_read` | [server.py](python/server.py) | Read one template → parsed colony model. |
+| `POST /api/pi/templates/save` | `pi_template_save` | [server.py](python/server.py) | Write a colony model to the EVE folder as importable JSON (`pi_layout.save_template_file`). |
+| `GET /api/pi/colonies` | `pi_colonies` | [server.py](python/server.py) | Live colonies for every authed char with `esi-planets.manage_planets.v1`: extractor products + expiry + per-colony status. |
+| `GET /api/pi/colony` | `pi_colony_detail` | [server.py](python/server.py) | One live colony converted to the builder model (`pi_layout.from_esi_detail`) for "Open in Builder". |
 | `GET /api/liquidation/corp-orders` | `liquidation_corp_orders` | [server.py](python/server.py) | Live corp Jita **sell** orders enriched with cost basis, best-sell/undercut, days-to-sell, window time-left, STALE flag. Needs `esi-markets.read_corporation_orders.v1` (returns `{configured:false, reason}` otherwise). |
 | `GET /api/liquidation/courier-contracts` | `liquidation_courier_contracts` | [server.py](python/server.py) | Corp ESI **courier** contracts bucketed active/completed/problem, assignee + route names resolved, configured provider flagged. Needs `esi-contracts.read_corporation_contracts.v1`. |
 | `POST /api/builds/parse` | `builds_parse` | [2436](python/server.py#L2436) | Parse an in-game "missing materials" paste into categorized `{name, type_id, qty, category}` line items **without** saving (via `_builds_resolve_and_classify`). The planner stores the result into the target slot. 400 when nothing parses. |
@@ -731,6 +739,28 @@ Tab-open handlers call `loadMine(false)` / `loadFulfil(false)` for lazy first lo
 | date helpers (`parseDate`/`ymd`/`today`/`daysBetween`/`addDays`) + `wire()` | Local-midnight date math; delegated month-nav / chip-select / detail-close wiring; lazy first load on tab open. |
 
 ---
+
+## `python/pi.py` — PI profitability engine (~275 LOC)
+
+Pure, prices passed in (like `validate.py`/`liquidation.py`). Loads `data/pi_data.json` (cached).
+
+| Function | Purpose |
+|---|---|
+| `load_pi_data(path)` | Load + index the static dataset: `types`, `schematics`, `by_output` (output type→schematic), `planet_types`, `planet_p0`, `p0_ids`. |
+| `expand_to_p0(product_id)` | `{p0_type_id: units}` raw basket to build one unit, following each schematic's input:output ratio. |
+| `chain_steps(product_id)` | Dedup'd production steps (P1→P4) making a commodity: `{output_id, output_qty, inputs, tier, cycle_time}`. |
+| `available_products(p0_available)` | Producible commodities whose entire chain's P0 ⊆ the given set (what a planet/system can build). |
+| `evaluate(product_id, sell_prices, base_values, tax_rate)` | Single-step margin (buy inputs, make, sell) **and** full-chain-from-free-P0 profit with per-tier POCO export tax; flags `missing_prices`. |
+| `rank_chains(p0_available, sell_prices, base_values, tax_rate)` | `evaluate` every buildable commodity, sorted by full-chain profit/unit. |
+
+## `python/pi_layout.py` — PI colony template ↔ model (~180 LOC)
+
+| Function | Purpose |
+|---|---|
+| `parse_template(doc)` / `export_template(model)` | EVE template JSON ↔ internal colony model. Node `k` in `L`/`R` = pin `P[k-1]`; node 0 = command center (`CC` sentinel). Round-trips a real template byte-exact. |
+| `from_esi_detail(detail, planet_type_id, diameter, cmd_ctr_level, comment, schematic_to_output)` | Convert a live ESI `/planets/{id}/` payload to the model: pin_ids→array indices, `schematic_id`→output type id, extractor product + head count. |
+| `great_circle_km(lat1, lon1, lat2, lon2, diameter)` | Surface distance between two pins (link CPU/PG cost + drawing). |
+| `dumps_template` / `load_template_file` / `save_template_file` | Serialize (sorted keys, as the client writes) / read (BOM-tolerant) / write importable JSON. |
 
 ## `renderer/module-sorter.js` — Module Sorter tab (~240 LOC)
 
