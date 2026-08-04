@@ -122,13 +122,18 @@ def from_esi_detail(detail, planet_type_id, diameter, cmd_ctr_level, comment, sc
         ed = p.get('extractor_details') or {}
         if ed.get('product_type_id') is not None:
             schematic = ed['product_type_id']
-        pins.append({
+        rec = {
             'type_id': p['type_id'],
             'schematic': schematic,
             'lat': p.get('latitude', 0.0),
             'lon': p.get('longitude', 0.0),
             'height': 0,
-        })
+        }
+        if ed:
+            # Builder-only hint (not in the template format) so the budget can
+            # count extractor-head load. len(heads) is the configured head count.
+            rec['heads'] = len(ed.get('heads') or [])
+        pins.append(rec)
     links = [{'a': idx[l['source_pin_id']], 'b': idx[l['destination_pin_id']], 'level': l.get('link_level', 0)}
              for l in (detail.get('links') or [])
              if l.get('source_pin_id') in idx and l.get('destination_pin_id') in idx]

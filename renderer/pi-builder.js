@@ -187,6 +187,10 @@
     for (const p of model.pins) {
       const r = pin(p.type_id);
       pg += r.power_load || 0; cpu += r.cpu_load || 0;
+      // Extractor heads add load on top of the ECU base.
+      if (r.kind === 'extractor' && p.heads) {
+        pg += p.heads * (r.head_power || 0); cpu += p.heads * (r.head_cpu || 0);
+      }
     }
     // Link cost (level-0 links): CPU = 15 + 0.2*km, PG = 10 + 0.15*km per link.
     let linkPg = 0, linkCpu = 0, nLinks = 0;
@@ -217,7 +221,7 @@
       bar('CPU', b.usedCpu, b.provCpu) + bar('Powergrid', b.usedPg, b.provPg) +
       `<div class="muted pib-budget-note">${model.pins.length} pins (${b.pinCpu.toLocaleString('en-US')} CPU / ${b.pinPg.toLocaleString('en-US')} PG) · `
       + `${b.links} links (${b.linkCpu.toLocaleString('en-US')} CPU / ${b.linkPg.toLocaleString('en-US')} PG) · CC level ${model.cmd_ctr_level}. `
-      + `Extractor heads add load in-game and aren't counted here.</div>`;
+      + `Extractor-head load is included when you set heads on an ECU.</div>`;
   }
 
   function renderSelection() {
@@ -237,7 +241,8 @@
     } else if (r.kind === 'extractor') {
       const ids = (planetP0[planetType()] || []);
       const opts = ids.map((id) => `<option value="${id}" ${String(p.schematic) === String(id) ? 'selected' : ''}>${escapeHtml(commodityName(id))}</option>`).join('');
-      assign = `<label class="pib-inline">Extracts <select id="pib-sch"><option value="">— pick resource —</option>${opts}</select></label>`;
+      assign = `<label class="pib-inline">Extracts <select id="pib-sch"><option value="">— pick resource —</option>${opts}</select></label>`
+        + `<label class="pib-inline">Heads <input id="pib-heads" type="number" min="0" max="10" value="${p.heads || 0}" style="width:3.5em" title="${r.head_cpu}/${r.head_power} CPU/PG each"/></label>`;
     }
 
     // routes touching this pin
@@ -274,6 +279,8 @@
     $('#pib-link').onclick = () => { linkFrom = sel; render(); };
     const schEl = $('#pib-sch');
     if (schEl) schEl.onchange = (e) => { p.schematic = e.target.value ? +e.target.value : null; render(); };
+    const headsEl = $('#pib-heads');
+    if (headsEl) headsEl.onchange = (e) => { p.heads = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0)); render(); };
     el.querySelectorAll('.pib-rdel').forEach((b) => { b.onclick = () => { model.routes.splice(+b.dataset.i, 1); render(); }; });
     const addBtn = $('#pib-radd');
     if (addBtn) addBtn.onclick = () => {
