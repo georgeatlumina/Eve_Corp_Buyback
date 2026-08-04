@@ -5,10 +5,11 @@ The PI profitability analyzer needs the full production tree (P0 raw -> P1 -> P2
 EVE Ref's reference-data API and is committed to data/ so the sidecar never
 hits the network for static PI facts (they only change on EVE expansions).
 
-The planet-type -> P0 mapping is NOT cleanly exposed by the API (it lives in the
-SDE/dogma), so it is sourced separately and merged in under the `planet_p0` key
-by `gen_pi_planets` (see that step); this script fills schematics + types +
-tiers and preserves any existing `planet_p0` block on rewrite.
+The planet-type -> P0 mapping is derived authoritatively from each P0 type's
+`harvested_by_pin_type_ids`: those extractor pins are named
+"<PlanetType> <Resource> Extractor", so the planet type is the pin name's first
+token. This avoids trusting stale wiki tables (which still list retired P0 names
+like "Biomass").
 
 Run:  python gen_pi_data.py
 Out:  data/pi_data.json
@@ -24,6 +25,9 @@ import requests
 REF = 'https://ref-data.everef.net'
 UA = 'EveCorpBuyback/1.0 (maintenance gen_pi_data)'
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pi_data.json')
+
+# The 8 planet types. Extractor pin names start with one of these tokens.
+PLANET_TYPES = ('Barren', 'Gas', 'Ice', 'Lava', 'Oceanic', 'Plasma', 'Storm', 'Temperate')
 
 
 def _get(path):
@@ -77,6 +81,41 @@ def _derive_tiers(schematics, all_type_ids):
                 tier[pid] = new
                 changed = True
     return tier
+
+
+def _derive_planet_p0(types_raw, p0_ids):
+    """Build {planet_type_name: [p0_type_id, ...]} from extractor pin names.
+
+    Each P0 type carries `harvested_by_pin_type_ids`; each such pin is named
+    "<PlanetType> <Resource> Extractor". We fetch those pins and bucket the P0
+    under the planet type named at the front of the pin. Returns the mapping.
+    """
+    pin_ids = set()
+    for pid in p0_ids:
+        pin_ids.update(int(x) for x in (types_raw.get(pid, {}).get('harvested_by_pin_type_ids') or []))
+
+    pin_planet = {}  # pin_id -> planet type name
+
+    def fetch_pin(pin_id):
+        return pin_id, _get(f'/types/{pin_id}')
+
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for fut in as_completed([ex.submit(fetch_pin, p) for p in pin_ids]):
+            try:
+                pin_id, t = fut.result()
+            except Exception:
+                continue
+            first = _en(t.get('name')).split(' ', 1)[0]
+            if first in PLANET_TYPES:
+                pin_planet[pin_id] = first
+
+    planet_p0 = {p: set() for p in PLANET_TYPES}
+    for pid in p0_ids:
+        for pin in (types_raw.get(pid, {}).get('harvested_by_pin_type_ids') or []):
+            planet = pin_planet.get(int(pin))
+            if planet:
+                planet_p0[planet].add(pid)
+    return {p: sorted(v) for p, v in planet_p0.items()}
 
 
 def main():
@@ -141,18 +180,14 @@ def main():
             'outputs': sorted([[int(t), int(m['quantity'])] for t, m in s['products'].items()]),
         })
 
-    # Preserve a hand/wiki-sourced planet_p0 block if a previous run wrote one.
-    planet_p0 = {}
-    if os.path.exists(OUT):
-        try:
-            with open(OUT, encoding='utf-8') as f:
-                planet_p0 = (json.load(f) or {}).get('planet_p0', {}) or {}
-        except (json.JSONDecodeError, OSError):
-            pass
+    p0_ids = [tid for tid in type_ids if tier.get(tid) == 0]
+    print('deriving planet_p0 from extractor pin names…')
+    planet_p0 = _derive_planet_p0(types_raw, p0_ids)
 
     out = {
         '_meta': {'source': REF, 'schematic_count': len(schematics_out),
                   'type_count': len(types_out)},
+        'planet_types': PLANET_TYPES,
         'planet_p0': planet_p0,
         'types': types_out,
         'schematics': schematics_out,

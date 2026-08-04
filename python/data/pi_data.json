@@ -4,32 +4,75 @@
   "schematic_count": 68,
   "type_count": 83
  },
- "planet_p0": {},
+ "planet_types": [
+  "Barren",
+  "Gas",
+  "Ice",
+  "Lava",
+  "Oceanic",
+  "Plasma",
+  "Storm",
+  "Temperate"
+ ],
+ "planet_p0": {
+  "Barren": [
+   2073,
+   2267,
+   2268,
+   2270,
+   2288
+  ],
+  "Gas": [
+   2267,
+   2268,
+   2309,
+   2310,
+   2311
+  ],
+  "Ice": [
+   2073,
+   2268,
+   2272,
+   2286,
+   2310
+  ],
+  "Lava": [
+   2267,
+   2272,
+   2306,
+   2307,
+   2308
+  ],
+  "Oceanic": [
+   2073,
+   2268,
+   2286,
+   2287,
+   2288
+  ],
+  "Plasma": [
+   2267,
+   2270,
+   2272,
+   2306,
+   2308
+  ],
+  "Storm": [
+   2267,
+   2268,
+   2308,
+   2309,
+   2310
+  ],
+  "Temperate": [
+   2073,
+   2268,
+   2287,
+   2288,
+   2305
+  ]
+ },
  "types": {
-  "9840": {
-   "name": "Transmitter",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
-  "9832": {
-   "name": "Coolant",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
-  "3693": {
-   "name": "Fertilizer",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
-  "9838": {
-   "name": "Superconductors",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
   "2073": {
    "name": "Microorganisms",
    "group_id": 1035,
@@ -42,14 +85,8 @@
    "tier": 2,
    "volume": 0.75
   },
-  "9828": {
-   "name": "Silicon",
-   "group_id": 1042,
-   "tier": 1,
-   "volume": 0.19
-  },
-  "44": {
-   "name": "Enriched Uranium",
+  "9838": {
+   "name": "Superconductors",
    "group_id": 1034,
    "tier": 2,
    "volume": 0.75
@@ -60,23 +97,23 @@
    "tier": 1,
    "volume": 0.19
   },
-  "3695": {
-   "name": "Polytextiles",
+  "3693": {
+   "name": "Fertilizer",
    "group_id": 1034,
    "tier": 2,
    "volume": 0.75
   },
-  "3689": {
-   "name": "Mechanical Parts",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
+  "9834": {
+   "name": "Guidance Systems",
+   "group_id": 1040,
+   "tier": 3,
+   "volume": 3
   },
-  "9836": {
-   "name": "Consumer Electronics",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
+  "9828": {
+   "name": "Silicon",
+   "group_id": 1042,
+   "tier": 1,
+   "volume": 0.19
   },
   "3691": {
    "name": "Synthetic Oil",
@@ -84,20 +121,26 @@
    "tier": 2,
    "volume": 0.75
   },
-  "3645": {
-   "name": "Water",
-   "group_id": 1042,
-   "tier": 1,
-   "volume": 0.19
+  "44": {
+   "name": "Enriched Uranium",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "3695": {
+   "name": "Polytextiles",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "9840": {
+   "name": "Transmitter",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
   },
   "12836": {
    "name": "Transcranial Microcontrollers",
-   "group_id": 1040,
-   "tier": 3,
-   "volume": 3
-  },
-  "9834": {
-   "name": "Guidance Systems",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
@@ -108,20 +151,20 @@
    "tier": 3,
    "volume": 3
   },
-  "3779": {
-   "name": "Biomass",
+  "9832": {
+   "name": "Coolant",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "3645": {
+   "name": "Water",
    "group_id": 1042,
    "tier": 1,
    "volume": 0.19
   },
-  "9846": {
-   "name": "Planetary Vehicles",
-   "group_id": 1040,
-   "tier": 3,
-   "volume": 3
-  },
-  "3725": {
-   "name": "Livestock",
+  "3689": {
+   "name": "Mechanical Parts",
    "group_id": 1034,
    "tier": 2,
    "volume": 0.75
@@ -132,29 +175,35 @@
    "tier": 2,
    "volume": 0.75
   },
+  "3779": {
+   "name": "Biomass",
+   "group_id": 1042,
+   "tier": 1,
+   "volume": 0.19
+  },
+  "9842": {
+   "name": "Miniature Electronics",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "9846": {
+   "name": "Planetary Vehicles",
+   "group_id": 1040,
+   "tier": 3,
+   "volume": 3
+  },
   "2268": {
    "name": "Aqueous Liquids",
    "group_id": 1033,
    "tier": 0,
    "volume": 0.005
   },
-  "2267": {
-   "name": "Base Metals",
-   "group_id": 1032,
-   "tier": 0,
-   "volume": 0.005
-  },
-  "3828": {
-   "name": "Construction Blocks",
+  "3725": {
+   "name": "Livestock",
    "group_id": 1034,
    "tier": 2,
    "volume": 0.75
-  },
-  "2270": {
-   "name": "Noble Metals",
-   "group_id": 1032,
-   "tier": 0,
-   "volume": 0.005
   },
   "2286": {
    "name": "Planktic Colonies",
@@ -162,9 +211,21 @@
    "tier": 0,
    "volume": 0.005
   },
-  "2287": {
-   "name": "Complex Organisms",
-   "group_id": 1035,
+  "2270": {
+   "name": "Noble Metals",
+   "group_id": 1032,
+   "tier": 0,
+   "volume": 0.005
+  },
+  "9836": {
+   "name": "Consumer Electronics",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "2272": {
+   "name": "Heavy Metals",
+   "group_id": 1032,
    "tier": 0,
    "volume": 0.005
   },
@@ -173,6 +234,18 @@
    "group_id": 1040,
    "tier": 3,
    "volume": 3
+  },
+  "2287": {
+   "name": "Complex Organisms",
+   "group_id": 1035,
+   "tier": 0,
+   "volume": 0.005
+  },
+  "2267": {
+   "name": "Base Metals",
+   "group_id": 1032,
+   "tier": 0,
+   "volume": 0.005
   },
   "2288": {
    "name": "Carbon Compounds",
@@ -192,11 +265,11 @@
    "tier": 0,
    "volume": 0.005
   },
-  "2272": {
-   "name": "Heavy Metals",
-   "group_id": 1032,
-   "tier": 0,
-   "volume": 0.005
+  "3828": {
+   "name": "Construction Blocks",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
   },
   "2307": {
    "name": "Felsic Magma",
@@ -204,8 +277,14 @@
    "tier": 0,
    "volume": 0.005
   },
-  "2319": {
-   "name": "Test Cultures",
+  "2305": {
+   "name": "Autotrophs",
+   "group_id": 1035,
+   "tier": 0,
+   "volume": 0.005
+  },
+  "2317": {
+   "name": "Oxides",
    "group_id": 1034,
    "tier": 2,
    "volume": 0.75
@@ -215,6 +294,24 @@
    "group_id": 1033,
    "tier": 0,
    "volume": 0.005
+  },
+  "2327": {
+   "name": "Microfiber Shielding",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "2311": {
+   "name": "Reactive Gas",
+   "group_id": 1033,
+   "tier": 0,
+   "volume": 0.005
+  },
+  "2319": {
+   "name": "Test Cultures",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
   },
   "2321": {
    "name": "Polyaramids",
@@ -228,41 +325,11 @@
    "tier": 2,
    "volume": 0.75
   },
-  "9842": {
-   "name": "Miniature Electronics",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
-  "2327": {
-   "name": "Microfiber Shielding",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
-  "2310": {
-   "name": "Noble Gas",
-   "group_id": 1033,
-   "tier": 0,
-   "volume": 0.005
-  },
-  "2329": {
-   "name": "Biocells",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
   "2328": {
    "name": "Water-Cooled CPU",
    "group_id": 1034,
    "tier": 2,
    "volume": 0.75
-  },
-  "2311": {
-   "name": "Reactive Gas",
-   "group_id": 1033,
-   "tier": 0,
-   "volume": 0.005
   },
   "2312": {
    "name": "Supertensile Plastics",
@@ -270,38 +337,8 @@
    "tier": 2,
    "volume": 0.75
   },
-  "2305": {
-   "name": "Autotrophs",
-   "group_id": 1035,
-   "tier": 0,
-   "volume": 0.005
-  },
-  "2344": {
-   "name": "Condensates",
-   "group_id": 1040,
-   "tier": 3,
-   "volume": 3
-  },
   "2346": {
    "name": "Synthetic Synapses",
-   "group_id": 1040,
-   "tier": 3,
-   "volume": 3
-  },
-  "2317": {
-   "name": "Oxides",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
-  "2348": {
-   "name": "Gel-Matrix Biopaste",
-   "group_id": 1040,
-   "tier": 3,
-   "volume": 3
-  },
-  "2349": {
-   "name": "Supercomputers",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
@@ -312,14 +349,20 @@
    "tier": 3,
    "volume": 3
   },
-  "2352": {
-   "name": "Nuclear Reactors",
+  "2310": {
+   "name": "Noble Gas",
+   "group_id": 1033,
+   "tier": 0,
+   "volume": 0.005
+  },
+  "2345": {
+   "name": "Camera Drones",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
   },
-  "2345": {
-   "name": "Camera Drones",
+  "2349": {
+   "name": "Supercomputers",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
@@ -330,11 +373,29 @@
    "tier": 4,
    "volume": 50
   },
+  "2348": {
+   "name": "Gel-Matrix Biopaste",
+   "group_id": 1040,
+   "tier": 3,
+   "volume": 3
+  },
+  "2344": {
+   "name": "Condensates",
+   "group_id": 1040,
+   "tier": 3,
+   "volume": 3
+  },
   "2358": {
    "name": "Biotech Research Reports",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
+  },
+  "2869": {
+   "name": "Nano-Factory",
+   "group_id": 1041,
+   "tier": 4,
+   "volume": 50
   },
   "2354": {
    "name": "Neocoms",
@@ -342,8 +403,8 @@
    "tier": 3,
    "volume": 3
   },
-  "2361": {
-   "name": "Hermetic Membranes",
+  "2352": {
+   "name": "Nuclear Reactors",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
@@ -354,11 +415,29 @@
    "tier": 4,
    "volume": 50
   },
-  "2360": {
-   "name": "Industrial Explosives",
+  "2361": {
+   "name": "Hermetic Membranes",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
+  },
+  "2868": {
+   "name": "Integrity Response Drones",
+   "group_id": 1041,
+   "tier": 4,
+   "volume": 50
+  },
+  "2329": {
+   "name": "Biocells",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "2870": {
+   "name": "Organic Mortar Applicators",
+   "group_id": 1041,
+   "tier": 4,
+   "volume": 50
   },
   "2875": {
    "name": "Sterile Conduits",
@@ -366,17 +445,11 @@
    "tier": 4,
    "volume": 50
   },
-  "2876": {
-   "name": "Wetware Mainframe",
-   "group_id": 1041,
-   "tier": 4,
-   "volume": 50
-  },
-  "2870": {
-   "name": "Organic Mortar Applicators",
-   "group_id": 1041,
-   "tier": 4,
-   "volume": 50
+  "2360": {
+   "name": "Industrial Explosives",
+   "group_id": 1040,
+   "tier": 3,
+   "volume": 3
   },
   "2390": {
    "name": "Electrolytes",
@@ -390,41 +463,11 @@
    "tier": 1,
    "volume": 0.19
   },
-  "2367": {
-   "name": "Cryoprotectant Solution",
-   "group_id": 1040,
-   "tier": 3,
-   "volume": 3
-  },
-  "2872": {
-   "name": "Self-Harmonizing Power Core",
-   "group_id": 1041,
-   "tier": 4,
-   "volume": 50
-  },
-  "2395": {
-   "name": "Proteins",
-   "group_id": 1042,
-   "tier": 1,
-   "volume": 0.19
-  },
   "2366": {
    "name": "Hazmat Detection Systems",
    "group_id": 1040,
    "tier": 3,
    "volume": 3
-  },
-  "2869": {
-   "name": "Nano-Factory",
-   "group_id": 1041,
-   "tier": 4,
-   "volume": 50
-  },
-  "2392": {
-   "name": "Oxidizing Compound",
-   "group_id": 1042,
-   "tier": 1,
-   "volume": 0.19
   },
   "2396": {
    "name": "Biofuels",
@@ -432,8 +475,44 @@
    "tier": 1,
    "volume": 0.19
   },
-  "2398": {
-   "name": "Reactive Metals",
+  "2876": {
+   "name": "Wetware Mainframe",
+   "group_id": 1041,
+   "tier": 4,
+   "volume": 50
+  },
+  "28974": {
+   "name": "Vaccines",
+   "group_id": 1040,
+   "tier": 3,
+   "volume": 3
+  },
+  "2395": {
+   "name": "Proteins",
+   "group_id": 1042,
+   "tier": 1,
+   "volume": 0.19
+  },
+  "2367": {
+   "name": "Cryoprotectant Solution",
+   "group_id": 1040,
+   "tier": 3,
+   "volume": 3
+  },
+  "2397": {
+   "name": "Industrial Fibers",
+   "group_id": 1042,
+   "tier": 1,
+   "volume": 0.19
+  },
+  "2392": {
+   "name": "Oxidizing Compound",
+   "group_id": 1042,
+   "tier": 1,
+   "volume": 0.19
+  },
+  "2399": {
+   "name": "Precious Metals",
    "group_id": 1042,
    "tier": 1,
    "volume": 0.19
@@ -444,20 +523,20 @@
    "tier": 1,
    "volume": 0.19
   },
-  "28974": {
-   "name": "Vaccines",
-   "group_id": 1040,
-   "tier": 3,
-   "volume": 3
-  },
-  "2868": {
-   "name": "Integrity Response Drones",
+  "2872": {
+   "name": "Self-Harmonizing Power Core",
    "group_id": 1041,
    "tier": 4,
    "volume": 50
   },
-  "2399": {
-   "name": "Precious Metals",
+  "15317": {
+   "name": "Genetically Enhanced Livestock",
+   "group_id": 1034,
+   "tier": 2,
+   "volume": 0.75
+  },
+  "2393": {
+   "name": "Bacteria",
    "group_id": 1042,
    "tier": 1,
    "volume": 0.19
@@ -480,14 +559,8 @@
    "tier": 1,
    "volume": 0.19
   },
-  "15317": {
-   "name": "Genetically Enhanced Livestock",
-   "group_id": 1034,
-   "tier": 2,
-   "volume": 0.75
-  },
-  "2397": {
-   "name": "Industrial Fibers",
+  "2398": {
+   "name": "Reactive Metals",
    "group_id": 1042,
    "tier": 1,
    "volume": 0.19
@@ -497,12 +570,6 @@
    "group_id": 1034,
    "tier": 2,
    "volume": 0.75
-  },
-  "2393": {
-   "name": "Bacteria",
-   "group_id": 1042,
-   "tier": 1,
-   "volume": 0.19
   }
  },
  "schematics": [
