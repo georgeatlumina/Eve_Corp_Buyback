@@ -216,6 +216,16 @@ def pi_data():
     }
 
 
+@app.get('/api/pi/pins')
+def pi_pins():
+    """Static PI *pin* dataset (colony hardware) for the layout builder:
+    command centers, extractors, factories, storage, launchpads with their
+    CPU/power loads, capacities, and the command-center CPU/PG-per-level table."""
+    pins_path = os.path.join(os.path.dirname(pi_planner.DATA_PATH), 'pi_pins.json')
+    with open(pins_path, encoding='utf-8') as f:
+        return json.load(f)
+
+
 def _pi_resolve_system(system_name, ua, data):
     """system name -> {system_id, name, planets:[{planet_id,type_id,planet_type}],
     p0_available:[type_id]} or None if the system name doesn't resolve."""

@@ -1096,3 +1096,33 @@ body.liq-full main { max-width: none; }
 .pi-p0 { border-collapse: collapse; font-size: 0.86em; }
 .pi-p0 td { padding: 0.15em 0.5em; }
 .pi-p0 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* PI Colony Builder tab */
+.pib-dir { font-size: 0.85em; color: #9fb4c0; background: #1b1b1b; padding: 0.05em 0.4em; border-radius: 3px; }
+.pib-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; margin: 0.5em 0; }
+.pib-toolbar label { display: inline-flex; align-items: center; gap: 0.3em; color: #ccc; font-size: 0.9em; }
+.pib-toolbar select, .pib-toolbar input { background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.3em; }
+.pib-templates { min-width: 16em; }
+.pib-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1em; align-items: start; }
+@media (max-width: 900px) { .pib-layout { grid-template-columns: 1fr; } }
+.pib-canvas-wrap { min-width: 0; }
+.pib-palette { display: flex; flex-wrap: wrap; gap: 0.35em; margin-bottom: 0.5em; }
+.pib-tool { background: #1e1e1e; color: #eee; border: 1px solid #555; border-left-width: 3px; border-radius: 4px; padding: 0.3em 0.7em; font-size: 0.85em; cursor: pointer; }
+.pib-tool.active { background: #2b3a44; border-color: #6cf; }
+.pib-svg { width: 100%; max-width: 520px; aspect-ratio: 1; background: radial-gradient(circle at 50% 50%, #0c0f14, #05070a); border: 1px solid #23303a; border-radius: 8px; display: block; touch-action: none; user-select: none; }
+.pib-selinfo { margin-top: 0.5em; font-size: 0.9em; min-height: 1.6em; }
+.pib-selinfo button { margin-left: 0.4em; }
+.pib-side { display: flex; flex-direction: column; gap: 0.8em; }
+.pib-panel { background: #14181c; border: 1px solid #263039; border-radius: 6px; padding: 0.7em 0.8em; }
+.pib-panel-h { color: #9fb4c0; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5em; }
+.pib-field { display: flex; flex-direction: column; gap: 0.2em; font-size: 0.85em; color: #ccc; margin-bottom: 0.5em; }
+.pib-field input { background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.35em; }
+.pib-bar-row { display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.4em; font-size: 0.85em; }
+.pib-bar-label { width: 4.5em; color: #bbb; }
+.pib-bar { flex: 1; height: 9px; background: #263039; border-radius: 5px; overflow: hidden; }
+.pib-bar-fill { display: block; height: 100%; background: #4a8; }
+.pib-bar-fill.pib-over { background: #ef4444; }
+.pib-bar-num { width: 9em; text-align: right; font-variant-numeric: tabular-nums; color: #cfe6da; }
+.pib-bar-num.pib-over-t { color: #ef4444; }
+.pib-budget-note { margin-top: 0.3em; font-size: 0.8em; }
+.pib-help { font-size: 0.82em; line-height: 1.4; }
