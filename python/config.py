@@ -151,6 +151,12 @@ DEFAULTS = {
     # Courier provider the Shipments view highlights among the corp's ESI
     # courier contracts (substring match on the assignee name). Blank = show all.
     'courier_provider_name': 'Push Industries',
+    # ---- Planetary Interaction (PI planner) ----
+    # POCO export tax rate used when scoring PI production chains: each produced
+    # tier pays tax_rate * base_value on export through the customs office. 0.05
+    # is the NPC high-sec baseline; player-owned null POCOs are often lower. The
+    # PI tab can override this per-analysis, but this is the saved default.
+    'pi_poco_tax_rate': 0.05,
 }
 
 _USER_KEYS = set(DEFAULTS)

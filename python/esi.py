@@ -1,6 +1,7 @@
 import logging
 import re
 import threading
+import time
 
 import requests
 
@@ -98,6 +99,26 @@ def resolve_ids(names, user_agent):
         for ent in (data.get('characters') or []):
             out[(ent.get('name') or '').lower()] = ent.get('id')
     return out
+
+
+def resolve_system_id(name, user_agent):
+    """Resolve a solar-system name -> ``(system_id, canonical_name)`` via POST
+    /universe/ids/ (the `systems` bucket). Returns ``(None, None)`` if the name
+    doesn't match a system. Used by the PI planner's system search."""
+    n = (name or '').strip()
+    if not n:
+        return None, None
+    resp = _session.post(
+        f'{ESI_BASE}/universe/ids/',
+        headers={'Accept': 'application/json', 'Content-Type': 'application/json',
+                 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+        json=[n],
+    )
+    resp.raise_for_status()
+    for ent in ((resp.json() or {}).get('systems') or []):
+        return ent.get('id'), ent.get('name')
+    return None, None
 
 
 def resolve_type_ids(names, user_agent):
@@ -582,6 +603,46 @@ def fetch_system_info(system_id, user_agent):
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_planet_info(planet_id, user_agent):
+    """Universe planet info: name, system_id, type_id, position. Cached-ish via
+    the shared session. Used by the PI planner to map a system's planets to
+    planet types (and thus to extractable P0)."""
+    resp = _session.get(
+        f'{ESI_BASE}/universe/planets/{int(planet_id)}/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+_market_prices_cache = {'at': 0.0, 'data': None}
+
+
+def fetch_market_prices(user_agent, ttl=3600):
+    """Return ``{type_id: adjusted_price}`` from ESI /markets/prices/.
+
+    ``adjusted_price`` is CCP's reference value — the figure PI customs (POCO)
+    taxes are levied on, not the live market price. One call covers all types;
+    cached in-process for ``ttl`` seconds (it moves slowly)."""
+    now = time.time()
+    if _market_prices_cache['data'] is not None and now - _market_prices_cache['at'] < ttl:
+        return _market_prices_cache['data']
+    resp = _session.get(
+        f'{ESI_BASE}/markets/prices/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+    )
+    resp.raise_for_status()
+    out = {}
+    for row in resp.json() or []:
+        adj = row.get('adjusted_price')
+        if adj is not None:
+            out[int(row['type_id'])] = float(adj)
+    _market_prices_cache.update(at=now, data=out)
+    return out
 
 
 def fetch_constellation_info(constellation_id, user_agent):

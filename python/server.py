@@ -51,6 +51,8 @@ from esi import (
     fetch_corp_wallets,
     fetch_corporation_info,
     fetch_incursions,
+    fetch_market_prices,
+    fetch_planet_info,
     fetch_region_info,
     fetch_region_market_history,
     fetch_region_market_orders,
@@ -66,6 +68,7 @@ from esi import (
     fetch_system_kills,
     resolve_names,
     resolve_ids,
+    resolve_system_id,
     resolve_type_ids,
     send_evemail,
     fetch_type_info,
@@ -78,11 +81,13 @@ from janice import (
     create_appraisal,
     create_appraisal_from_text,
     fetch_buy_prices,
+    fetch_immediate_prices,
     fetch_type_sell_price,
     items_from_appraisal,
 )
 import builds
 import liquidation
+import pi as pi_planner
 import stockpile
 from market import enrich as enrich_types, missing_ids as meta_missing_ids
 from acquisitions import load_acquisitions, save_acquisitions
@@ -169,6 +174,7 @@ class ConfigUpdate(BaseModel):
     market_history_pat_write: Optional[str] = None
     stockpile_group_name: Optional[str] = None
     stockpile_allow_push: Optional[bool] = None
+    pi_poco_tax_rate: Optional[float] = None
 
 
 @app.post('/api/config')
@@ -184,6 +190,110 @@ def update_config(update: ConfigUpdate):
 def list_markets():
     from config import JANICE_MARKETS
     return {'markets': JANICE_MARKETS}
+
+
+# --------------------------- Planetary Interaction ---------------------------
+# The 8 standard PI planet types by ESI type_id. Shattered/special planets
+# (other ids in universe group 7) can't host colonies, so they map to no P0.
+_PI_PLANET_TYPE_BY_ID = {
+    11: 'Temperate', 12: 'Ice', 13: 'Gas', 2014: 'Oceanic',
+    2015: 'Lava', 2016: 'Barren', 2017: 'Storm', 2063: 'Plasma',
+}
+
+
+@app.get('/api/pi/data')
+def pi_data():
+    """Static PI dataset for the planner UI: type metadata (name/tier/volume),
+    the full P0->P4 schematic tree, and the planet-type -> P0 map."""
+    d = pi_planner.load_pi_data()
+    return {
+        'types': {str(k): v for k, v in d['types'].items()},
+        'schematics': d['schematics'],
+        'planet_types': list(d['planet_types']),
+        'planet_p0': d['planet_p0'],
+    }
+
+
+def _pi_resolve_system(system_name, ua, data):
+    """system name -> {system_id, name, planets:[{planet_id,type_id,planet_type}],
+    p0_available:[type_id]} or None if the system name doesn't resolve."""
+    system_id, canon = resolve_system_id(system_name, ua)
+    if not system_id:
+        return None
+    sysinfo = fetch_system_info(system_id, ua)
+    planets, p0 = [], set()
+    for pl in (sysinfo.get('planets') or []):
+        pid = pl.get('planet_id')
+        try:
+            info = fetch_planet_info(pid, ua)
+        except Exception:
+            continue
+        ptype = _PI_PLANET_TYPE_BY_ID.get(info.get('type_id'))
+        planets.append({'planet_id': pid, 'type_id': info.get('type_id'), 'planet_type': ptype})
+        if ptype:
+            p0.update(data['planet_p0'].get(ptype, []))
+    return {'system_id': system_id, 'name': canon or system_name,
+            'planets': planets, 'p0_available': sorted(p0)}
+
+
+@app.get('/api/pi/analyze')
+def pi_analyze(system: Optional[str] = None, tax_rate: Optional[float] = None,
+               tiers: Optional[str] = None):
+    """Rank PI production chains by full-chain profit per unit, priced at Jita.
+
+    ``system`` (optional) restricts results to chains buildable from the planets
+    in that solar system; omit it to score every chain. ``tax_rate`` overrides
+    the saved ``pi_poco_tax_rate`` for this call. ``tiers`` is a comma list of
+    output tiers to include (default ``1,2,3,4``).
+    """
+    cfg = load_config()
+    ua = get_user_agent()
+    data = pi_planner.load_pi_data()
+
+    rate = tax_rate if tax_rate is not None else float(cfg.get('pi_poco_tax_rate') or 0.05)
+    rate = max(0.0, min(1.0, float(rate)))
+    try:
+        tier_filter = tuple(int(x) for x in (tiers.split(',') if tiers else ['1', '2', '3', '4']) if x)
+    except ValueError:
+        raise HTTPException(400, 'tiers must be a comma list of integers, e.g. 1,2,3,4')
+
+    system_out = None
+    if system and system.strip():
+        system_out = _pi_resolve_system(system.strip(), ua, data)
+        if not system_out:
+            raise HTTPException(404, f'System not found: {system!r}')
+        p0_available = system_out['p0_available']
+    else:
+        p0_available = sorted(data['p0_ids'])
+
+    api_key = cfg.get('janice_api_key') or None
+    all_ids = [int(t) for t in data['types']]
+    sell, price_note = {}, None
+    if api_key:
+        try:
+            priced = fetch_immediate_prices(all_ids, 'Jita 4-4', api_key=api_key, user_agent=ua)
+            sell = {tid: (v.get('sell') or 0) for tid, v in priced.items()}
+        except Exception as e:
+            price_note = f'Jita pricing failed: {e}'
+    else:
+        price_note = 'No Janice API key set — profits show tax only. Add a key in Config.'
+
+    try:
+        base = fetch_market_prices(ua)  # ESI adjusted prices for POCO tax
+    except Exception:
+        base = {}
+
+    rows = pi_planner.rank_chains(p0_available, sell, base, tax_rate=rate,
+                                  data=data, tiers=tier_filter)
+    return {
+        'system': system_out,
+        'p0_available': p0_available,
+        'tax_rate': rate,
+        'market': 'Jita 4-4',
+        'priced': bool(api_key and not price_note),
+        'price_note': price_note,
+        'rows': rows,
+    }
 
 
 def _slot_status(slot: str) -> dict:

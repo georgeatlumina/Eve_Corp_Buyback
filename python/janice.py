@@ -190,6 +190,36 @@ def fetch_buy_prices(type_ids, market_name='Jita 4-4', api_key=None, user_agent=
     return out
 
 
+def fetch_immediate_prices(type_ids, market_name='Jita 4-4', api_key=None, user_agent=None):
+    """Return ``{type_id: {'buy': isk, 'sell': isk}}`` — immediate per-unit buy
+    AND sell at ``market_name`` in one pricer pass. Used by the PI planner, which
+    needs sell (product value) and buy (input cost) for the same set of types.
+    Types with no orders are omitted; missing side is None. Requires an API key.
+    """
+    if not api_key:
+        raise ValueError('Janice API key required for market pricing — set one in Config.')
+    market_id = JANICE_MARKET_IDS.get(market_name)
+    if market_id is None:
+        raise ValueError(f'Unknown Janice market: {market_name!r}')
+    ids = sorted({int(t) for t in type_ids if t})
+    if not ids:
+        return {}
+
+    def one(tid):
+        try:
+            imm = _pricer_immediate(tid, market_id, api_key) or {}
+            return tid, imm
+        except Exception:
+            return tid, None
+
+    out = {}
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for tid, imm in ex.map(one, ids):
+            if imm:
+                out[tid] = {'buy': imm.get('buyPrice'), 'sell': imm.get('sellPrice')}
+    return out
+
+
 def items_from_appraisal(url, api_key=None):
     """Return ``[{name, quantity}]` from an existing Janice appraisal URL/code.
 
