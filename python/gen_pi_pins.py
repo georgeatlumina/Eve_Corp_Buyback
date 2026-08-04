@@ -22,9 +22,12 @@ REF = 'https://ref-data.everef.net'
 UA = 'EveCorpBuyback/1.0 (maintenance gen_pi_pins)'
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pi_pins.json')
 
-# PI pin groups.
+# PI pin groups. 1063 (Extractor Control Units) is the *current* extractor —
+# a generic ECU per planet whose resource is chosen via routing. (Group 1026,
+# "Extractors", is the retired pre-Rubicon per-resource extractor family and is
+# not used by the modern client / templates.)
 GROUPS = {
-    1026: 'extractor',
+    1063: 'extractor',
     1027: 'command_center',
     1028: 'factory',
     1029: 'storage',
@@ -45,6 +48,8 @@ A_EXTRACT_QTY = 1642
 A_EXTRACT_CYCLE = 1643
 A_DEPLETION_RANGE = 1644
 A_DEPLETION_RATE = 1645
+A_HEAD_CPU = 1690   # ecuExtractorHeadCPU — CPU per extractor head
+A_HEAD_POWER = 1691  # ecuExtractorHeadPower — powergrid per extractor head
 
 PLANET_TYPE_BY_ID = {
     11: 'Temperate', 12: 'Ice', 13: 'Gas', 2014: 'Oceanic',
@@ -130,11 +135,15 @@ def main():
             if kind == 'factory':
                 rec['tier'] = _factory_tier(name)
             if kind == 'extractor':
-                rec['harvester_p0'] = _av(dogma, A_HARVESTER)
+                # Modern ECU (group 1063) is generic — no fixed harvester type;
+                # the resource is picked via routing. Heads add CPU/power on top
+                # of the ECU base load.
                 rec['extract_qty'] = _av(dogma, A_EXTRACT_QTY)
                 rec['extract_cycle'] = _av(dogma, A_EXTRACT_CYCLE)
                 rec['depletion_range'] = _av(dogma, A_DEPLETION_RANGE)
                 rec['depletion_rate'] = _av(dogma, A_DEPLETION_RATE)
+                rec['head_cpu'] = _av(dogma, A_HEAD_CPU)
+                rec['head_power'] = _av(dogma, A_HEAD_POWER)
             if kind == 'launchpad':
                 rec['import_tax'] = _av(dogma, A_IMPORT_TAX)
                 rec['export_tax'] = _av(dogma, A_EXPORT_TAX)

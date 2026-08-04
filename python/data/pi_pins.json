@@ -1,7 +1,7 @@
 {
  "_meta": {
   "source": "https://ref-data.everef.net",
-  "pin_count": 122
+  "pin_count": 90
  },
  "command_center_levels": [
   {
@@ -42,541 +42,24 @@
   "Lava": 2549,
   "Oceanic": 2525,
   "Plasma": 2551,
-  "Storm": 2550,
-  "Temperate": 2254
+  "Temperate": 2254,
+  "Storm": 2550
  },
  "pins": {
-  "2414": {
-   "name": "Oceanic Aqueous Liquid Extractor",
+  "3060": {
+   "name": "Gas Extractor Control Unit",
    "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Oceanic",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2268,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2412": {
-   "name": "Temperate Aqueous Liquid Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Temperate",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2268,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2413": {
-   "name": "Storm Aqueous Liquid Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Storm",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2268,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2409": {
-   "name": "Barren Aqueous Liquid Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Barren",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2268,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2417": {
-   "name": "Plasma Suspended Plasma Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Plasma",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2308,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2416": {
-   "name": "Gas Aqueous Liquid Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
+   "group_id": 1063,
    "planet_type": "Gas",
-   "power_load": 800,
-   "cpu_load": 200,
+   "power_load": 2600,
+   "cpu_load": 400,
    "capacity": 0,
-   "harvester_p0": 2268,
    "extract_qty": 1000,
    "extract_cycle": 300,
    "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2415": {
-   "name": "Ice Aqueous Liquid Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Ice",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2268,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2418": {
-   "name": "Lava Suspended Plasma Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Lava",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2308,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2423": {
-   "name": "Ice Noble Gas Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Ice",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2310,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2419": {
-   "name": "Storm Suspended Plasma Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Storm",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2308,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2425": {
-   "name": "Storm Noble Gas Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Storm",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2310,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2422": {
-   "name": "Storm Ionic Solutions Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Storm",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2309,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2424": {
-   "name": "Gas Ionic Solutions Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Gas",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2309,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2428": {
-   "name": "Lava Base Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Lava",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2267,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2427": {
-   "name": "Gas Reactive Gas Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Gas",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2311,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2426": {
-   "name": "Gas Noble Gas Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Gas",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2310,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2430": {
-   "name": "Barren Base Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Barren",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2267,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2429": {
-   "name": "Plasma Base Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Plasma",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2267,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2431": {
-   "name": "Storm Base Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Storm",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2267,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2433": {
-   "name": "Gas Base Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Gas",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2267,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2435": {
-   "name": "Barren Noble Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Barren",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2270,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2432": {
-   "name": "Ice Microorganisms Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Ice",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2073,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2438": {
-   "name": "Ice Planktic Colonies Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Ice",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2286,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2441": {
-   "name": "Ice Heavy Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Ice",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2272,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2440": {
-   "name": "Plasma Heavy Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Plasma",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2272,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2442": {
-   "name": "Lava Non-CS Crystals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Lava",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2306,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2443": {
-   "name": "Plasma Non-CS Crystals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Plasma",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2306,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2434": {
-   "name": "Plasma Noble Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Plasma",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2270,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2448": {
-   "name": "Lava Felsic Magma Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Lava",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2307,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2439": {
-   "name": "Lava Heavy Metals Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Lava",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2272,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2450": {
-   "name": "Temperate Microorganisms Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Temperate",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2073,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2458": {
-   "name": "Oceanic Complex Organisms Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Oceanic",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2287,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2449": {
-   "name": "Barren Microorganisms Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Barren",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2073,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2453": {
-   "name": "Temperate Complex Organisms Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Temperate",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2287,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2451": {
-   "name": "Oceanic Microorganisms Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Oceanic",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2073,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2459": {
-   "name": "Barren Carbon Compounds Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Barren",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2288,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2452": {
-   "name": "Oceanic Planktic Colonies Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Oceanic",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2286,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2460": {
-   "name": "Temperate Carbon Compounds Extractor",
-   "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Temperate",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "harvester_p0": 2288,
-   "extract_qty": 1000,
-   "extract_cycle": 300,
-   "depletion_range": 5,
-   "depletion_rate": 1
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
   },
   "2129": {
    "name": "Limited Barren Command Center",
@@ -590,81 +73,35 @@
    "cpu_output_base": 7057,
    "export_tax": 3
   },
-  "2131": {
-   "name": "Improved Barren Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Barren",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 15000,
-   "cpu_output_base": 17215,
-   "export_tax": 3
-  },
-  "2462": {
-   "name": "Temperate Autotrophs Extractor",
+  "3068": {
+   "name": "Temperate Extractor Control Unit",
    "kind": "extractor",
-   "group_id": 1026,
+   "group_id": 1063,
    "planet_type": "Temperate",
-   "power_load": 800,
-   "cpu_load": 200,
+   "power_load": 2600,
+   "cpu_load": 400,
    "capacity": 0,
-   "harvester_p0": 2305,
    "extract_qty": 1000,
    "extract_cycle": 300,
    "depletion_range": 5,
-   "depletion_rate": 1
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
   },
-  "2461": {
-   "name": "Oceanic Carbon Compounds Extractor",
+  "2848": {
+   "name": "Barren Extractor Control Unit",
    "kind": "extractor",
-   "group_id": 1026,
-   "planet_type": "Oceanic",
-   "power_load": 800,
-   "cpu_load": 200,
+   "group_id": 1063,
+   "planet_type": "Barren",
+   "power_load": 2600,
+   "cpu_load": 400,
    "capacity": 0,
-   "harvester_p0": 2288,
    "extract_qty": 1000,
    "extract_cycle": 300,
    "depletion_range": 5,
-   "depletion_rate": 1
-  },
-  "2132": {
-   "name": "Advanced Barren Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Barren",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 17000,
-   "cpu_output_base": 21315,
-   "export_tax": 3
-  },
-  "2130": {
-   "name": "Standard Barren Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Barren",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 12000,
-   "cpu_output_base": 12136,
-   "export_tax": 3
-  },
-  "2134": {
-   "name": "Limited Gas Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Gas",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 9000,
-   "cpu_output_base": 7057,
-   "export_tax": 3
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
   },
   "2135": {
    "name": "Standard Gas Command Center",
@@ -678,40 +115,103 @@
    "cpu_output_base": 12136,
    "export_tax": 3
   },
-  "2133": {
-   "name": "Elite Barren Command Center",
+  "3062": {
+   "name": "Lava Extractor Control Unit",
+   "kind": "extractor",
+   "group_id": 1063,
+   "planet_type": "Lava",
+   "power_load": 2600,
+   "cpu_load": 400,
+   "capacity": 0,
+   "extract_qty": 1000,
+   "extract_cycle": 300,
+   "depletion_range": 5,
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
+  },
+  "3064": {
+   "name": "Plasma Extractor Control Unit",
+   "kind": "extractor",
+   "group_id": 1063,
+   "planet_type": "Plasma",
+   "power_load": 2600,
+   "cpu_load": 400,
+   "capacity": 0,
+   "extract_qty": 1000,
+   "extract_cycle": 300,
+   "depletion_range": 5,
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
+  },
+  "3067": {
+   "name": "Storm Extractor Control Unit",
+   "kind": "extractor",
+   "group_id": 1063,
+   "planet_type": "Storm",
+   "power_load": 2600,
+   "cpu_load": 400,
+   "capacity": 0,
+   "extract_qty": 1000,
+   "extract_cycle": 300,
+   "depletion_range": 5,
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
+  },
+  "3061": {
+   "name": "Ice Extractor Control Unit",
+   "kind": "extractor",
+   "group_id": 1063,
+   "planet_type": "Ice",
+   "power_load": 2600,
+   "cpu_load": 400,
+   "capacity": 0,
+   "extract_qty": 1000,
+   "extract_cycle": 300,
+   "depletion_range": 5,
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
+  },
+  "3063": {
+   "name": "Oceanic Extractor Control Unit",
+   "kind": "extractor",
+   "group_id": 1063,
+   "planet_type": "Oceanic",
+   "power_load": 2600,
+   "cpu_load": 400,
+   "capacity": 0,
+   "extract_qty": 1000,
+   "extract_cycle": 300,
+   "depletion_range": 5,
+   "depletion_rate": 1,
+   "head_cpu": 110,
+   "head_power": 550
+  },
+  "2130": {
+   "name": "Standard Barren Command Center",
    "kind": "command_center",
    "group_id": 1027,
    "planet_type": "Barren",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
-   "power_output_base": 19000,
-   "cpu_output_base": 25415,
+   "power_output_base": 12000,
+   "cpu_output_base": 12136,
    "export_tax": 3
   },
-  "2136": {
-   "name": "Improved Gas Command Center",
+  "2132": {
+   "name": "Advanced Barren Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Gas",
+   "planet_type": "Barren",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
-   "power_output_base": 15000,
-   "cpu_output_base": 17215,
-   "export_tax": 3
-  },
-  "2138": {
-   "name": "Elite Gas Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Gas",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 19000,
-   "cpu_output_base": 25415,
+   "power_output_base": 17000,
+   "cpu_output_base": 21315,
    "export_tax": 3
   },
   "2137": {
@@ -738,6 +238,114 @@
    "cpu_output_base": 7057,
    "export_tax": 3
   },
+  "2133": {
+   "name": "Elite Barren Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Barren",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 19000,
+   "cpu_output_base": 25415,
+   "export_tax": 3
+  },
+  "2138": {
+   "name": "Elite Gas Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Gas",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 19000,
+   "cpu_output_base": 25415,
+   "export_tax": 3
+  },
+  "2136": {
+   "name": "Improved Gas Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Gas",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 15000,
+   "cpu_output_base": 17215,
+   "export_tax": 3
+  },
+  "2145": {
+   "name": "Standard Lava Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Lava",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 12000,
+   "cpu_output_base": 12136,
+   "export_tax": 3
+  },
+  "2134": {
+   "name": "Limited Gas Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Gas",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 9000,
+   "cpu_output_base": 7057,
+   "export_tax": 3
+  },
+  "2131": {
+   "name": "Improved Barren Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Barren",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 15000,
+   "cpu_output_base": 17215,
+   "export_tax": 3
+  },
+  "2146": {
+   "name": "Improved Lava Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Lava",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 15000,
+   "cpu_output_base": 17215,
+   "export_tax": 3
+  },
+  "2149": {
+   "name": "Limited Oceanic Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Oceanic",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 9000,
+   "cpu_output_base": 7057,
+   "export_tax": 3
+  },
+  "2147": {
+   "name": "Advanced Lava Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Lava",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 17000,
+   "cpu_output_base": 21315,
+   "export_tax": 3
+  },
   "2141": {
    "name": "Improved Ice Command Center",
    "kind": "command_center",
@@ -750,28 +358,16 @@
    "cpu_output_base": 17215,
    "export_tax": 3
   },
-  "2143": {
-   "name": "Elite Ice Command Center",
+  "2151": {
+   "name": "Improved Oceanic Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Ice",
+   "planet_type": "Oceanic",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
-   "power_output_base": 19000,
-   "cpu_output_base": 25415,
-   "export_tax": 3
-  },
-  "2142": {
-   "name": "Advanced Ice Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Ice",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 17000,
-   "cpu_output_base": 21315,
+   "power_output_base": 15000,
+   "cpu_output_base": 17215,
    "export_tax": 3
   },
   "2144": {
@@ -798,28 +394,16 @@
    "cpu_output_base": 12136,
    "export_tax": 3
   },
-  "2148": {
-   "name": "Elite Lava Command Center",
+  "2143": {
+   "name": "Elite Ice Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Lava",
+   "planet_type": "Ice",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
    "power_output_base": 19000,
    "cpu_output_base": 25415,
-   "export_tax": 3
-  },
-  "2149": {
-   "name": "Limited Oceanic Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Oceanic",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 9000,
-   "cpu_output_base": 7057,
    "export_tax": 3
   },
   "2150": {
@@ -834,88 +418,16 @@
    "cpu_output_base": 12136,
    "export_tax": 3
   },
-  "2151": {
-   "name": "Improved Oceanic Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Oceanic",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 15000,
-   "cpu_output_base": 17215,
-   "export_tax": 3
-  },
-  "2152": {
-   "name": "Advanced Oceanic Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Oceanic",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 17000,
-   "cpu_output_base": 21315,
-   "export_tax": 3
-  },
-  "2154": {
-   "name": "Limited Plasma Command Center",
+  "2157": {
+   "name": "Advanced Plasma Command Center",
    "kind": "command_center",
    "group_id": 1027,
    "planet_type": "Plasma",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
-   "power_output_base": 9000,
-   "cpu_output_base": 7057,
-   "export_tax": 3
-  },
-  "2155": {
-   "name": "Standard Plasma Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Plasma",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 12000,
-   "cpu_output_base": 12136,
-   "export_tax": 3
-  },
-  "2146": {
-   "name": "Improved Lava Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Lava",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 15000,
-   "cpu_output_base": 17215,
-   "export_tax": 3
-  },
-  "2147": {
-   "name": "Advanced Lava Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Lava",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
    "power_output_base": 17000,
    "cpu_output_base": 21315,
-   "export_tax": 3
-  },
-  "2145": {
-   "name": "Standard Lava Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Lava",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 12000,
-   "cpu_output_base": 12136,
    "export_tax": 3
   },
   "2153": {
@@ -930,23 +442,11 @@
    "cpu_output_base": 25415,
    "export_tax": 3
   },
-  "2156": {
-   "name": "Improved Plasma Command Center",
+  "2142": {
+   "name": "Advanced Ice Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Plasma",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 15000,
-   "cpu_output_base": 17215,
-   "export_tax": 3
-  },
-  "2157": {
-   "name": "Advanced Plasma Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Plasma",
+   "planet_type": "Ice",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
@@ -954,28 +454,16 @@
    "cpu_output_base": 21315,
    "export_tax": 3
   },
-  "2160": {
-   "name": "Standard Storm Command Center",
+  "2155": {
+   "name": "Standard Plasma Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Storm",
+   "planet_type": "Plasma",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
    "power_output_base": 12000,
    "cpu_output_base": 12136,
-   "export_tax": 3
-  },
-  "2254": {
-   "name": "Temperate Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Temperate",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 6000,
-   "cpu_output_base": 1675,
    "export_tax": 3
   },
   "2158": {
@@ -990,11 +478,23 @@
    "cpu_output_base": 25415,
    "export_tax": 3
   },
-  "2159": {
-   "name": "Limited Storm Command Center",
+  "2254": {
+   "name": "Temperate Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Storm",
+   "planet_type": "Temperate",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 6000,
+   "cpu_output_base": 1675,
+   "export_tax": 3
+  },
+  "2154": {
+   "name": "Limited Plasma Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Plasma",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
@@ -1014,6 +514,18 @@
    "cpu_output_base": 1675,
    "export_tax": 3
   },
+  "2160": {
+   "name": "Standard Storm Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Storm",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 12000,
+   "cpu_output_base": 12136,
+   "export_tax": 3
+  },
   "2533": {
    "name": "Ice Command Center",
    "kind": "command_center",
@@ -1026,11 +538,23 @@
    "cpu_output_base": 1675,
    "export_tax": 3
   },
-  "2549": {
-   "name": "Lava Command Center",
+  "2148": {
+   "name": "Elite Lava Command Center",
    "kind": "command_center",
    "group_id": 1027,
    "planet_type": "Lava",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 19000,
+   "cpu_output_base": 25415,
+   "export_tax": 3
+  },
+  "2525": {
+   "name": "Oceanic Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Oceanic",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
@@ -1050,16 +574,52 @@
    "cpu_output_base": 1675,
    "export_tax": 3
   },
-  "2525": {
-   "name": "Oceanic Command Center",
+  "2551": {
+   "name": "Plasma Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Plasma",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 6000,
+   "cpu_output_base": 1675,
+   "export_tax": 3
+  },
+  "2152": {
+   "name": "Advanced Oceanic Command Center",
    "kind": "command_center",
    "group_id": 1027,
    "planet_type": "Oceanic",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
+   "power_output_base": 17000,
+   "cpu_output_base": 21315,
+   "export_tax": 3
+  },
+  "2549": {
+   "name": "Lava Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Lava",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
    "power_output_base": 6000,
    "cpu_output_base": 1675,
+   "export_tax": 3
+  },
+  "2156": {
+   "name": "Improved Plasma Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Plasma",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 15000,
+   "cpu_output_base": 17215,
    "export_tax": 3
   },
   "2577": {
@@ -1074,40 +634,16 @@
    "cpu_output_base": 25415,
    "export_tax": 3
   },
-  "2534": {
-   "name": "Gas Command Center",
+  "2574": {
+   "name": "Improved Storm Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Gas",
+   "planet_type": "Storm",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
-   "power_output_base": 6000,
-   "cpu_output_base": 1675,
-   "export_tax": 3
-  },
-  "2581": {
-   "name": "Standard Temperate Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Temperate",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 12000,
-   "cpu_output_base": 12136,
-   "export_tax": 3
-  },
-  "2578": {
-   "name": "Limited Temperate Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Temperate",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 9000,
-   "cpu_output_base": 7057,
+   "power_output_base": 15000,
+   "cpu_output_base": 17215,
    "export_tax": 3
   },
   "2582": {
@@ -1122,51 +658,29 @@
    "cpu_output_base": 17215,
    "export_tax": 3
   },
-  "2585": {
-   "name": "Advanced Temperate Command Center",
+  "2578": {
+   "name": "Limited Temperate Command Center",
    "kind": "command_center",
    "group_id": 1027,
    "planet_type": "Temperate",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
-   "power_output_base": 17000,
-   "cpu_output_base": 21315,
+   "power_output_base": 9000,
+   "cpu_output_base": 7057,
    "export_tax": 3
   },
-  "2586": {
-   "name": "Elite Temperate Command Center",
+  "2159": {
+   "name": "Limited Storm Command Center",
    "kind": "command_center",
    "group_id": 1027,
-   "planet_type": "Temperate",
+   "planet_type": "Storm",
    "power_load": null,
    "cpu_load": null,
    "capacity": 500,
-   "power_output_base": 19000,
-   "cpu_output_base": 25415,
+   "power_output_base": 9000,
+   "cpu_output_base": 7057,
    "export_tax": 3
-  },
-  "2551": {
-   "name": "Plasma Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Plasma",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 6000,
-   "cpu_output_base": 1675,
-   "export_tax": 3
-  },
-  "2471": {
-   "name": "Plasma Basic Industry Facility",
-   "kind": "factory",
-   "group_id": 1028,
-   "planet_type": "Plasma",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "tier": "basic"
   },
   "2576": {
    "name": "Advanced Storm Command Center",
@@ -1180,6 +694,50 @@
    "cpu_output_base": 21315,
    "export_tax": 3
   },
+  "2581": {
+   "name": "Standard Temperate Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Temperate",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 12000,
+   "cpu_output_base": 12136,
+   "export_tax": 3
+  },
+  "2585": {
+   "name": "Advanced Temperate Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Temperate",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 17000,
+   "cpu_output_base": 21315,
+   "export_tax": 3
+  },
+  "2473": {
+   "name": "Barren Basic Industry Facility",
+   "kind": "factory",
+   "group_id": 1028,
+   "planet_type": "Barren",
+   "power_load": 800,
+   "cpu_load": 200,
+   "capacity": 0,
+   "tier": "basic"
+  },
+  "2471": {
+   "name": "Plasma Basic Industry Facility",
+   "kind": "factory",
+   "group_id": 1028,
+   "planet_type": "Plasma",
+   "power_load": 800,
+   "cpu_load": 200,
+   "capacity": 0,
+   "tier": "basic"
+  },
   "2472": {
    "name": "Plasma Advanced Industry Facility",
    "kind": "factory",
@@ -1189,18 +747,6 @@
    "cpu_load": 500,
    "capacity": 0,
    "tier": "advanced"
-  },
-  "2574": {
-   "name": "Improved Storm Command Center",
-   "kind": "command_center",
-   "group_id": 1027,
-   "planet_type": "Storm",
-   "power_load": null,
-   "cpu_load": null,
-   "capacity": 500,
-   "power_output_base": 15000,
-   "cpu_output_base": 17215,
-   "export_tax": 3
   },
   "2469": {
    "name": "Lava Basic Industry Facility",
@@ -1212,31 +758,11 @@
    "capacity": 0,
    "tier": "basic"
   },
-  "2474": {
-   "name": "Barren Advanced Industry Facility",
-   "kind": "factory",
-   "group_id": 1028,
-   "planet_type": "Barren",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 0,
-   "tier": "advanced"
-  },
   "2470": {
    "name": "Lava Advanced Industry Facility",
    "kind": "factory",
    "group_id": 1028,
    "planet_type": "Lava",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 0,
-   "tier": "advanced"
-  },
-  "2480": {
-   "name": "Temperate Advanced Industry Facility",
-   "kind": "factory",
-   "group_id": 1028,
-   "planet_type": "Temperate",
    "power_load": 700,
    "cpu_load": 500,
    "capacity": 0,
@@ -1252,25 +778,17 @@
    "capacity": 0,
    "tier": "hitech"
   },
-  "2481": {
-   "name": "Temperate Basic Industry Facility",
-   "kind": "factory",
-   "group_id": 1028,
+  "2586": {
+   "name": "Elite Temperate Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
    "planet_type": "Temperate",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "tier": "basic"
-  },
-  "2473": {
-   "name": "Barren Basic Industry Facility",
-   "kind": "factory",
-   "group_id": 1028,
-   "planet_type": "Barren",
-   "power_load": 800,
-   "cpu_load": 200,
-   "capacity": 0,
-   "tier": "basic"
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 19000,
+   "cpu_output_base": 25415,
+   "export_tax": 3
   },
   "2482": {
    "name": "Temperate High-Tech Production Plant",
@@ -1281,6 +799,16 @@
    "cpu_load": 1100,
    "capacity": 0,
    "tier": "hitech"
+  },
+  "2480": {
+   "name": "Temperate Advanced Industry Facility",
+   "kind": "factory",
+   "group_id": 1028,
+   "planet_type": "Temperate",
+   "power_load": 700,
+   "cpu_load": 500,
+   "capacity": 0,
+   "tier": "advanced"
   },
   "2483": {
    "name": "Storm Basic Industry Facility",
@@ -1302,11 +830,41 @@
    "capacity": 0,
    "tier": "advanced"
   },
+  "2485": {
+   "name": "Oceanic Advanced Industry Facility",
+   "kind": "factory",
+   "group_id": 1028,
+   "planet_type": "Oceanic",
+   "power_load": 700,
+   "cpu_load": 500,
+   "capacity": 0,
+   "tier": "advanced"
+  },
   "2492": {
    "name": "Gas Basic Industry Facility",
    "kind": "factory",
    "group_id": 1028,
    "planet_type": "Gas",
+   "power_load": 800,
+   "cpu_load": 200,
+   "capacity": 0,
+   "tier": "basic"
+  },
+  "2474": {
+   "name": "Barren Advanced Industry Facility",
+   "kind": "factory",
+   "group_id": 1028,
+   "planet_type": "Barren",
+   "power_load": 700,
+   "cpu_load": 500,
+   "capacity": 0,
+   "tier": "advanced"
+  },
+  "2481": {
+   "name": "Temperate Basic Industry Facility",
+   "kind": "factory",
+   "group_id": 1028,
+   "planet_type": "Temperate",
    "power_load": 800,
    "cpu_load": 200,
    "capacity": 0,
@@ -1322,35 +880,6 @@
    "capacity": 0,
    "tier": "basic"
   },
-  "2491": {
-   "name": "Ice Advanced Industry Facility",
-   "kind": "factory",
-   "group_id": 1028,
-   "planet_type": "Ice",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 0,
-   "tier": "advanced"
-  },
-  "2485": {
-   "name": "Oceanic Advanced Industry Facility",
-   "kind": "factory",
-   "group_id": 1028,
-   "planet_type": "Oceanic",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 0,
-   "tier": "advanced"
-  },
-  "2257": {
-   "name": "Ice Storage Facility",
-   "kind": "storage",
-   "group_id": 1029,
-   "planet_type": "Ice",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 12000
-  },
   "2493": {
    "name": "Ice Basic Industry Facility",
    "kind": "factory",
@@ -1361,29 +890,21 @@
    "capacity": 0,
    "tier": "basic"
   },
-  "2535": {
-   "name": "Oceanic Storage Facility",
-   "kind": "storage",
-   "group_id": 1029,
-   "planet_type": "Oceanic",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 12000
-  },
-  "2541": {
-   "name": "Barren Storage Facility",
-   "kind": "storage",
-   "group_id": 1029,
-   "planet_type": "Barren",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 12000
-  },
   "2494": {
    "name": "Gas Advanced Industry Facility",
    "kind": "factory",
    "group_id": 1028,
    "planet_type": "Gas",
+   "power_load": 700,
+   "cpu_load": 500,
+   "capacity": 0,
+   "tier": "advanced"
+  },
+  "2491": {
+   "name": "Ice Advanced Industry Facility",
+   "kind": "factory",
+   "group_id": 1028,
+   "planet_type": "Ice",
    "power_load": 700,
    "cpu_load": 500,
    "capacity": 0,
@@ -1398,20 +919,11 @@
    "cpu_load": 500,
    "capacity": 12000
   },
-  "2558": {
-   "name": "Lava Storage Facility",
+  "2541": {
+   "name": "Barren Storage Facility",
    "kind": "storage",
    "group_id": 1029,
-   "planet_type": "Lava",
-   "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 12000
-  },
-  "2560": {
-   "name": "Plasma Storage Facility",
-   "kind": "storage",
-   "group_id": 1029,
-   "planet_type": "Plasma",
+   "planet_type": "Barren",
    "power_load": 700,
    "cpu_load": 500,
    "capacity": 12000
@@ -1436,44 +948,29 @@
    "import_tax": 0.5,
    "export_tax": 1
   },
-  "2555": {
-   "name": "Lava Launchpad",
-   "kind": "launchpad",
-   "group_id": 1030,
-   "planet_type": "Lava",
+  "2257": {
+   "name": "Ice Storage Facility",
+   "kind": "storage",
+   "group_id": 1029,
+   "planet_type": "Ice",
    "power_load": 700,
-   "cpu_load": 3600,
-   "capacity": 10000,
-   "import_tax": 0.5,
-   "export_tax": 1
+   "cpu_load": 500,
+   "capacity": 12000
+  },
+  "2535": {
+   "name": "Oceanic Storage Facility",
+   "kind": "storage",
+   "group_id": 1029,
+   "planet_type": "Oceanic",
+   "power_load": 700,
+   "cpu_load": 500,
+   "capacity": 12000
   },
   "2543": {
    "name": "Gas Launchpad",
    "kind": "launchpad",
    "group_id": 1030,
    "planet_type": "Gas",
-   "power_load": 700,
-   "cpu_load": 3600,
-   "capacity": 10000,
-   "import_tax": 0.5,
-   "export_tax": 1
-  },
-  "2542": {
-   "name": "Oceanic Launchpad",
-   "kind": "launchpad",
-   "group_id": 1030,
-   "planet_type": "Oceanic",
-   "power_load": 700,
-   "cpu_load": 3600,
-   "capacity": 10000,
-   "import_tax": 0.5,
-   "export_tax": 1
-  },
-  "2552": {
-   "name": "Ice Launchpad",
-   "kind": "launchpad",
-   "group_id": 1030,
-   "planet_type": "Ice",
    "power_load": 700,
    "cpu_load": 3600,
    "capacity": 10000,
@@ -1491,16 +988,32 @@
    "import_tax": 0.5,
    "export_tax": 1
   },
-  "2557": {
-   "name": "Storm Launchpad",
-   "kind": "launchpad",
-   "group_id": 1030,
-   "planet_type": "Storm",
+  "2562": {
+   "name": "Temperate Storage Facility",
+   "kind": "storage",
+   "group_id": 1029,
+   "planet_type": "Temperate",
    "power_load": 700,
-   "cpu_load": 3600,
-   "capacity": 10000,
-   "import_tax": 0.5,
-   "export_tax": 1
+   "cpu_load": 500,
+   "capacity": 12000
+  },
+  "2560": {
+   "name": "Plasma Storage Facility",
+   "kind": "storage",
+   "group_id": 1029,
+   "planet_type": "Plasma",
+   "power_load": 700,
+   "cpu_load": 500,
+   "capacity": 12000
+  },
+  "2558": {
+   "name": "Lava Storage Facility",
+   "kind": "storage",
+   "group_id": 1029,
+   "planet_type": "Lava",
+   "power_load": 700,
+   "cpu_load": 500,
+   "capacity": 12000
   },
   "2544": {
    "name": "Barren Launchpad",
@@ -1513,14 +1026,61 @@
    "import_tax": 0.5,
    "export_tax": 1
   },
-  "2562": {
-   "name": "Temperate Storage Facility",
-   "kind": "storage",
-   "group_id": 1029,
-   "planet_type": "Temperate",
+  "2542": {
+   "name": "Oceanic Launchpad",
+   "kind": "launchpad",
+   "group_id": 1030,
+   "planet_type": "Oceanic",
    "power_load": 700,
-   "cpu_load": 500,
-   "capacity": 12000
+   "cpu_load": 3600,
+   "capacity": 10000,
+   "import_tax": 0.5,
+   "export_tax": 1
+  },
+  "2555": {
+   "name": "Lava Launchpad",
+   "kind": "launchpad",
+   "group_id": 1030,
+   "planet_type": "Lava",
+   "power_load": 700,
+   "cpu_load": 3600,
+   "capacity": 10000,
+   "import_tax": 0.5,
+   "export_tax": 1
+  },
+  "2552": {
+   "name": "Ice Launchpad",
+   "kind": "launchpad",
+   "group_id": 1030,
+   "planet_type": "Ice",
+   "power_load": 700,
+   "cpu_load": 3600,
+   "capacity": 10000,
+   "import_tax": 0.5,
+   "export_tax": 1
+  },
+  "2557": {
+   "name": "Storm Launchpad",
+   "kind": "launchpad",
+   "group_id": 1030,
+   "planet_type": "Storm",
+   "power_load": 700,
+   "cpu_load": 3600,
+   "capacity": 10000,
+   "import_tax": 0.5,
+   "export_tax": 1
+  },
+  "2534": {
+   "name": "Gas Command Center",
+   "kind": "command_center",
+   "group_id": 1027,
+   "planet_type": "Gas",
+   "power_load": null,
+   "cpu_load": null,
+   "capacity": 500,
+   "power_output_base": 6000,
+   "cpu_output_base": 1675,
+   "export_tax": 3
   }
  }
 }
