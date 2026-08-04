@@ -1110,8 +1110,19 @@ body.liq-full main { max-width: none; }
 .pib-tool { background: #1e1e1e; color: #eee; border: 1px solid #555; border-left-width: 3px; border-radius: 4px; padding: 0.3em 0.7em; font-size: 0.85em; cursor: pointer; }
 .pib-tool.active { background: #2b3a44; border-color: #6cf; }
 .pib-svg { width: 100%; max-width: 520px; aspect-ratio: 1; background: radial-gradient(circle at 50% 50%, #0c0f14, #05070a); border: 1px solid #23303a; border-radius: 8px; display: block; touch-action: none; user-select: none; }
-.pib-selinfo { margin-top: 0.5em; font-size: 0.9em; min-height: 1.6em; }
-.pib-selinfo button { margin-left: 0.4em; }
+.pib-selinfo { margin-top: 0.5em; font-size: 0.9em; min-height: 1.6em; background: #14181c; border: 1px solid #263039; border-radius: 6px; padding: 0.6em 0.7em; }
+.pib-selhead { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
+.pib-selhead button { margin-left: auto; }
+.pib-selhead button + button { margin-left: 0.3em; }
+.pib-inline { display: inline-flex; align-items: center; gap: 0.4em; margin-top: 0.5em; font-size: 0.88em; color: #ccc; }
+.pib-selinfo select, .pib-selinfo input { background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.25em; font-size: 0.85em; }
+.pib-routes { margin-top: 0.6em; }
+.pib-routes-h { color: #9fb4c0; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.3em; }
+.pib-route { display: flex; align-items: center; gap: 0.5em; font-size: 0.85em; padding: 0.12em 0; }
+.pib-route button { margin-left: auto; background: none; border: none; color: #c66; cursor: pointer; font-size: 0.9em; }
+.pib-addroute { display: flex; flex-wrap: wrap; gap: 0.3em; margin-top: 0.4em; align-items: center; }
+.pib-addroute select { max-width: 12em; }
+.pib-addroute input { width: 5.5em; }
 .pib-side { display: flex; flex-direction: column; gap: 0.8em; }
 .pib-panel { background: #14181c; border: 1px solid #263039; border-radius: 6px; padding: 0.7em 0.8em; }
 .pib-panel-h { color: #9fb4c0; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5em; }

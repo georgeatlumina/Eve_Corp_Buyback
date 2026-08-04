@@ -26,6 +26,8 @@
 
   let pinsData = null;   // /api/pi/pins
   let piTypes = null;    // /api/pi/data types map (for schematic/commodity names)
+  let piSchem = null;    // /api/pi/data schematics (for factory output assignment)
+  let planetP0 = null;   // planet_type -> [P0 type_id] (for ECU resource assignment)
   let model = null;      // current colony
   let view = { theta0: 1.4, phi0: 0.8, zoom: 1 };   // camera direction (colat, azimuth) + magnification
   let tool = 'select';   // 'select' or a pin type_id string to place
@@ -84,7 +86,26 @@
       fetch(`${API}/api/pi/pins`).then((r) => r.json()),
       fetch(`${API}/api/pi/data`).then((r) => r.json()),
     ]);
-    pinsData = p; piTypes = d.types;
+    pinsData = p; piTypes = d.types; piSchem = d.schematics; planetP0 = d.planet_p0;
+  }
+
+  function tierOf(id) { return (piTypes[String(id)] || {}).tier; }
+
+  // Schematics a factory of the given tier can run (basic->P1, advanced->P2/P3, hitech->P4).
+  function schematicsForTier(tier) {
+    const want = { basic: [1], advanced: [2, 3], hitech: [4] }[tier] || [1, 2, 3, 4];
+    return piSchem.filter((s) => want.includes(tierOf(s.outputs[0][0])))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // Pin indices directly linked to idx (skip the command-center node).
+  function neighbors(idx) {
+    const out = [];
+    for (const l of model.links) {
+      if (l.a === idx && l.b !== 'cc') out.push(l.b);
+      else if (l.b === idx && l.a !== 'cc') out.push(l.a);
+    }
+    return [...new Set(out)];
   }
   function pin(typeId) { return pinsData.pins[String(typeId)] || {}; }
   function commodityName(id) { return (piTypes[String(id)] || {}).name || (pin(id).name) || `#${id}`; }
@@ -201,13 +222,64 @@
 
   function renderSelection() {
     const el = $('#pib-selinfo');
-    if (sel == null || !model.pins[sel]) { el.innerHTML = '<span class="muted">No pin selected. Click a pin to select; pick a tool to place.</span>'; return; }
+    if (sel == null || !model.pins[sel]) {
+      el.innerHTML = '<span class="muted">No pin selected. Click a pin to select; pick a tool to place.</span>';
+      return;
+    }
     const p = model.pins[sel]; const r = pin(p.type_id);
-    const sch = p.schematic ? ` · makes ${escapeHtml(commodityName(p.schematic))}` : '';
-    el.innerHTML = `<strong>${escapeHtml(r.name || 'pin')}</strong> <span class="muted">(${(p.lat).toFixed(3)}, ${(p.lon).toFixed(3)})${sch}</span>
-      <button id="pib-link" class="secondary">Link…</button> <button id="pib-del" class="secondary">Delete</button>`;
+
+    // schematic (factory) / resource (ECU) assignment
+    let assign = '';
+    if (r.kind === 'factory') {
+      const opts = schematicsForTier(r.tier).map((s) =>
+        `<option value="${s.outputs[0][0]}" ${String(p.schematic) === String(s.outputs[0][0]) ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+      assign = `<label class="pib-inline">Makes <select id="pib-sch"><option value="">— pick output —</option>${opts}</select></label>`;
+    } else if (r.kind === 'extractor') {
+      const ids = (planetP0[planetType()] || []);
+      const opts = ids.map((id) => `<option value="${id}" ${String(p.schematic) === String(id) ? 'selected' : ''}>${escapeHtml(commodityName(id))}</option>`).join('');
+      assign = `<label class="pib-inline">Extracts <select id="pib-sch"><option value="">— pick resource —</option>${opts}</select></label>`;
+    }
+
+    // routes touching this pin
+    const nbrs = neighbors(sel);
+    const rows = model.routes.map((rt, i) => ({ rt, i })).filter(({ rt }) => rt.src === sel || rt.dst === sel);
+    const routeList = rows.map(({ rt, i }) => {
+      const other = rt.src === sel ? rt.dst : rt.src;
+      const dir = rt.src === sel ? '→' : '←';
+      const oname = other === 'cc' ? 'CC' : (pin(model.pins[other].type_id).name || `pin ${other}`);
+      return `<div class="pib-route">${dir} ${escapeHtml(oname)}: ${Number(rt.qty).toLocaleString('en-US')}× ${escapeHtml(commodityName(rt.type_id))}
+        <button class="pib-rdel" data-i="${i}">✕</button></div>`;
+    }).join('') || '<div class="muted" style="font-size:.85em">No routes yet.</div>';
+
+    const commodityOpts = Object.keys(piTypes).map(Number).sort((a, b) => (tierOf(a) - tierOf(b)) || commodityName(a).localeCompare(commodityName(b)))
+      .map((id) => `<option value="${id}">P${tierOf(id)} ${escapeHtml(commodityName(id))}</option>`).join('');
+    const nbrOpts = nbrs.map((n) => `<option value="${n}">${escapeHtml(pin(model.pins[n].type_id).name || `pin ${n}`)}</option>`).join('');
+    const addRoute = nbrs.length
+      ? `<div class="pib-addroute">
+          <select id="pib-rdest" title="destination (a linked pin)">${nbrOpts}</select>
+          <select id="pib-rtype">${commodityOpts}</select>
+          <input id="pib-rqty" type="number" value="3000" title="quantity" />
+          <button id="pib-radd" class="secondary">+ route</button>
+        </div>`
+      : '<div class="muted" style="font-size:.82em">Link this pin to another to add routes.</div>';
+
+    el.innerHTML = `<div class="pib-selhead"><strong>${escapeHtml(r.name || 'pin')}</strong>
+        <span class="muted">(${p.lat.toFixed(3)}, ${p.lon.toFixed(3)})</span>
+        <button id="pib-link" class="secondary">Link…</button>
+        <button id="pib-del" class="secondary">Delete</button></div>
+      ${assign}
+      <div class="pib-routes"><div class="pib-routes-h">Routes</div>${routeList}${addRoute}</div>`;
+
     $('#pib-del').onclick = () => { model.pins.splice(sel, 1); remapAfterDelete(sel); sel = null; linkFrom = null; render(); };
     $('#pib-link').onclick = () => { linkFrom = sel; render(); };
+    const schEl = $('#pib-sch');
+    if (schEl) schEl.onchange = (e) => { p.schematic = e.target.value ? +e.target.value : null; render(); };
+    el.querySelectorAll('.pib-rdel').forEach((b) => { b.onclick = () => { model.routes.splice(+b.dataset.i, 1); render(); }; });
+    const addBtn = $('#pib-radd');
+    if (addBtn) addBtn.onclick = () => {
+      model.routes.push({ src: sel, dst: +$('#pib-rdest').value, type_id: +$('#pib-rtype').value, qty: parseInt($('#pib-rqty').value, 10) || 0 });
+      render();
+    };
   }
 
   // when a pin index is removed, drop its links/routes and shift higher indices
