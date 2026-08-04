@@ -1126,3 +1126,29 @@ body.liq-full main { max-width: none; }
 .pib-bar-num.pib-over-t { color: #ef4444; }
 .pib-budget-note { margin-top: 0.3em; font-size: 0.8em; }
 .pib-help { font-size: 0.82em; line-height: 1.4; }
+
+/* PI Colonies (live) tab */
+#pic-refresh { font-size: 0.7em; vertical-align: middle; margin-left: 0.6em; }
+.pic-empty { color: #9aa; padding: 1.2em; background: #14181c; border: 1px solid #263039; border-radius: 6px; line-height: 1.6; }
+.pic-banner { background: #3a2412; border: 1px solid #7a4a1a; color: #ffca8a; padding: 0.5em 0.8em; border-radius: 6px; margin-bottom: 0.8em; font-size: 0.9em; }
+.pic-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 0.8em; }
+.pic-card { background: #14181c; border: 1px solid #263039; border-left-width: 3px; border-radius: 6px; padding: 0.7em 0.8em; }
+.pic-card.pic-ok { border-left-color: #4a8; }
+.pic-card.pic-idle { border-left-color: #667; }
+.pic-card.pic-expiring { border-left-color: #e0a030; }
+.pic-card.pic-expired { border-left-color: #ef4444; }
+.pic-card-h { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; }
+.pic-sub { font-size: 0.82em; margin: 0.15em 0 0.5em; }
+.pic-badge { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.1em 0.5em; border-radius: 10px; white-space: nowrap; }
+.pic-b-ok { background: #16332a; color: #7fd0a8; }
+.pic-b-idle { background: #22262e; color: #99a; }
+.pic-b-expiring { background: #3a2c12; color: #ffca8a; }
+.pic-b-expired { background: #3a1414; color: #ff9a9a; }
+.pic-b-unknown { background: #22262e; color: #99a; }
+.pic-exts { display: flex; flex-direction: column; gap: 0.25em; }
+.pic-ext { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0.5em 0.8em; font-size: 0.88em; padding: 0.15em 0; border-top: 1px solid #1e242b; }
+.pic-ext-name { color: #dfe; }
+.pic-ext-meta { grid-column: 1; font-size: 0.78em; }
+.pic-cd { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-variant-numeric: tabular-nums; color: #8fd0b0; font-weight: 600; }
+.pic-expired .pic-cd, .pic-cd:empty { color: #ff8a8a; }
+.pic-noext, .pic-ext-meta { color: #8a94a0; }

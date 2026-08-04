@@ -618,6 +618,32 @@ def fetch_planet_info(planet_id, user_agent):
     return resp.json()
 
 
+def fetch_character_planets(character_id, access_token, user_agent):
+    """The authed character's planetary colonies (summary): list of
+    ``{planet_id, solar_system_id, planet_type, owner_id, upgrade_level,
+    num_pins, last_update}``. Needs esi-planets.manage_planets.v1."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/planets/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or []
+
+
+def fetch_character_planet_detail(character_id, planet_id, access_token, user_agent):
+    """One colony's full layout: ``{links, pins, routes}``. Extractor pins carry
+    ``extractor_details`` (product_type_id, cycle_time, qty_per_cycle, heads) and
+    an ``expiry_time`` — the driver of the extractor countdown/alerts."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/planets/{int(planet_id)}/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or {}
+
+
 _market_prices_cache = {'at': 0.0, 'data': None}
 
 

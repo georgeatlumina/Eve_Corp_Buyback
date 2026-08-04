@@ -50,6 +50,8 @@ from esi import (
     fetch_corp_structures,
     fetch_corp_wallets,
     fetch_corporation_info,
+    fetch_character_planets,
+    fetch_character_planet_detail,
     fetch_incursions,
     fetch_market_prices,
     fetch_planet_info,
@@ -391,6 +393,113 @@ def pi_template_save(req: PiTemplateSaveRequest):
     except OSError as e:
         raise HTTPException(500, f'could not write template: {e}')
     return {'saved': os.path.basename(path), 'dir': d, 'path': path}
+
+
+# ---- PI live colonies via ESI (extractor timers + restart alerts) -----------
+
+PI_COLONY_SCOPE = 'esi-planets.manage_planets.v1'
+
+
+def _pi_scoped_slots():
+    """Yield (slot, token, character_id, character_name) for authed slots that
+    carry the manage_planets scope."""
+    try:
+        client_id, secret_key = get_app_credentials()
+    except Exception:
+        return
+    ua = get_user_agent()
+    for slot in list_authenticated_slots():
+        try:
+            token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            payload = decode_jwt_payload(token)
+        except Exception:
+            continue
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        if PI_COLONY_SCOPE in scope_list:
+            yield slot, token, character_id_from_access_token(token), payload.get('name')
+
+
+@app.get('/api/pi/colonies')
+def pi_colonies():
+    """Live PI colonies for every authed character carrying the manage_planets
+    scope, with each extractor's product + expiry and a per-colony status
+    (expired / expiring <24h / ok / idle). Drives the colony-manager view."""
+    ua = get_user_agent()
+    now = datetime.now(timezone.utc)
+    data = pi_planner.load_pi_data()
+    colonies, any_slot, errors = [], False, []
+    sys_names = {}
+
+    def sysname(sid):
+        if sid not in sys_names:
+            try:
+                sys_names[sid] = fetch_system_info(sid, ua).get('name')
+            except Exception:
+                sys_names[sid] = None
+        return sys_names[sid]
+
+    for slot, token, cid, cname in _pi_scoped_slots():
+        any_slot = True
+        try:
+            planets = fetch_character_planets(cid, token, ua)
+        except Exception as e:
+            errors.append(f'{cname or slot}: {e}')
+            continue
+        for pl in planets:
+            try:
+                detail = fetch_character_planet_detail(cid, pl['planet_id'], token, ua)
+            except Exception:
+                detail = {'pins': []}
+            extractors, soonest = [], None
+            for p in detail.get('pins', []):
+                ed = p.get('extractor_details')
+                if not ed:
+                    continue
+                exp = p.get('expiry_time')
+                exp_dt = None
+                if exp:
+                    try:
+                        exp_dt = datetime.fromisoformat(exp.replace('Z', '+00:00'))
+                    except ValueError:
+                        pass
+                prod = ed.get('product_type_id')
+                extractors.append({
+                    'product_type_id': prod,
+                    'product': data['types'].get(str(prod), {}).get('name') if prod else None,
+                    'expiry_time': exp,
+                    'qty_per_cycle': ed.get('qty_per_cycle'),
+                    'cycle_time': ed.get('cycle_time'),
+                    'heads': len(ed.get('heads') or []),
+                })
+                if exp_dt and (soonest is None or exp_dt < soonest):
+                    soonest = exp_dt
+            if not extractors:
+                status = 'idle'
+            elif soonest is None:
+                status = 'unknown'
+            elif soonest <= now:
+                status = 'expired'
+            elif (soonest - now).total_seconds() < 24 * 3600:
+                status = 'expiring'
+            else:
+                status = 'ok'
+            colonies.append({
+                'slot': slot, 'character': cname, 'character_id': cid,
+                'planet_id': pl['planet_id'],
+                'planet_type': (pl.get('planet_type') or '').title(),
+                'system': sysname(pl.get('solar_system_id')),
+                'system_id': pl.get('solar_system_id'),
+                'upgrade_level': pl.get('upgrade_level'),
+                'num_pins': pl.get('num_pins'),
+                'last_update': pl.get('last_update'),
+                'extractors': extractors,
+                'soonest_expiry': soonest.isoformat() if soonest else None,
+                'status': status,
+            })
+    colonies.sort(key=lambda c: (c['soonest_expiry'] or '9999'))
+    return {'configured': any_slot, 'scope': PI_COLONY_SCOPE, 'now': now.isoformat(),
+            'colonies': colonies, 'errors': errors}
 
 
 def _slot_status(slot: str) -> dict:
