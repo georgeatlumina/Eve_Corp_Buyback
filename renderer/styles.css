@@ -1165,3 +1165,13 @@ body.liq-full main { max-width: none; }
 .pic-noext, .pic-ext-meta { color: #8a94a0; }
 .pic-actions { margin-top: 0.5em; text-align: right; }
 .pic-edit { font-size: 0.8em; }
+
+/* PI Characters auth (compact, up to 24) */
+.auth-pi-grid { display: flex; flex-wrap: wrap; gap: 0.4em; }
+.auth-pi-card { display: inline-flex; align-items: center; gap: 0.4em; background: #14181c; border: 1px solid #2a3a44; border-radius: 14px; padding: 0.2em 0.4em 0.2em 0.7em; font-size: 0.88em; }
+.auth-pi-name { color: #cfe6da; }
+.auth-pi-err { color: #e0a030; margin-left: 0.25em; cursor: help; }
+.auth-pi-x { color: #c66 !important; font-size: 0.85em; padding: 0 0.2em; }
+.auth-pi-add-row { display: flex; align-items: center; gap: 0.8em; margin-top: 0.6em; }
+.auth-pi-add { font-size: 0.9em; }
+.auth-pi-count { font-size: 0.85em; }

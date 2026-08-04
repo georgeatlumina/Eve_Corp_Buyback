@@ -795,10 +795,9 @@ const AUTH_SLOT_LABELS = {
   slot2: 'Slot 2 (optional — extra contract visibility)',
   slot3: 'Slot 3 (optional — extra contract visibility)',
   slot4: 'Slot 4 (Hooks & Hubs — structure fuel; needs Director role)',
-  pi1: 'PI Character 1', pi2: 'PI Character 2', pi3: 'PI Character 3', pi4: 'PI Character 4',
 };
 const AUTH_SLOTS = ['slot1', 'slot2', 'slot3', 'slot4'];
-const PI_AUTH_SLOTS = ['pi1', 'pi2', 'pi3', 'pi4'];
+const PI_AUTH_SLOTS = Array.from({ length: 24 }, (_, i) => `pi${i + 1}`);
 
 function renderAuthSlot(slot, info) {
   const wrapper = document.createElement('div');
@@ -825,6 +824,24 @@ function renderAuthSlot(slot, info) {
   return wrapper;
 }
 
+function renderPiAuthSection(container, piInfo) {
+  const authed = piInfo.filter((s) => s.authenticated);
+  const free = piInfo.find((s) => !s.authenticated);
+  const cards = authed.map((s) => {
+    const err = s.error ? `<span class="auth-pi-err" title="${escapeHtml(s.error)}">⚠</span>` : '';
+    return `<div class="auth-pi-card" data-slot="${s.slot}">
+      <span class="auth-pi-name">${escapeHtml(s.character || s.slot)}${err}</span>
+      <button type="button" class="auth-slot-logout linklike auth-pi-x" data-slot="${s.slot}" title="Log out">✕</button>
+    </div>`;
+  }).join('');
+  const count = `<span class="muted auth-pi-count">${authed.length}/${piInfo.length} authorized</span>`;
+  const add = free
+    ? `<button type="button" class="auth-slot-login auth-pi-add" data-slot="${free.slot}">+ Add PI character</button>`
+    : `<span class="muted">All ${piInfo.length} PI slots in use.</span>`;
+  container.innerHTML = `<div class="auth-pi-grid">${cards || '<span class="muted">No PI characters yet.</span>'}</div>
+    <div class="auth-pi-add-row">${add} ${count}</div>`;
+}
+
 async function refreshAuthStatus() {
   const container = $('#auth-slots');
   if (container) container.innerHTML = '<p class="muted">Checking slots…</p>';
@@ -847,14 +864,13 @@ async function refreshAuthStatus() {
     }
   }
   // PI Characters — a separate, minimal-scope auth just for planetary colonies.
+  // Up to 24, so render compactly: logged-in toons + an "add next" button.
   const piContainer = $('#auth-pi-slots');
   if (piContainer) {
     try {
       const pr = await fetch(`${API}/api/auth/pi-slots`);
       const piInfo = pr.ok ? ((await pr.json()).slots || []) : [];
-      const byPi = Object.fromEntries(piInfo.map((s) => [s.slot, s]));
-      piContainer.innerHTML = '';
-      for (const slot of PI_AUTH_SLOTS) piContainer.appendChild(renderAuthSlot(slot, byPi[slot]));
+      renderPiAuthSection(piContainer, piInfo);
     } catch (_) { /* leave as-is on failure */ }
   }
 
