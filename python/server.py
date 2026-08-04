@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 from auth import (
     DEFAULT_SLOT,
     VALID_SLOTS,
+    PI_SLOTS,
+    PI_SCOPES,
     build_authorize_url,
     character_id_from_access_token,
     clear_cached_tokens,
@@ -33,6 +35,7 @@ from auth import (
     get_user_agent,
     get_valid_access_token,
     list_authenticated_slots,
+    list_authenticated_pi_slots,
     load_cached_tokens,
     refresh_access_token,
     save_cached_tokens,
@@ -123,8 +126,8 @@ _auth_lock = threading.Lock()
 
 def _normalize_slot(slot: Optional[str]) -> str:
     s = slot or DEFAULT_SLOT
-    if s not in VALID_SLOTS:
-        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS}')
+    if s not in VALID_SLOTS and s not in PI_SLOTS:
+        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS + PI_SLOTS}')
     return s
 
 
@@ -401,14 +404,15 @@ PI_COLONY_SCOPE = 'esi-planets.manage_planets.v1'
 
 
 def _pi_scoped_slots():
-    """Yield (slot, token, character_id, character_name) for authed slots that
-    carry the manage_planets scope."""
+    """Yield (slot, token, character_id, character_name) for every authed slot
+    that carries the manage_planets scope — the dedicated PI slots plus any main
+    slot that happens to have it."""
     try:
         client_id, secret_key = get_app_credentials()
     except Exception:
         return
     ua = get_user_agent()
-    for slot in list_authenticated_slots():
+    for slot in list_authenticated_slots() + list_authenticated_pi_slots():
         try:
             token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
             payload = decode_jwt_payload(token)
@@ -586,16 +590,23 @@ def auth_login(slot: Optional[str] = None):
     cfg = load_config()
     client_id, _ = get_app_credentials()
     slot_name = _normalize_slot(slot)
+    # PI slots authorize alts with only the planetary scope; main slots get the
+    # full configured scope set.
+    scopes = list(PI_SCOPES) if slot_name in PI_SLOTS else cfg['scopes']
     state_token = secrets.token_urlsafe(32)
     with _auth_lock:
         _auth_state['pending'][state_token] = slot_name
         _auth_state['completed'][slot_name] = False
         _auth_state['errors'].pop(slot_name, None)
-    url = build_authorize_url(
-        client_id, REDIRECT_URI, cfg['scopes'], state_token,
-    )
+    url = build_authorize_url(client_id, REDIRECT_URI, scopes, state_token)
     webbrowser.open(url)
     return {'opened': True, 'url': url, 'slot': slot_name}
+
+
+@app.get('/api/auth/pi-slots')
+def auth_pi_slots():
+    """Status for every PI slot — used by the Auth tab's PI Characters section."""
+    return {'slots': [_slot_status(s) for s in PI_SLOTS]}
 
 
 @app.post('/api/auth/logout')

@@ -795,8 +795,10 @@ const AUTH_SLOT_LABELS = {
   slot2: 'Slot 2 (optional — extra contract visibility)',
   slot3: 'Slot 3 (optional — extra contract visibility)',
   slot4: 'Slot 4 (Hooks & Hubs — structure fuel; needs Director role)',
+  pi1: 'PI Character 1', pi2: 'PI Character 2', pi3: 'PI Character 3', pi4: 'PI Character 4',
 };
 const AUTH_SLOTS = ['slot1', 'slot2', 'slot3', 'slot4'];
+const PI_AUTH_SLOTS = ['pi1', 'pi2', 'pi3', 'pi4'];
 
 function renderAuthSlot(slot, info) {
   const wrapper = document.createElement('div');
@@ -844,6 +846,18 @@ async function refreshAuthStatus() {
       container.appendChild(renderAuthSlot(slot, bySlot[slot]));
     }
   }
+  // PI Characters — a separate, minimal-scope auth just for planetary colonies.
+  const piContainer = $('#auth-pi-slots');
+  if (piContainer) {
+    try {
+      const pr = await fetch(`${API}/api/auth/pi-slots`);
+      const piInfo = pr.ok ? ((await pr.json()).slots || []) : [];
+      const byPi = Object.fromEntries(piInfo.map((s) => [s.slot, s]));
+      piContainer.innerHTML = '';
+      for (const slot of PI_AUTH_SLOTS) piContainer.appendChild(renderAuthSlot(slot, byPi[slot]));
+    } catch (_) { /* leave as-is on failure */ }
+  }
+
   // Legacy single-status indicator — mirror slot 1 so the rest of the app sees a status.
   const slot1 = (slotsInfo || []).find((s) => s.slot === 'slot1');
   if ($('#auth-status')) {

@@ -44,9 +44,9 @@ DEFAULTS = {
         # open positions auto-reconcile. Needs Accountant or Trader corp role on
         # the authed character.
         'esi-markets.read_corporation_orders.v1',
-        # PI Colonies: read the authed character's planetary colonies (extractor
-        # timers, routes) for the live colony manager. Per-character, no role.
-        'esi-planets.manage_planets.v1',
+        # NB: the PI colony scope (esi-planets.manage_planets.v1) is NOT here —
+        # it's requested only by the dedicated PI slots (auth.PI_SCOPES) so PI
+        # alts can be authorized without re-scoping the main characters.
     ],
     'structures': DEFAULT_STRUCTURES,
     'janice_market': 'Jita 4-4',

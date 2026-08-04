@@ -20,6 +20,12 @@ DEFAULT_SLOT = 'slot1'
 # esi-corporations.read_structures.v1). Kept separate from slots 1-3 so the
 # main wallet/contracts character needn't also be a Director.
 VALID_SLOTS = ('slot1', 'slot2', 'slot3', 'slot4')
+# PI slots authorize alts *just* for the planetary colony scope, so you can add
+# PI characters without re-scoping (or spending main slots on) them. Stored in
+# the same cache but iterated separately from the main VALID_SLOTS.
+PI_SLOTS = ('pi1', 'pi2', 'pi3', 'pi4')
+PI_SCOPES = ('publicData', 'esi-planets.manage_planets.v1')
+ALL_SLOTS = VALID_SLOTS + PI_SLOTS
 
 
 def get_app_credentials():
@@ -87,10 +93,10 @@ def _load_all_slots():
     if not isinstance(data, dict):
         return {}
     # Legacy shape detection: a flat record has access_token at the top level.
-    if 'access_token' in data and not any(k in VALID_SLOTS for k in data):
+    if 'access_token' in data and not any(k in ALL_SLOTS for k in data):
         return {DEFAULT_SLOT: data}
     # Keep only known slots so config-style keys cannot leak in.
-    return {k: v for k, v in data.items() if k in VALID_SLOTS and isinstance(v, dict)}
+    return {k: v for k, v in data.items() if k in ALL_SLOTS and isinstance(v, dict)}
 
 
 def _write_all_slots(slots):
@@ -122,9 +128,15 @@ def clear_cached_tokens(slot=DEFAULT_SLOT):
 
 
 def list_authenticated_slots():
-    """Return sorted list of slot names that currently hold tokens."""
+    """Return sorted list of main slot names that currently hold tokens."""
     slots = _load_all_slots()
     return [s for s in VALID_SLOTS if s in slots]
+
+
+def list_authenticated_pi_slots():
+    """Return authenticated PI slot names (planetary-scope alts)."""
+    slots = _load_all_slots()
+    return [s for s in PI_SLOTS if s in slots]
 
 
 def get_valid_access_token(client_id, secret_key, user_agent, slot=DEFAULT_SLOT):
