@@ -157,6 +157,10 @@ DEFAULTS = {
     # is the NPC high-sec baseline; player-owned null POCOs are often lower. The
     # PI tab can override this per-analysis, but this is the saved default.
     'pi_poco_tax_rate': 0.05,
+    # Folder the EVE client reads/writes PI colony templates from. Blank = the
+    # standard location (<Documents>/EVE/PlanetaryInteractionTemplates). The PI
+    # layout builder lists saved templates here and saves exports straight to it.
+    'pi_templates_dir': '',
 }
 
 _USER_KEYS = set(DEFAULTS)

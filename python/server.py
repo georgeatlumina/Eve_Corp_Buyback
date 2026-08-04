@@ -88,6 +88,7 @@ from janice import (
 import builds
 import liquidation
 import pi as pi_planner
+import pi_layout
 import stockpile
 from market import enrich as enrich_types, missing_ids as meta_missing_ids
 from acquisitions import load_acquisitions, save_acquisitions
@@ -175,6 +176,7 @@ class ConfigUpdate(BaseModel):
     stockpile_group_name: Optional[str] = None
     stockpile_allow_push: Optional[bool] = None
     pi_poco_tax_rate: Optional[float] = None
+    pi_templates_dir: Optional[str] = None
 
 
 @app.post('/api/config')
@@ -294,6 +296,91 @@ def pi_analyze(system: Optional[str] = None, tax_rate: Optional[float] = None,
         'price_note': price_note,
         'rows': rows,
     }
+
+
+# ---- PI colony templates: read/write the EVE client's template folder --------
+
+def _pi_templates_dir(cfg):
+    d = (cfg.get('pi_templates_dir') or '').strip()
+    if not d:
+        d = os.path.join(os.path.expanduser('~'), 'Documents', 'EVE',
+                         'PlanetaryInteractionTemplates')
+    return d
+
+
+def _safe_template_name(name):
+    base = os.path.basename((name or '').strip())
+    if not base:
+        raise HTTPException(400, 'template name is required')
+    if not base.lower().endswith('.json'):
+        base += '.json'
+    return base
+
+
+@app.get('/api/pi/templates')
+def pi_templates_list():
+    """List PI colony templates in the EVE templates folder (parsed summaries),
+    so the builder can show what's already saved without a manual import."""
+    cfg = load_config()
+    d = _pi_templates_dir(cfg)
+    out = []
+    if os.path.isdir(d):
+        for fn in sorted(os.listdir(d)):
+            if not fn.lower().endswith('.json'):
+                continue
+            path = os.path.join(d, fn)
+            try:
+                m = pi_layout.parse_template(pi_layout.load_template_file(path))
+                out.append({
+                    'name': fn,
+                    'comment': m.get('comment', ''),
+                    'planet_type_id': m['planet_type_id'],
+                    'planet_type': _PI_PLANET_TYPE_BY_ID.get(m['planet_type_id']),
+                    'cmd_ctr_level': m['cmd_ctr_level'],
+                    'diameter': m['diameter'],
+                    'pins': len(m['pins']),
+                    'links': len(m['links']),
+                    'routes': len(m['routes']),
+                    'mtime': os.path.getmtime(path),
+                })
+            except Exception as e:
+                out.append({'name': fn, 'error': str(e)})
+    return {'dir': d, 'exists': os.path.isdir(d), 'templates': out}
+
+
+@app.get('/api/pi/templates/read')
+def pi_template_read(name: str):
+    """Read one template and return its parsed colony model (+ raw doc)."""
+    cfg = load_config()
+    path = os.path.join(_pi_templates_dir(cfg), _safe_template_name(name))
+    if not os.path.isfile(path):
+        raise HTTPException(404, f'template not found: {name}')
+    try:
+        doc = pi_layout.load_template_file(path)
+        return {'name': os.path.basename(path), 'layout': pi_layout.parse_template(doc)}
+    except Exception as e:
+        raise HTTPException(400, f'failed to read template: {e}')
+
+
+class PiTemplateSaveRequest(BaseModel):
+    name: str
+    layout: dict
+
+
+@app.post('/api/pi/templates/save')
+def pi_template_save(req: PiTemplateSaveRequest):
+    """Save a colony model to the EVE templates folder as importable JSON, so it
+    shows up directly in the in-game template list."""
+    cfg = load_config()
+    d = _pi_templates_dir(cfg)
+    path = os.path.join(d, _safe_template_name(req.name))
+    try:
+        pi_layout.save_template_file(req.layout, path)
+    except (KeyError, TypeError) as e:
+        raise HTTPException(400, f'invalid colony model: {e}')
+    except OSError as e:
+        raise HTTPException(500, f'could not write template: {e}')
+    return {'saved': os.path.basename(path), 'dir': d, 'path': path}
 
 
 def _slot_status(slot: str) -> dict:
