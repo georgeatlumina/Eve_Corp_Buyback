@@ -424,14 +424,33 @@ def _pi_scoped_slots():
             yield slot, token, character_id_from_access_token(token), payload.get('name')
 
 
+def _load_pi_pins_meta():
+    pins_path = os.path.join(os.path.dirname(pi_planner.DATA_PATH), 'pi_pins.json')
+    with open(pins_path, encoding='utf-8') as f:
+        return json.load(f)['pins']
+
+
 @app.get('/api/pi/colonies')
 def pi_colonies():
     """Live PI colonies for every authed character carrying the manage_planets
-    scope, with each extractor's product + expiry and a per-colony status
+    scope. Each colony carries its extractors (product + expiry), factory
+    outputs, storage/launchpad contents, a pin breakdown, and Jita valuation
+    (contents value + estimated output value/day), plus a per-colony status
     (expired / expiring <24h / ok / idle). Drives the colony-manager view."""
     ua = get_user_agent()
     now = datetime.now(timezone.utc)
+    cfg = load_config()
     data = pi_planner.load_pi_data()
+    pins_meta = _load_pi_pins_meta()
+    sch_to_out = {s['schematic_id']: s['outputs'][0][0] for s in data['schematics']}
+
+    def tname(tid):
+        return (data['types'].get(str(tid), {}).get('name')
+                or (pins_meta.get(str(tid)) or {}).get('name') or f'type {tid}')
+
+    def kind_of(tid):
+        return (pins_meta.get(str(tid)) or {}).get('kind')
+
     colonies, any_slot, errors = [], False, []
     sys_names = {}
 
@@ -455,29 +474,32 @@ def pi_colonies():
                 detail = fetch_character_planet_detail(cid, pl['planet_id'], token, ua)
             except Exception:
                 detail = {'pins': []}
-            extractors, soonest = [], None
+            extractors, factories, by_kind, contents = [], [], {}, {}
+            soonest = None
             for p in detail.get('pins', []):
+                by_kind[kind_of(p.get('type_id')) or 'other'] = by_kind.get(kind_of(p.get('type_id')) or 'other', 0) + 1
+                for c in (p.get('contents') or []):
+                    contents[c['type_id']] = contents.get(c['type_id'], 0) + c['amount']
                 ed = p.get('extractor_details')
-                if not ed:
-                    continue
-                exp = p.get('expiry_time')
-                exp_dt = None
-                if exp:
-                    try:
-                        exp_dt = datetime.fromisoformat(exp.replace('Z', '+00:00'))
-                    except ValueError:
-                        pass
-                prod = ed.get('product_type_id')
-                extractors.append({
-                    'product_type_id': prod,
-                    'product': data['types'].get(str(prod), {}).get('name') if prod else None,
-                    'expiry_time': exp,
-                    'qty_per_cycle': ed.get('qty_per_cycle'),
-                    'cycle_time': ed.get('cycle_time'),
-                    'heads': len(ed.get('heads') or []),
-                })
-                if exp_dt and (soonest is None or exp_dt < soonest):
-                    soonest = exp_dt
+                if ed:
+                    exp = p.get('expiry_time')
+                    exp_dt = None
+                    if exp:
+                        try:
+                            exp_dt = datetime.fromisoformat(exp.replace('Z', '+00:00'))
+                        except ValueError:
+                            pass
+                    prod = ed.get('product_type_id')
+                    extractors.append({
+                        'product_type_id': prod, 'product': tname(prod) if prod else None,
+                        'expiry_time': exp, 'qty_per_cycle': ed.get('qty_per_cycle'),
+                        'cycle_time': ed.get('cycle_time'), 'heads': len(ed.get('heads') or []),
+                    })
+                    if exp_dt and (soonest is None or exp_dt < soonest):
+                        soonest = exp_dt
+                elif p.get('schematic_id') is not None:
+                    out = sch_to_out.get(p['schematic_id'])
+                    factories.append({'product_type_id': out, 'product': tname(out) if out else None})
             if not extractors:
                 status = 'idle'
             elif soonest is None:
@@ -494,16 +516,51 @@ def pi_colonies():
                 'planet_type': (pl.get('planet_type') or '').title(),
                 'system': sysname(pl.get('solar_system_id')),
                 'system_id': pl.get('solar_system_id'),
-                'upgrade_level': pl.get('upgrade_level'),
-                'num_pins': pl.get('num_pins'),
+                'upgrade_level': pl.get('upgrade_level'), 'num_pins': pl.get('num_pins'),
                 'last_update': pl.get('last_update'),
-                'extractors': extractors,
-                'soonest_expiry': soonest.isoformat() if soonest else None,
-                'status': status,
+                'extractors': extractors, 'factories': factories,
+                'pins_by_kind': by_kind, '_contents': contents,
+                'soonest_expiry': soonest.isoformat() if soonest else None, 'status': status,
             })
+
+    # Price everything (extractor products + stored contents) at Jita in one pass.
+    type_ids = set()
+    for c in colonies:
+        type_ids.update(e['product_type_id'] for e in c['extractors'] if e['product_type_id'])
+        type_ids.update(c['_contents'].keys())
+    prices, api_key = {}, cfg.get('janice_api_key') or None
+    if api_key and type_ids:
+        try:
+            imm = fetch_immediate_prices(sorted(type_ids), 'Jita 4-4', api_key=api_key, user_agent=ua)
+            prices = {tid: (v.get('sell') or 0) for tid, v in imm.items()}
+        except Exception as e:
+            errors.append(f'pricing: {e}')
+
+    def price(tid):
+        return float(prices.get(int(tid)) or 0) if tid else 0.0
+
+    total_contents_value, total_output_day = 0.0, 0.0
+    for c in colonies:
+        out_day = 0.0
+        for e in c['extractors']:
+            pr = price(e['product_type_id'])
+            qpc, ct = e.get('qty_per_cycle') or 0, e.get('cycle_time') or 0
+            e['isk_per_day'] = qpc * (86400.0 / ct) * pr if ct else 0.0
+            out_day += e['isk_per_day']
+        contents = [{'type_id': tid, 'name': tname(tid), 'amount': amt, 'isk': amt * price(tid)}
+                    for tid, amt in sorted(c['_contents'].items(), key=lambda x: -x[1])]
+        c['contents'] = contents
+        c['contents_value'] = sum(x['isk'] for x in contents)
+        c['output_value_per_day'] = out_day
+        del c['_contents']
+        total_contents_value += c['contents_value']
+        total_output_day += out_day
+
     colonies.sort(key=lambda c: (c['soonest_expiry'] or '9999'))
     return {'configured': any_slot, 'scope': PI_COLONY_SCOPE, 'now': now.isoformat(),
-            'colonies': colonies, 'errors': errors}
+            'priced': bool(api_key), 'colonies': colonies, 'errors': errors,
+            'total_contents_value': total_contents_value,
+            'total_output_value_per_day': total_output_day}
 
 
 @app.get('/api/pi/colony')

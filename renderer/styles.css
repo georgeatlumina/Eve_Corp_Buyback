@@ -1163,8 +1163,20 @@ body.liq-full main { max-width: none; }
 .pic-cd { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-variant-numeric: tabular-nums; color: #8fd0b0; font-weight: 600; }
 .pic-expired .pic-cd, .pic-cd:empty { color: #ff8a8a; }
 .pic-noext, .pic-ext-meta { color: #8a94a0; }
-.pic-actions { margin-top: 0.5em; text-align: right; }
-.pic-edit { font-size: 0.8em; }
+.pic-actions { margin-top: 0.5em; display: flex; gap: 0.4em; justify-content: flex-end; }
+.pic-edit, .pic-detail-toggle { font-size: 0.8em; }
+.pic-totals { background: #16241c; border: 1px solid #2a4a38; color: #bfe0d0; padding: 0.5em 0.8em; border-radius: 6px; margin-bottom: 0.8em; font-size: 0.9em; }
+.pic-totals strong { color: #8fd0b0; }
+.pic-val { font-size: 0.82em; margin-top: 0.3em; }
+.pic-detail { margin-top: 0.6em; padding-top: 0.5em; border-top: 1px solid #24303a; }
+.pic-d-h { color: #9fb4c0; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.04em; margin: 0.4em 0 0.3em; }
+.pic-d-facs { display: flex; flex-wrap: wrap; gap: 0.3em; }
+.pic-chip { background: #23303a; color: #bfe0d5; border: 1px solid #35505c; border-radius: 10px; padding: 0.08em 0.55em; font-size: 0.8em; }
+.pic-cont { width: 100%; border-collapse: collapse; font-size: 0.84em; }
+.pic-cont td { padding: 0.12em 0.4em; border-bottom: 1px solid #1e242b; }
+.pic-cont td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pic-d-empty { font-size: 0.85em; }
+.pic-d-kinds { font-size: 0.78em; margin-top: 0.5em; }
 
 /* PI Characters auth (compact, up to 24) */
 .auth-pi-grid { display: flex; flex-wrap: wrap; gap: 0.4em; }
