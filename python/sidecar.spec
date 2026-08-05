@@ -40,6 +40,8 @@ hidden_imports = [
     'janice',
     'liquidation',
     'market',
+    'pi',
+    'pi_layout',
     'pinned',
     'refining',
     'stockpile',
@@ -57,9 +59,12 @@ a = Analysis(
     ['server.py'],
     pathex=[os.path.dirname(os.path.abspath(SPEC))],
     binaries=[],
-    # Bundled reprocessing-yields CSV for moon-contract refining (loaded by
-    # refining.py via sys._MEIPASS/data/ in the frozen build).
-    datas=[(os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'data', 'mineable_type_materials.csv'), 'data')],
+    # Bundle the whole data/ directory into <frozen>/data/ (loaded via
+    # sys._MEIPASS/data/ at runtime): the reprocessing-yields CSV for moon
+    # refining, plus the PI datasets (pi_data.json, pi_pins.json,
+    # eve_systems.json). Bundling the directory means new data files are
+    # picked up automatically.
+    datas=[(os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'data'), 'data')],
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

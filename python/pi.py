@@ -23,9 +23,20 @@ alongside so the tool can show both the full-chain and the single-step view.
 """
 import json
 import os
+import sys
 from functools import lru_cache
 
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pi_data.json')
+
+def _bundled_data_path(name):
+    """Path to a bundled data file — the PyInstaller extraction dir in the frozen
+    build (sys._MEIPASS/data/), else data/ next to this module in dev. Mirrors
+    refining._bundled_data_path so the packaged sidecar finds pi_data.json,
+    pi_pins.json and eve_systems.json."""
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, 'data', name)
+
+
+DATA_PATH = _bundled_data_path('pi_data.json')
 
 TIER_LABELS = {0: 'P0', 1: 'P1', 2: 'P2', 3: 'P3', 4: 'P4'}
 
