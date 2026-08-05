@@ -1074,6 +1074,8 @@ body.liq-full main { max-width: none; }
 .pi-tax-label input { width: 4.2em; padding: 0.35em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; }
 .pi-tiers { display: inline-flex; align-items: center; gap: 0.5em; color: #ccc; font-size: 0.9em; }
 .pi-tiers label { display: inline-flex; align-items: center; gap: 0.2em; }
+.pi-perunit-label { display: inline-flex; align-items: center; gap: 0.3em; color: #ccc; font-size: 0.9em; }
+.pi-batch { font-size: 0.82em; }
 .pi-planets { margin-bottom: 0.4em; }
 .pi-chips { display: flex; flex-wrap: wrap; gap: 0.35em; margin-top: 0.35em; }
 .pi-chip { background: #23303a; color: #bfe0d5; border: 1px solid #35505c; border-radius: 10px; padding: 0.12em 0.6em; font-size: 0.82em; }

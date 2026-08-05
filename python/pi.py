@@ -188,6 +188,7 @@ def evaluate(product_id, sell_prices, base_values, tax_rate=0.05, data=None):
         'name': type_name(pid, data),
         'tier': data['types'].get(pid, {}).get('tier'),
         'tier_label': TIER_LABELS.get(data['types'].get(pid, {}).get('tier')),
+        'run_qty': out_qty,   # units produced per production cycle (smallest batch)
         'unit_sell': unit_sell,
         # single-step (make from bought inputs)
         'step_input_cost': step_input_cost,

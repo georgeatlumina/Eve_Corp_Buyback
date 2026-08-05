@@ -64,7 +64,7 @@
 
     lastRows = d.rows || [];
     renderPlanets(d);
-    renderTable(d);
+    renderTable();
     const base = `Ranked ${lastRows.length} chains · ${d.market} · POCO tax ${(d.tax_rate * 100).toFixed(1)}%`;
     status.textContent = d.price_note ? `${base} — ${d.price_note}` : base;
     status.classList.toggle('pi-warn', !!d.price_note);
@@ -95,29 +95,36 @@
       + `<div class="pi-chips">${p0chips}</div>`;
   }
 
-  function renderTable(d) {
+  function renderTable() {
     const el = $('#pi-results');
     if (!el) return;
     if (!lastRows.length) { el.innerHTML = '<div class="muted">No chains for this selection.</div>'; return; }
-    const rows = lastRows.map((r) => {
-      const cp = r.chain_profit, sm = r.step_margin;
+    const perUnit = !!$('#pi-perunit')?.checked;
+    const suf = perUnit ? '/unit' : '/run';
+    const mult = (r) => (perUnit ? 1 : (r.run_qty || 1));
+    // Re-rank by the displayed (per-run or per-unit) chain profit.
+    const sorted = lastRows.slice().sort((a, b) => (b.chain_profit * mult(b)) - (a.chain_profit * mult(a)));
+    const rows = sorted.map((r) => {
+      const m = mult(r);
+      const sell = r.unit_sell * m, cp = r.chain_profit * m, sm = r.step_margin * m;
+      const batch = (!perUnit && r.run_qty > 1) ? ` <span class="muted pi-batch">×${r.run_qty}</span>` : '';
       return `<tr class="pi-row" data-pi-recipe="${r.type_id}" tabindex="0">
         <td>${escapeHtml(r.tier_label || '')}</td>
-        <td>${escapeHtml(r.name)}</td>
-        <td class="num">${r.unit_sell ? fmtIsk(r.unit_sell) : '—'}</td>
+        <td>${escapeHtml(r.name)}${batch}</td>
+        <td class="num">${r.unit_sell ? fmtIsk(sell) : '—'}</td>
         <td class="num ${cp >= 0 ? 'pi-pos' : 'pi-neg'}">${fmtIsk(cp)}</td>
         <td class="num ${sm >= 0 ? 'pi-pos' : 'pi-neg'}">${fmtIsk(sm)}</td>
-        <td class="num">${fmtN(r.p0_units_total)}</td>
+        <td class="num">${fmtN(r.p0_units_total * m)}</td>
       </tr>`;
     }).join('');
     el.innerHTML = `<table class="pi-table">
       <thead><tr>
-        <th>Tier</th><th>Commodity</th><th class="num">Jita sell</th>
-        <th class="num" title="Sell value minus POCO export tax; raw P0 assumed free (extracted)">Chain profit /u</th>
-        <th class="num" title="Make one from bought inputs: sell − input cost − export tax">Step margin /u</th>
-        <th class="num" title="Raw P0 units consumed per one finished unit">P0 /u</th>
+        <th>Tier</th><th>Commodity</th><th class="num">Jita sell ${suf}</th>
+        <th class="num" title="Sell value minus POCO export tax; raw P0 assumed free (extracted)">Chain profit ${suf}</th>
+        <th class="num" title="Make one from bought inputs: sell − input cost − export tax">Step margin ${suf}</th>
+        <th class="num" title="Raw P0 units consumed">P0 ${suf}</th>
       </tr></thead><tbody>${rows}</tbody></table>
-      <div class="muted pi-hint">Click a row for the full recipe tree and raw-P0 basket.</div>`;
+      <div class="muted pi-hint">${perUnit ? 'Per single unit.' : 'Per production run (one factory cycle — the smallest batch).'} Click a row for the full recipe tree and raw-P0 basket.</div>`;
   }
 
   function showRecipe(typeId) {
@@ -225,6 +232,7 @@
     setupSystemSearch();
     $('#pi-tax').addEventListener('change', analyze);
     $$('.pi-tier').forEach((c) => c.addEventListener('change', analyze));
+    $('#pi-perunit').addEventListener('change', renderTable);   // re-render only; no re-fetch
 
     // Row click / Enter -> recipe drill-down.
     $('#tab-pi').addEventListener('click', (e) => {
