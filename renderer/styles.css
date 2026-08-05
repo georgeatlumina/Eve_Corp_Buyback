@@ -1065,7 +1065,11 @@ body.liq-full main { max-width: none; }
 
 /* Planetary Interaction planner tab */
 .pi-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; margin: 0.4em 0 0.8em; }
-.pi-controls #pi-system { flex: 1 1 280px; min-width: 220px; padding: 0.5em 0.6em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 5px; font-size: 0.95em; }
+.pi-search { position: relative; flex: 1 1 280px; min-width: 220px; display: block; }
+.pi-controls #pi-system { width: 100%; box-sizing: border-box; padding: 0.5em 0.6em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 5px; font-size: 0.95em; }
+.pi-suggest { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px); max-height: 260px; overflow-y: auto; background: #14181c; border: 1px solid #3a5563; border-radius: 5px; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+.pi-suggest-item { padding: 0.35em 0.6em; font-size: 0.9em; cursor: pointer; color: #dfe; }
+.pi-suggest-item:hover, .pi-suggest-item.active { background: #24333d; }
 .pi-tax-label { display: inline-flex; align-items: center; gap: 0.3em; color: #ccc; font-size: 0.9em; }
 .pi-tax-label input { width: 4.2em; padding: 0.35em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; }
 .pi-tiers { display: inline-flex; align-items: center; gap: 0.5em; color: #ccc; font-size: 0.9em; }

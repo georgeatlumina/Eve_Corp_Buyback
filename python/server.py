@@ -231,6 +231,21 @@ def pi_pins():
         return json.load(f)
 
 
+_eve_systems_cache: list = []
+
+
+@app.get('/api/pi/systems')
+def pi_systems():
+    """Bundled list of every solar-system name — powers the PI Planner search
+    autocomplete (no ESI round-trip per keystroke)."""
+    global _eve_systems_cache
+    if not _eve_systems_cache:
+        path = os.path.join(os.path.dirname(pi_planner.DATA_PATH), 'eve_systems.json')
+        with open(path, encoding='utf-8') as f:
+            _eve_systems_cache = json.load(f)
+    return {'systems': _eve_systems_cache}
+
+
 def _pi_resolve_system(system_name, ua, data):
     """system name -> {system_id, name, planets:[{planet_id,type_id,planet_type}],
     p0_available:[type_id]} or None if the system name doesn't resolve."""

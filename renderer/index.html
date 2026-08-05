@@ -485,7 +485,10 @@
       <h2>Planetary Interaction Planner</h2>
       <p class="muted">Search a solar system to see what its planets can extract, then rank the most profitable P0→P4 production chains buildable there. Priced at Jita (immediate sell) with a configurable POCO export tax; raw P0 is treated as free (extracted). Click any chain for its full recipe tree and raw-P0 basket.</p>
       <div class="pi-controls">
-        <input id="pi-system" type="text" placeholder="Solar system (e.g. Jita) — blank = all planets" spellcheck="false" />
+        <span class="pi-search">
+          <input id="pi-system" type="text" placeholder="Solar system (e.g. Jita) — blank = all planets" spellcheck="false" autocomplete="off" />
+          <div id="pi-suggest" class="pi-suggest" hidden></div>
+        </span>
         <label class="pi-tax-label">POCO tax <input id="pi-tax" type="number" value="5" min="0" max="100" step="0.5" /> %</label>
         <span class="pi-tiers">Tiers:
           <label><input type="checkbox" class="pi-tier" value="1" checked /> P1</label>

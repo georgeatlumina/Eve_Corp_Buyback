@@ -164,13 +164,65 @@
     pop.querySelector('.pi-popup-close').addEventListener('click', () => { pop.hidden = true; });
   }
 
+  // ---- system-search autocomplete (bundled name list, 3-char minimum) ----
+  let systems = null;
+  async function loadSystems() {
+    if (systems) return systems;
+    try { systems = (await fetch(`${API}/api/pi/systems`).then((r) => r.json())).systems || []; }
+    catch (_) { systems = []; }
+    return systems;
+  }
+  function matchSystems(q) {
+    q = q.trim().toLowerCase();
+    if (q.length < 3 || !systems) return [];
+    const starts = [], incl = [];
+    for (const s of systems) {
+      const l = s.toLowerCase();
+      if (l.startsWith(q)) { if (starts.length < 10) starts.push(s); }
+      else if (l.includes(q) && incl.length < 10) incl.push(s);
+    }
+    return starts.concat(incl).slice(0, 10);
+  }
+  function renderSuggest(matches) {
+    const box = $('#pi-suggest');
+    if (!matches.length) { box.hidden = true; box.innerHTML = ''; return; }
+    box.innerHTML = matches.map((s, i) => `<div class="pi-suggest-item${i === 0 ? ' active' : ''}" data-sys="${escapeHtml(s)}">${escapeHtml(s)}</div>`).join('');
+    box.hidden = false;
+  }
+  function setupSystemSearch() {
+    loadSystems();
+    const input = $('#pi-system'); const box = $('#pi-suggest');
+    const pick = (name) => { input.value = name; box.hidden = true; analyze(); };
+    input.addEventListener('input', () => renderSuggest(matchSystems(input.value)));
+    input.addEventListener('focus', () => { if (input.value.trim().length >= 3) renderSuggest(matchSystems(input.value)); });
+    input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 150));
+    box.addEventListener('mousedown', (e) => {   // mousedown beats the input blur
+      const it = e.target.closest('.pi-suggest-item');
+      if (it) { e.preventDefault(); pick(it.dataset.sys); }
+    });
+    input.addEventListener('keydown', (e) => {
+      const items = box.hidden ? [] : [...box.querySelectorAll('.pi-suggest-item')];
+      if (e.key === 'Enter') {
+        const active = box.querySelector('.pi-suggest-item.active');
+        if (active) { e.preventDefault(); pick(active.dataset.sys); } else { analyze(); }
+        return;
+      }
+      if (!items.length || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+      e.preventDefault();
+      let idx = items.findIndex((x) => x.classList.contains('active'));
+      idx = e.key === 'ArrowDown' ? Math.min(items.length - 1, idx + 1) : Math.max(0, idx - 1);
+      items.forEach((x) => x.classList.remove('active'));
+      items[idx].classList.add('active');
+    });
+  }
+
   function initTab() {
     loadData().then(() => { if (!lastRows.length) analyze(); });
     if (initialised) return;
     initialised = true;
 
     $('#pi-analyze').addEventListener('click', analyze);
-    $('#pi-system').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyze(); });
+    setupSystemSearch();
     $('#pi-tax').addEventListener('change', analyze);
     $$('.pi-tier').forEach((c) => c.addEventListener('change', analyze));
 
