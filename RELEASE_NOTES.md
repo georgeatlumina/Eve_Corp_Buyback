@@ -1,6 +1,12 @@
-## What's new in v2.2.0
+## What's new in v2.2.1
 
-The big one: a full **Planetary Interaction** suite — three new tabs in the General group.
+- **Fix:** the PI tabs (Planner / Builder / Colonies) showed blank in the packaged app — the bundled PI datasets weren't included in the installer, so the data endpoints failed. They're now bundled correctly. (Dev builds were unaffected.)
+
+---
+
+## v2.2.0 — the full Planetary Interaction suite
+
+Three new tabs in the General group.
 
 ### PI Planner (profitability analyzer)
 - Search a solar system to see what its planets can extract, then rank the most profitable **P0→P4 production chains** buildable there.
