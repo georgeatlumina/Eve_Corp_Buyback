@@ -27,6 +27,7 @@
   let pinsData = null;   // /api/pi/pins
   let piTypes = null;    // /api/pi/data types map (for schematic/commodity names)
   let piSchem = null;    // /api/pi/data schematics (for factory output assignment)
+  let byOutput = null;   // output_type_id -> schematic (for the chain calculator)
   let planetP0 = null;   // planet_type -> [P0 type_id] (for ECU resource assignment)
   let model = null;      // current colony
   let view = { theta0: 1.4, phi0: 0.8, zoom: 1 };   // camera direction (colat, azimuth) + magnification
@@ -87,6 +88,8 @@
       fetch(`${API}/api/pi/data`).then((r) => r.json()),
     ]);
     pinsData = p; piTypes = d.types; piSchem = d.schematics; planetP0 = d.planet_p0;
+    byOutput = {};
+    for (const s of piSchem) for (const [oid] of s.outputs) byOutput[oid] = s;
   }
 
   function tierOf(id) { return (piTypes[String(id)] || {}).tier; }
@@ -394,11 +397,94 @@
     $('#pib-comment').value = model.comment || '';
   }
 
+  // ---------------------------- chain calculator ----------------------------
+  let calcItem = null, calcScale = 1;
+
+  // units of every type needed per 1 unit of the product (aggregated over the tree)
+  function chainNeeds(pid) {
+    const need = new Map([[pid, 1]]);
+    (function expand(tid, mult) {
+      const s = byOutput[tid];
+      if (!s) return;
+      const oq = s.outputs[0][1] || 1;
+      for (const [inId, inQty] of s.inputs) {
+        const per = (inQty / oq) * mult;
+        need.set(inId, (need.get(inId) || 0) + per);
+        expand(inId, per);
+      }
+    })(pid, 1);
+    return need;
+  }
+
+  function populateCalc() {
+    const sel2 = $('#pib-calc-item');
+    if (!sel2 || sel2.options.length > 1) return;   // already populated
+    const groups = { 1: [], 2: [], 3: [], 4: [] };
+    for (const id of Object.keys(byOutput)) { const t = tierOf(+id); if (groups[t]) groups[t].push(+id); }
+    let html = '<option value="">— pick a commodity —</option>';
+    for (const t of [4, 3, 2, 1]) {
+      const items = groups[t].sort((a, b) => commodityName(a).localeCompare(commodityName(b)));
+      html += `<optgroup label="P${t}">${items.map((id) => `<option value="${id}">${escapeHtml(commodityName(id))}</option>`).join('')}</optgroup>`;
+    }
+    sel2.innerHTML = html;
+  }
+
+  function calcRunsText(tid, qty) {
+    const s = byOutput[tid];
+    return s ? `${Math.ceil(qty / (s.outputs[0][1] || 1)).toLocaleString('en-US')} run(s)` : 'extract';
+  }
+
+  function setCalcItem(id) {
+    calcItem = id || null;
+    if (!calcItem) { $('#pib-calc-out').innerHTML = ''; $('#pib-calc-runs').textContent = ''; return; }
+    calcScale = byOutput[calcItem] ? (byOutput[calcItem].outputs[0][1] || 1) : 1;   // one production run
+    $('#pib-calc-qty').value = calcScale;
+    renderCalcRows();
+  }
+
+  function renderCalcRows() {
+    const out = $('#pib-calc-out');
+    if (!calcItem) { out.innerHTML = ''; return; }
+    const needs = chainNeeds(calcItem);
+    needs.delete(calcItem);   // the product itself is the top "× qty" control
+    const byTier = { 0: [], 1: [], 2: [], 3: [] };
+    for (const [tid, per] of needs) { const t = tierOf(tid); if (byTier[t]) byTier[t].push({ tid, per }); }
+    let html = '';
+    for (const t of [3, 2, 1, 0]) {
+      const rows = byTier[t].sort((a, b) => commodityName(a.tid).localeCompare(commodityName(b.tid)));
+      if (!rows.length) continue;
+      html += `<div class="pib-calc-tier">${t === 0 ? 'P0 raw' : 'P' + t}</div>`;
+      for (const { tid, per } of rows) {
+        const qty = per * calcScale;
+        html += `<div class="pib-calc-row">
+          <span class="pib-calc-name">${escapeHtml(commodityName(tid))}</span>
+          <input class="pib-calc-q" data-tid="${tid}" data-per="${per}" type="number" min="0" value="${Math.round(qty)}" />
+          <span class="pib-calc-runs muted">${calcRunsText(tid, qty)}</span>
+        </div>`;
+      }
+    }
+    out.innerHTML = html || '<div class="muted">This commodity is raw (no chain).</div>';
+    $('#pib-calc-runs').textContent = calcRunsText(calcItem, calcScale);
+  }
+
+  // Live-rescale every field from calcScale without re-rendering (keeps focus on the edited input).
+  function updateCalcValues(exceptEl) {
+    const qEl = $('#pib-calc-qty');
+    if (qEl !== exceptEl) qEl.value = Math.round(calcScale);
+    $('#pib-calc-runs').textContent = calcRunsText(calcItem, calcScale);
+    $('#pib-calc-out').querySelectorAll('.pib-calc-q').forEach((el) => {
+      const qty = (parseFloat(el.dataset.per) || 0) * calcScale;
+      if (el !== exceptEl) el.value = Math.round(qty);
+      if (el.nextElementSibling) el.nextElementSibling.textContent = calcRunsText(+el.dataset.tid, qty);
+    });
+  }
+
   function initTab() {
     bindOnce();
     loadStatic().then(() => {
       if (!model) model = emptyModel('Barren');
       renderPalette(); setMeta(); render(); refreshTemplates();
+      populateCalc();
     });
   }
 
@@ -409,6 +495,7 @@
     await loadStatic();
     model = m; sel = null; linkFrom = null; recenter();
     renderPalette(); setMeta(); render(); refreshTemplates();
+    populateCalc();
   }
   window.piBuilderLoad = loadModel;
 
@@ -443,6 +530,18 @@
     $('#pib-new').addEventListener('click', () => { model = emptyModel($('#pib-planet').value || 'Barren'); sel = null; renderPalette(); setMeta(); render(); });
     $('#pib-templates').addEventListener('change', (e) => loadTemplate(e.target.value));
     $('#pib-save').addEventListener('click', saveTemplate);
+
+    // chain calculator
+    $('#pib-calc-item').addEventListener('change', (e) => setCalcItem(e.target.value ? +e.target.value : null));
+    $('#pib-calc-qty').addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (calcItem && !isNaN(v)) { calcScale = v; updateCalcValues(e.target); }
+    });
+    $('#pib-calc-out').addEventListener('input', (e) => {
+      const inp = e.target.closest('.pib-calc-q'); if (!inp) return;
+      const per = parseFloat(inp.dataset.per) || 0, v = parseFloat(inp.value);
+      if (per > 0 && !isNaN(v)) { calcScale = v / per; updateCalcValues(inp); }
+    });
   }
 
   document.querySelector('.tab-btn[data-tab="pi-builder"]')?.addEventListener('click', initTab);

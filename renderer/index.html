@@ -519,6 +519,20 @@
         <label>Diameter <input id="pib-diam" type="number" step="10" style="width:6em" /></label>
         <select id="pib-templates" class="pib-templates"></select>
       </div>
+      <details class="pib-calc" open>
+        <summary>Chain calculator</summary>
+        <div class="pib-calc-body">
+          <div class="pib-calc-controls">
+            <label>Build
+              <select id="pib-calc-item"><option value="">— pick a commodity —</option></select>
+            </label>
+            <label>× <input id="pib-calc-qty" type="number" min="0" step="1" value="1" style="width:7em" /></label>
+            <span id="pib-calc-runs" class="muted"></span>
+          </div>
+          <p class="muted pib-calc-hint">Every quantity below is editable — change any input or output and the whole chain rescales. "run(s)" = factory cycles at that tier.</p>
+          <div id="pib-calc-out" class="pib-calc-out"></div>
+        </div>
+      </details>
       <div class="pib-layout">
         <div class="pib-canvas-wrap">
           <div id="pib-palette" class="pib-palette"></div>
