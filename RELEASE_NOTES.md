@@ -1,3 +1,21 @@
+## What's new in v2.3.0 — PI Builder chain calculator & big canvas upgrades
+
+### Chain calculator (new)
+- On the **PI Builder** page, pick any commodity and see the **whole production chain** laid out **left→right by tier** (P0 raw → product), with **connector lines** showing exactly what flows into what.
+- **Every quantity is editable** — change any input or output and the entire chain **rescales both ways**, with per-tier **"run(s)"** counts.
+- **Click a node** to highlight its complete connected sub-chain (everything upstream and downstream). P0 nodes show **which planet types** they're extractable on.
+- **Pop the calculator out** into its own window.
+
+### Builder editing improvements
+- **Select & delete links:** click any connector on the planet to select it (shows the two endpoints + distance); remove it with the **Delete link** button or the **Delete / Backspace** key.
+- **🔗 Link tool** and an explicit **Load** button for saved templates (with an unsaved-changes prompt), plus a **Clear** button to empty a colony.
+- **Drag pins to move** them on the surface; fixed a bug where dragging to rotate dropped a stray pin.
+- **Zoom fix:** pins now stay attached to the planet surface when you zoom.
+- **Bigger canvas:** the planet **scales with the app / pop-out window** instead of a fixed small size.
+- **Pop out** any PI tab (Planner / Builder / Colonies) into its own window.
+
+---
+
 ## What's new in v2.2.1
 
 - **Fix:** the PI tabs (Planner / Builder / Colonies) showed blank in the packaged app — the bundled PI datasets weren't included in the installer, so the data endpoints failed. They're now bundled correctly. (Dev builds were unaffected.)
