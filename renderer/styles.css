@@ -1165,6 +1165,15 @@ body.liq-full main { max-width: none; }
 .pib-node-row { display: flex; align-items: center; gap: 0.4em; }
 .pib-node-row .pib-calc-q { flex: 1 1 auto; min-width: 0; background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.15em 0.3em; text-align: right; font-variant-numeric: tabular-nums; }
 .pib-node-runs { font-size: 0.72em; white-space: nowrap; }
+.pib-node-planets { font-size: 0.7em; color: #7fa8c0; margin-top: 0.25em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pib-node { cursor: pointer; transition: opacity 0.12s; }
+.pib-node .pib-calc-q { cursor: text; }
+/* click-to-highlight: dim everything, then light up the connected sub-chain */
+.pib-flow-focus .pib-node { opacity: 0.3; }
+.pib-flow-focus .pib-node.pib-node-hi { opacity: 1; }
+.pib-node-hi { border-color: #4a8; box-shadow: 0 0 0 1px #2f6b4d inset; }
+.pib-flow-focus .pib-flow-lines path { stroke: #ffffff1f; }
+.pib-flow-lines path.pib-line-hi { stroke: #6fd0a0; stroke-width: 2.25; }
 
 /* PI Colonies (live) tab */
 #pic-refresh { font-size: 0.7em; vertical-align: middle; margin-left: 0.6em; }

@@ -398,7 +398,14 @@
   }
 
   // ---------------------------- chain calculator ----------------------------
-  let calcItem = null, calcScale = 1;
+  let calcItem = null, calcScale = 1, calcHi = null;
+
+  // which planet types a P0 can be extracted on
+  function p0PlanetTypes(p0id) {
+    const out = [];
+    for (const [planet, ids] of Object.entries(planetP0 || {})) if (ids.includes(p0id)) out.push(planet);
+    return out;
+  }
 
   // units of every type needed per 1 unit of the product (aggregated over the tree)
   function chainNeeds(pid) {
@@ -446,6 +453,7 @@
   // lines drawn from each input to the intermediate/product it feeds.
   function renderCalcRows() {
     const out = $('#pib-calc-out');
+    calcHi = null;
     if (!calcItem) { out.innerHTML = ''; return; }
     const needs = chainNeeds(calcItem);   // includes the product itself
     const byTier = { 0: [], 1: [], 2: [], 3: [], 4: [] };
@@ -453,12 +461,15 @@
     const cols = [0, 1, 2, 3, 4].filter((t) => byTier[t].length).map((t) => {
       const nodes = byTier[t].sort((a, b) => commodityName(a.tid).localeCompare(commodityName(b.tid))).map(({ tid, per }) => {
         const qty = per * calcScale;
+        const planets = t === 0
+          ? `<div class="pib-node-planets" title="Extractable on these planet types">${escapeHtml(p0PlanetTypes(tid).join(' · ') || '—')}</div>` : '';
         return `<div class="pib-node${tid === calcItem ? ' pib-node-product' : ''}" data-tid="${tid}">
           <div class="pib-node-name" title="${escapeHtml(commodityName(tid))}">${escapeHtml(commodityName(tid))}</div>
           <div class="pib-node-row">
             <input class="pib-calc-q" data-tid="${tid}" data-per="${per}" type="number" min="0" value="${Math.round(qty)}" />
             <span class="pib-node-runs muted">${calcRunsText(tid, qty)}</span>
           </div>
+          ${planets}
         </div>`;
       }).join('');
       return `<div class="pib-flow-col"><div class="pib-flow-col-h">${t === 0 ? 'P0 raw' : 'P' + t}</div>${nodes}</div>`;
@@ -488,10 +499,43 @@
         const x1 = src.offsetLeft + src.offsetWidth, y1 = src.offsetTop + src.offsetHeight / 2;
         const x2 = dst.offsetLeft, y2 = dst.offsetTop + dst.offsetHeight / 2;
         const dx = Math.max(18, (x2 - x1) * 0.4);
-        paths.push(`<path d="M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}" />`);
+        paths.push(`<path data-src="${inId}" data-dst="${tid}" d="M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}" />`);
       }
     }
     svg.innerHTML = paths.join('');
+    if (calcHi != null) applyHighlight();   // preserve highlight across a resize redraw
+  }
+
+  // The full sub-chain related to a node: itself + everything upstream (its
+  // inputs down to P0) + everything downstream (what consumes it up to the product).
+  function connectedSet(tid) {
+    const set = new Set([tid]);
+    (function up(x) { const s = byOutput[x]; if (!s) return; for (const [i] of s.inputs) if (!set.has(i)) { set.add(i); up(i); } })(tid);
+    const chain = [...chainNeeds(calcItem).keys()];
+    (function down(x) {
+      for (const y of chain) { const s = byOutput[y]; if (s && s.inputs.some(([i]) => i === x) && !set.has(y)) { set.add(y); down(y); } }
+    })(tid);
+    return set;
+  }
+
+  function applyHighlight() {
+    const flow = document.querySelector('#pib-calc-out .pib-flow');
+    if (!flow) return;
+    if (calcHi == null) {
+      flow.classList.remove('pib-flow-focus');
+      flow.querySelectorAll('.pib-node-hi').forEach((n) => n.classList.remove('pib-node-hi'));
+      flow.querySelectorAll('.pib-line-hi').forEach((p) => p.classList.remove('pib-line-hi'));
+      return;
+    }
+    const set = connectedSet(calcHi);
+    flow.classList.add('pib-flow-focus');
+    flow.querySelectorAll('.pib-node').forEach((n) => n.classList.toggle('pib-node-hi', set.has(+n.dataset.tid)));
+    flow.querySelectorAll('.pib-flow-lines path').forEach((p) => p.classList.toggle('pib-line-hi', set.has(+p.dataset.src) && set.has(+p.dataset.dst)));
+  }
+
+  function toggleHighlight(tid) {
+    calcHi = (calcHi === tid) ? null : tid;
+    applyHighlight();
   }
 
   // Live-rescale every field from calcScale without re-rendering (keeps focus on the edited input).
@@ -568,6 +612,13 @@
       const inp = e.target.closest('.pib-calc-q'); if (!inp) return;
       const per = parseFloat(inp.dataset.per) || 0, v = parseFloat(inp.value);
       if (per > 0 && !isNaN(v)) { calcScale = v / per; updateCalcValues(inp); }
+    });
+    // Click a node (not its qty box) to highlight its whole connected sub-chain.
+    $('#pib-calc-out').addEventListener('click', (e) => {
+      if (e.target.closest('.pib-calc-q')) return;
+      const node = e.target.closest('.pib-node');
+      if (node) toggleHighlight(+node.dataset.tid);
+      else { calcHi = null; applyHighlight(); }
     });
     let calcResize;
     window.addEventListener('resize', () => { clearTimeout(calcResize); calcResize = setTimeout(drawFlowLines, 120); });
