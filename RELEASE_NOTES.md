@@ -1,30 +1,27 @@
-## What's new in v2.1.2
+## What's new in v2.2.0
 
-Release notes since PR #14 (merged 2026-07-25).
+The big one: a full **Planetary Interaction** suite — three new tabs in the General group.
 
-### Acquisitions
-- New **build-finder**: market-completable and hull-less finder modes with a UEXO shopping list, wired to a consuming allocator that respects quota priority order.
-- **Add / replace inventory** modes.
-- Bare-hull inventory count now shown in the quota expand panel, and subtracted from the Contracts shopping list.
+### PI Planner (profitability analyzer)
+- Search a solar system to see what its planets can extract, then rank the most profitable **P0→P4 production chains** buildable there.
+- Priced at **Jita** (immediate sell) with a configurable **POCO export tax**; raw P0 is treated as free (extracted).
+- **Per-run pricing by default** (one factory cycle — the smallest batch: P1 ×20, P2 ×5, P3 ×3, P4 ×1), with a **Per unit** toggle.
+- **System-search autocomplete** over all 8,490 solar systems (3-character minimum).
+- Click any chain for its full recipe tree + raw-P0 basket.
 
-### Contracts
-- Survive ESI's 520 bursts on the contract-items endpoint.
-- Contract scan run history is now recorded.
-- Scanned-ship list shows total value.
-- Fixed a bug where ESI 504s were silently counted as zero contracts instead of surfacing an error.
+### PI Builder (visual colony layout builder)
+- Place command centers / extractors / factories / storage / launchpads on a **rotatable, zoomable realistic planet**, link them, assign factory schematics, extractor resources and heads, and set routes.
+- Live **CPU / Powergrid budget** (pin loads + extractor heads + link cost).
+- Loads existing colonies from — and **saves importable templates straight to** — your EVE `PlanetaryInteractionTemplates` folder, so a colony built here imports into the game fully wired.
 
-### HaulX
-- Retry button for failed volume/price lookups, with failed lookups now distinguishable from an honest null.
-- Shopping list can be downloaded as text file(s).
-- Corrected haul route wording, Jita → UEXO.
+### PI Colonies (live colony manager)
+- Live colonies across your characters via ESI, with per-extractor **countdown timers** and **status** (expired / expiring <24h / active / idle), sorted by soonest expiry.
+- **Desktop notifications** when an extractor is about to run dry — even while you're on another tab.
+- Per-colony **detail view** (what it's producing, stored contents, pin breakdown) and **Jita valuation** (output ≈ ISK/day + stored value, with totals).
+- **Open in Builder** pulls a live colony onto the canvas to tweak and re-export.
 
-### Doctrine Stock
-- New sort-by-priority option.
-
-### Liquidation / Pricing
-- Cost basis now priced off Jita buy instead of Amarr.
-- Liquidation + Contracts pricing now point at the configured market hub instead of a hardcoded one.
-- Finished the Amarr → Jita wording pass on the Liquidation tab.
+### PI Characters auth
+- A dedicated **PI Characters** section on the Auth tab authorizes up to **24 alts just for PI** — each login requests only the `manage_planets` scope, so your main characters aren't re-scoped.
 
 ---
 
