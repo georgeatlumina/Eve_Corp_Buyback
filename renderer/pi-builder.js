@@ -31,10 +31,12 @@
   let planetP0 = null;   // planet_type -> [P0 type_id] (for ECU resource assignment)
   let model = null;      // current colony
   let view = { theta0: 1.4, phi0: 0.8, zoom: 1 };   // camera direction (colat, azimuth) + magnification
-  let tool = 'select';   // 'select' or a pin type_id string to place
+  let tool = 'select';   // 'select', 'link', or a pin type_id string to place
   let sel = null;        // selected pin index
   let linkFrom = null;   // pin index awaiting a link target
+  let dirty = false;     // unsaved edits in the current colony
   let initialised = false;
+  const markDirty = () => { dirty = true; };
 
   // ---------- vector helpers (unit sphere; EVE La=colatitude, Lo=azimuth) ----------
   const V = {
@@ -278,17 +280,17 @@
       ${assign}
       <div class="pib-routes"><div class="pib-routes-h">Routes</div>${routeList}${addRoute}</div>`;
 
-    $('#pib-del').onclick = () => { model.pins.splice(sel, 1); remapAfterDelete(sel); sel = null; linkFrom = null; render(); };
+    $('#pib-del').onclick = () => { model.pins.splice(sel, 1); remapAfterDelete(sel); markDirty(); sel = null; linkFrom = null; render(); };
     $('#pib-link').onclick = () => { linkFrom = sel; render(); };
     const schEl = $('#pib-sch');
-    if (schEl) schEl.onchange = (e) => { p.schematic = e.target.value ? +e.target.value : null; render(); };
+    if (schEl) schEl.onchange = (e) => { p.schematic = e.target.value ? +e.target.value : null; markDirty(); render(); };
     const headsEl = $('#pib-heads');
-    if (headsEl) headsEl.onchange = (e) => { p.heads = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0)); render(); };
-    el.querySelectorAll('.pib-rdel').forEach((b) => { b.onclick = () => { model.routes.splice(+b.dataset.i, 1); render(); }; });
+    if (headsEl) headsEl.onchange = (e) => { p.heads = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0)); markDirty(); render(); };
+    el.querySelectorAll('.pib-rdel').forEach((b) => { b.onclick = () => { model.routes.splice(+b.dataset.i, 1); markDirty(); render(); }; });
     const addBtn = $('#pib-radd');
     if (addBtn) addBtn.onclick = () => {
       model.routes.push({ src: sel, dst: +$('#pib-rdest').value, type_id: +$('#pib-rtype').value, qty: parseInt($('#pib-rqty').value, 10) || 0 });
-      render();
+      markDirty(); render();
     };
   }
 
@@ -309,27 +311,36 @@
   }
 
   function onCanvasClick(e) {
+    // A rotate-drag ends with a click event; don't treat that as a placement/select.
+    if (dragged) { dragged = false; return; }
     const g = e.target.closest('.pib-pin');
     if (g) {
       const i = +g.dataset.i;
       if (linkFrom != null && linkFrom !== i) {
-        model.links.push({ a: linkFrom, b: i, level: 0 });
+        model.links.push({ a: linkFrom, b: i, level: 0 }); markDirty();
         linkFrom = null; sel = i; render(); return;
       }
+      if (tool === 'link') { linkFrom = i; sel = i; render(); return; }   // start a link
       sel = i; render(); return;
     }
-    if (tool === 'select') return;
+    if (tool === 'select' || tool === 'link') { linkFrom = null; return; }
     const loc = svgLocal(e);
     const sph = unproject(loc.x, loc.y, camera());
     if (!sph) return;
     model.pins.push({ type_id: +tool, schematic: null, lat: sph.th, lon: sph.ph, height: 0 });
+    markDirty();
     sel = model.pins.length - 1; render();
   }
 
-  let drag = null;
-  function onDown(e) { if (e.target.closest('.pib-pin')) return; drag = { x: e.clientX, y: e.clientY, t: view.theta0, p: view.phi0 }; }
+  let drag = null, dragged = false;
+  function onDown(e) {
+    dragged = false;
+    if (e.target.closest('.pib-pin')) return;
+    drag = { x: e.clientX, y: e.clientY, t: view.theta0, p: view.phi0 };
+  }
   function onMove(e) {
     if (!drag) return;
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) dragged = true;
     view.phi0 = drag.p - (e.clientX - drag.x) * 0.008;
     view.theta0 = Math.max(0.15, Math.min(Math.PI - 0.15, drag.t - (e.clientY - drag.y) * 0.008));
     render();
@@ -361,7 +372,9 @@
       return id ? `<button class="pib-tool ${String(tool) === String(id) ? 'active' : ''}" data-tool="${id}" style="border-color:${KIND_COLOR[k]}">${lbl}</button>` : '';
     }).concat(facs.map(([id, lbl]) => `<button class="pib-tool ${String(tool) === String(id) ? 'active' : ''}" data-tool="${id}" style="border-color:${KIND_COLOR.factory}">${lbl}</button>`));
     $('#pib-palette').innerHTML =
-      `<button class="pib-tool ${tool === 'select' ? 'active' : ''}" data-tool="select">Select</button>` + btns.join('');
+      `<button class="pib-tool ${tool === 'select' ? 'active' : ''}" data-tool="select">Select</button>`
+      + `<button class="pib-tool pib-tool-link ${tool === 'link' ? 'active' : ''}" data-tool="link" title="Click two pins to connect them">🔗 Link</button>`
+      + btns.join('');
   }
 
   // ------------------------------ templates ------------------------------
@@ -375,8 +388,39 @@
   async function loadTemplate(name) {
     if (!name) return;
     const r = await fetch(`${API}/api/pi/templates/read?name=${encodeURIComponent(name)}`).then((x) => x.json());
-    model = r.layout; sel = null; linkFrom = null; recenter();
+    if (!r.layout) { $('#pib-status').textContent = `Load failed: ${r.detail || 'bad template'}`; return; }
+    model = r.layout; sel = null; linkFrom = null; dirty = false; recenter();
     renderPalette(); render(); setMeta();
+    $('#pib-status').textContent = `Loaded ${name}.`;
+  }
+  // Load the selected template, warning first if the current colony has unsaved edits.
+  function requestLoadTemplate() {
+    const name = $('#pib-templates').value;
+    if (!name) { $('#pib-status').textContent = 'Pick a template from the list first.'; return; }
+    if (!dirty || !(model.pins || []).length) { loadTemplate(name); return; }
+    confirmUnsaved(
+      async () => { await saveTemplate(); loadTemplate(name); },
+      () => loadTemplate(name),
+    );
+  }
+  function confirmUnsaved(onSave, onDiscard) {
+    const m = document.createElement('div');
+    m.className = 'pib-modal';
+    m.innerHTML = `<div class="pib-modal-box">
+      <div class="pib-modal-h">Unsaved changes</div>
+      <p>The colony in the builder has unsaved edits. Save them to the EVE folder before loading the selected template, or discard them?</p>
+      <div class="pib-modal-btns">
+        <button data-a="save">Save &amp; load</button>
+        <button data-a="discard" class="secondary">Discard &amp; load</button>
+        <button data-a="cancel" class="secondary">Cancel</button>
+      </div></div>`;
+    m.addEventListener('click', (e) => {
+      if (e.target === m) { m.remove(); return; }
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      const a = b.dataset.a; m.remove();
+      if (a === 'save') onSave(); else if (a === 'discard') onDiscard();
+    });
+    document.body.appendChild(m);
   }
   async function saveTemplate() {
     const name = ($('#pib-name').value.trim() || model.comment || 'colony').replace(/[^\w .-]/g, '_');
@@ -387,7 +431,7 @@
     });
     const d = await res.json();
     $('#pib-status').textContent = res.ok ? `Saved ${d.saved} to the EVE templates folder.` : `Save failed: ${d.detail || res.statusText}`;
-    if (res.ok) refreshTemplates();
+    if (res.ok) { dirty = false; refreshTemplates(); }
   }
 
   function setMeta() {
@@ -564,7 +608,7 @@
   async function loadModel(m) {
     bindOnce();
     await loadStatic();
-    model = m; sel = null; linkFrom = null; recenter();
+    model = m; sel = null; linkFrom = null; dirty = false; recenter();
     renderPalette(); setMeta(); render(); refreshTemplates();
     populateCalc();
   }
@@ -594,12 +638,12 @@
       model.planet_type_id = PLANET_TYPE_ID[e.target.value];
       // re-home pins/CC to the new planet's pin types by kind
       model.pins.forEach((p) => { const k = pin(p.type_id).kind; const nid = pinTypeFor(k, e.target.value); if (nid) p.type_id = nid; });
-      renderPalette(); render();
+      markDirty(); renderPalette(); render();
     });
-    $('#pib-cc').addEventListener('change', (e) => { model.cmd_ctr_level = +e.target.value; render(); });
-    $('#pib-diam').addEventListener('change', (e) => { model.diameter = parseFloat(e.target.value) || model.diameter; render(); });
-    $('#pib-new').addEventListener('click', () => { model = emptyModel($('#pib-planet').value || 'Barren'); sel = null; renderPalette(); setMeta(); render(); });
-    $('#pib-templates').addEventListener('change', (e) => loadTemplate(e.target.value));
+    $('#pib-cc').addEventListener('change', (e) => { model.cmd_ctr_level = +e.target.value; markDirty(); render(); });
+    $('#pib-diam').addEventListener('change', (e) => { model.diameter = parseFloat(e.target.value) || model.diameter; markDirty(); render(); });
+    $('#pib-new').addEventListener('click', () => { model = emptyModel($('#pib-planet').value || 'Barren'); sel = null; dirty = false; renderPalette(); setMeta(); render(); });
+    $('#pib-load').addEventListener('click', requestLoadTemplate);
     $('#pib-save').addEventListener('click', saveTemplate);
 
     // chain calculator

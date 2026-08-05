@@ -26,6 +26,28 @@ ipcMain.handle('open-link-window', (_event, url) => {
   });
   win.loadURL(url);
 });
+// Pop a single tab out into its own window. Loads the same index.html with a
+// ?popout=<tab> query; the renderer hides the app chrome and shows just that
+// tab. Same preload, so it talks to the shared sidecar on 127.0.0.1:8765.
+ipcMain.handle('pop-out-tab', (_event, tab) => {
+  if (!/^[a-z0-9-]+$/.test(tab || '')) return;
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 900,
+    title: 'Naval Defence — PI',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+    autoHideMenuBar: true,
+    backgroundColor: '#1e1e1e',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  const fileUrl = require('url').pathToFileURL(path.join(__dirname, '..', 'renderer', 'index.html')).href;
+  win.loadURL(`${fileUrl}?popout=${encodeURIComponent(tab)}`);
+});
 ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
 let pythonProcess = null;
 let mainWindow = null;

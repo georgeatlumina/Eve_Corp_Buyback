@@ -24,6 +24,7 @@
           <button class="tab-btn" data-tab="doctrine-stock">Doctrine Stock</button>
           <button class="tab-btn" data-tab="readiness">Market Readiness</button>
           <button class="tab-btn" data-tab="module-sorter">Module Sorter</button>
+          <button class="tab-btn" data-tab="plex-value">PLEX Value</button>
           <button class="tab-btn" data-tab="pi">PI Planner</button>
           <button class="tab-btn" data-tab="pi-builder">PI Builder</button>
           <button class="tab-btn" data-tab="pi-colonies">PI Colonies</button>
@@ -481,8 +482,41 @@
       </div>
     </section>
 
+    <section id="tab-plex-value" class="tab">
+      <h2>Money → PLEX → ISK</h2>
+      <p class="muted">Convert real-life money to PLEX (bought from CCP's store) and then to ISK at the live <strong>Jita PLEX price</strong>. Forex rates are fetched live; the PLEX→ISK price comes from Janice (or ESI market orders if no Janice key). Pick a CCP pack for its real per-PLEX cost, or enter your own <code>USD / PLEX</code> rate.</p>
+      <div class="pv-form">
+        <label class="pv-field">Amount
+          <input id="pv-amount" type="number" min="0" step="any" value="20" inputmode="decimal" spellcheck="false" />
+        </label>
+        <label class="pv-field">Currency
+          <select id="pv-currency"></select>
+        </label>
+        <label class="pv-field pv-field-wide">PLEX price basis (CCP store)
+          <select id="pv-pack"></select>
+        </label>
+        <label class="pv-field pv-custom" hidden>USD per PLEX
+          <input id="pv-custom-rate" type="number" min="0" step="0.0001" placeholder="e.g. 0.04" spellcheck="false" />
+        </label>
+      </div>
+      <div class="actions">
+        <button id="pv-calc" type="button">Calculate</button>
+        <button id="pv-refresh" type="button" class="secondary" title="Re-fetch FX rates and the live Jita PLEX price">↻ Refresh rates</button>
+      </div>
+      <p id="pv-status" class="muted"></p>
+      <div id="pv-result" class="pv-result" hidden>
+        <div class="pv-tiles">
+          <div class="market-tile"><div class="market-tile-val" id="pv-usd">—</div><div class="market-tile-label">in USD</div></div>
+          <div class="market-tile"><div class="market-tile-val" id="pv-plex">—</div><div class="market-tile-label">PLEX (CCP store rate)</div></div>
+          <div class="market-tile"><div class="market-tile-val" id="pv-isk">—</div><div class="market-tile-label">ISK (Jita sell)</div></div>
+        </div>
+        <p class="pv-breakdown muted" id="pv-breakdown"></p>
+      </div>
+      <p class="pv-rates muted" id="pv-rates"></p>
+    </section>
+
     <section id="tab-pi" class="tab">
-      <h2>Planetary Interaction Planner</h2>
+      <h2>Planetary Interaction Planner <button class="popout-btn" data-popout="pi" type="button" title="Open in its own window">⤢ Pop out</button></h2>
       <p class="muted">Search a solar system to see what its planets can extract, then rank the most profitable P0→P4 production chains buildable there. Priced at Jita (immediate sell) with a configurable POCO export tax; raw P0 is treated as free (extracted). Click any chain for its full recipe tree and raw-P0 basket.</p>
       <div class="pi-controls">
         <span class="pi-search">
@@ -506,7 +540,7 @@
     </section>
 
     <section id="tab-pi-builder" class="tab">
-      <h2>PI Colony Builder</h2>
+      <h2>PI Colony Builder <button class="popout-btn" data-popout="pi-builder" type="button" title="Open in its own window">⤢ Pop out</button></h2>
       <p class="muted">Place command centers, extractors, factories, storage and launchpads on a real planet, link them, and watch the CPU/Powergrid budget. Load existing colonies from — and save importable templates straight to — your EVE <code id="pib-dir" class="pib-dir"></code> folder.</p>
       <div class="pib-toolbar">
         <button id="pib-new" type="button" class="secondary">New</button>
@@ -518,6 +552,7 @@
         </label>
         <label>Diameter <input id="pib-diam" type="number" step="10" style="width:6em" /></label>
         <select id="pib-templates" class="pib-templates"></select>
+        <button id="pib-load" type="button" class="secondary">Load</button>
       </div>
       <details class="pib-calc" open>
         <summary>Chain calculator</summary>
@@ -559,7 +594,7 @@
     </section>
 
     <section id="tab-pi-colonies" class="tab">
-      <h2>PI Colonies <button id="pic-refresh" type="button" class="secondary">Refresh</button></h2>
+      <h2>PI Colonies <button id="pic-refresh" type="button" class="secondary">Refresh</button> <button class="popout-btn" data-popout="pi-colonies" type="button" title="Open in its own window">⤢ Pop out</button></h2>
       <p class="muted">Live planetary colonies across your authenticated characters, sorted by soonest extractor expiry. Countdowns update live so you can see what needs restarting.</p>
       <p id="pic-status" class="muted"></p>
       <div id="pic-list" class="pic-list"></div>
@@ -998,10 +1033,28 @@
   <script src="stockpile.js"></script>
   <script src="doctrine-stock.js"></script>
   <script src="module-sorter.js"></script>
+  <script src="plex-value.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="pi-colonies.js"></script>
   <script src="indy.js"></script>
   <script src="builds-overview.js"></script>
+  <script>
+    // Tab pop-out: the "Pop out" buttons open a tab in its own window; when this
+    // page is loaded with ?popout=<tab> it hides the app chrome and shows just
+    // that tab (activating it via its nav button so the tab's init runs).
+    (function () {
+      document.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-popout]');
+        if (b && window.api && window.api.popOutTab) window.api.popOutTab(b.dataset.popout);
+      });
+      var t = new URLSearchParams(location.search).get('popout');
+      if (t) {
+        document.body.classList.add('popout');
+        var btn = document.querySelector('.tab-btn[data-tab="' + t + '"]');
+        if (btn) btn.click();
+      }
+    })();
+  </script>
 </body>
 </html>

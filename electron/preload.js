@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('api', {
   aaPostForm: (path, fields, referer) => ipcRenderer.invoke('aa:post-form', { path, fields, referer }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openLinkWindow: (url) => ipcRenderer.invoke('open-link-window', url),
+  popOutTab: (tab) => ipcRenderer.invoke('pop-out-tab', tab),
 });
