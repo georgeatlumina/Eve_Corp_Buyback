@@ -442,29 +442,56 @@
     renderCalcRows();
   }
 
+  // Left→right flow: one column per tier (P0 raw … product), with connector
+  // lines drawn from each input to the intermediate/product it feeds.
   function renderCalcRows() {
     const out = $('#pib-calc-out');
     if (!calcItem) { out.innerHTML = ''; return; }
-    const needs = chainNeeds(calcItem);
-    needs.delete(calcItem);   // the product itself is the top "× qty" control
-    const byTier = { 0: [], 1: [], 2: [], 3: [] };
-    for (const [tid, per] of needs) { const t = tierOf(tid); if (byTier[t]) byTier[t].push({ tid, per }); }
-    let html = '';
-    for (const t of [3, 2, 1, 0]) {
-      const rows = byTier[t].sort((a, b) => commodityName(a.tid).localeCompare(commodityName(b.tid)));
-      if (!rows.length) continue;
-      html += `<div class="pib-calc-tier">${t === 0 ? 'P0 raw' : 'P' + t}</div>`;
-      for (const { tid, per } of rows) {
+    const needs = chainNeeds(calcItem);   // includes the product itself
+    const byTier = { 0: [], 1: [], 2: [], 3: [], 4: [] };
+    for (const [tid, per] of needs) { const t = tierOf(tid); if (byTier[t] !== undefined) byTier[t].push({ tid, per }); }
+    const cols = [0, 1, 2, 3, 4].filter((t) => byTier[t].length).map((t) => {
+      const nodes = byTier[t].sort((a, b) => commodityName(a.tid).localeCompare(commodityName(b.tid))).map(({ tid, per }) => {
         const qty = per * calcScale;
-        html += `<div class="pib-calc-row">
-          <span class="pib-calc-name">${escapeHtml(commodityName(tid))}</span>
-          <input class="pib-calc-q" data-tid="${tid}" data-per="${per}" type="number" min="0" value="${Math.round(qty)}" />
-          <span class="pib-calc-runs muted">${calcRunsText(tid, qty)}</span>
+        return `<div class="pib-node${tid === calcItem ? ' pib-node-product' : ''}" data-tid="${tid}">
+          <div class="pib-node-name" title="${escapeHtml(commodityName(tid))}">${escapeHtml(commodityName(tid))}</div>
+          <div class="pib-node-row">
+            <input class="pib-calc-q" data-tid="${tid}" data-per="${per}" type="number" min="0" value="${Math.round(qty)}" />
+            <span class="pib-node-runs muted">${calcRunsText(tid, qty)}</span>
+          </div>
         </div>`;
+      }).join('');
+      return `<div class="pib-flow-col"><div class="pib-flow-col-h">${t === 0 ? 'P0 raw' : 'P' + t}</div>${nodes}</div>`;
+    }).join('');
+    out.innerHTML = `<div class="pib-flow"><svg class="pib-flow-lines" xmlns="http://www.w3.org/2000/svg"></svg><div class="pib-flow-cols">${cols}</div></div>`;
+    $('#pib-calc-runs').textContent = calcRunsText(calcItem, calcScale);
+    drawFlowLines();
+  }
+
+  // Draw the input→output connector lines over the flow columns.
+  function drawFlowLines() {
+    const flow = document.querySelector('#pib-calc-out .pib-flow');
+    if (!flow) return;
+    const svg = flow.querySelector('.pib-flow-lines');
+    const cols = flow.querySelector('.pib-flow-cols');
+    const W = cols.offsetWidth, H = cols.offsetHeight;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.style.width = `${W}px`; svg.style.height = `${H}px`;
+    const node = {};
+    flow.querySelectorAll('.pib-node').forEach((n) => { node[n.dataset.tid] = n; });
+    const paths = [];
+    for (const tid of Object.keys(node)) {
+      const s = byOutput[tid]; if (!s) continue;         // produced node — draw from its inputs
+      const dst = node[tid];
+      for (const [inId] of s.inputs) {
+        const src = node[inId]; if (!src) continue;
+        const x1 = src.offsetLeft + src.offsetWidth, y1 = src.offsetTop + src.offsetHeight / 2;
+        const x2 = dst.offsetLeft, y2 = dst.offsetTop + dst.offsetHeight / 2;
+        const dx = Math.max(18, (x2 - x1) * 0.4);
+        paths.push(`<path d="M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}" />`);
       }
     }
-    out.innerHTML = html || '<div class="muted">This commodity is raw (no chain).</div>';
-    $('#pib-calc-runs').textContent = calcRunsText(calcItem, calcScale);
+    svg.innerHTML = paths.join('');
   }
 
   // Live-rescale every field from calcScale without re-rendering (keeps focus on the edited input).
@@ -542,6 +569,8 @@
       const per = parseFloat(inp.dataset.per) || 0, v = parseFloat(inp.value);
       if (per > 0 && !isNaN(v)) { calcScale = v / per; updateCalcValues(inp); }
     });
+    let calcResize;
+    window.addEventListener('resize', () => { clearTimeout(calcResize); calcResize = setTimeout(drawFlowLines, 120); });
   }
 
   document.querySelector('.tab-btn[data-tab="pi-builder"]')?.addEventListener('click', initTab);
