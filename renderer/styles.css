@@ -44,7 +44,12 @@ body.view-member .nav-group[data-group="operations"] { display: none; }
 .view-mode-btn:first-of-type { border-radius: 4px 0 0 4px; }
 .view-mode-btn:last-of-type { border-radius: 0 4px 4px 0; border-left: 0; }
 .view-mode-btn.active { background: #4a8; color: #111; font-weight: 600; border-color: #4a8; }
-main { padding: 2em; max-width: 1400px; width: 100%; }
+/* isolation:isolate puts all tab content in its own stacking context beneath
+   the sticky header, so page content (sov banners, sticky table headers, etc.)
+   can never paint over the header's nav dropdown. All overlays (modals, the
+   indy drawer, the link panel, the PI-builder modal) live outside <main>, so
+   they're unaffected and still sit above the header. */
+main { padding: 2em; max-width: 1400px; width: 100%; isolation: isolate; }
 .tab { display: none; }
 .tab.active { display: block; }
 form label { display: block; margin: 0.7em 0; }

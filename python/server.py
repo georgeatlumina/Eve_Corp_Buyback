@@ -2361,6 +2361,44 @@ def get_jita_sell_price(type_id: int, bust: bool = False):
     return result
 
 
+_forex_cache: dict = {}
+_FOREX_TTL = 3600  # 1h — FX rates don't move fast enough to matter for PLEX math
+
+
+@app.get('/api/forex/rates')
+def get_forex_rates(bust: bool = False):
+    """Latest USD-based FX rates for the Money -> PLEX -> ISK calculator. Free,
+    keyless (open.er-api.com). `rates[ccy]` is units of that currency per 1 USD,
+    so USD = amount_ccy / rates[ccy]. Cached 1h; a stale cache is served if the
+    provider is unreachable so the calculator keeps working offline-ish."""
+    now = time.time()
+    if not bust and _forex_cache and (now - _forex_cache['fetched_at']) < _FOREX_TTL:
+        return _forex_cache['result']
+    try:
+        resp = requests.get('https://open.er-api.com/v6/latest/USD',
+                            headers={'User-Agent': get_user_agent()}, timeout=15)
+        resp.raise_for_status()
+        body = resp.json()
+    except Exception as e:
+        if _forex_cache:
+            return {**_forex_cache['result'], 'stale': True}
+        raise HTTPException(502, f'Forex rate lookup failed: {e}')
+    if body.get('result') != 'success' or not isinstance(body.get('rates'), dict):
+        if _forex_cache:
+            return {**_forex_cache['result'], 'stale': True}
+        raise HTTPException(502, 'Forex provider returned an unexpected response')
+    result = {
+        'base': body.get('base_code') or 'USD',
+        'rates': body['rates'],
+        'updated': body.get('time_last_update_utc') or '',
+        'source': 'open.er-api.com',
+        'stale': False,
+    }
+    _forex_cache.clear()
+    _forex_cache.update({'fetched_at': now, 'result': result})
+    return result
+
+
 _jita_buy_cache: dict[int, dict] = {}
 
 @app.get('/api/market/jita-buy')
