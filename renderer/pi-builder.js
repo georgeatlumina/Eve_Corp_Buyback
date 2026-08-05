@@ -62,7 +62,7 @@
     const front = V.dot(v, cam.fwd);
     const x = R * view.zoom * V.dot(v, cam.right);
     const y = -R * view.zoom * V.dot(v, cam.up);
-    return { x, y, visible: front > 0 && (x * x + y * y) <= R * R };
+    return { x, y, visible: front > 0 };   // on the near hemisphere; SVG viewport clips off-canvas
   }
   // screen (disc-relative px) -> sphere (colat, azimuth), or null if off-disc.
   function unproject(px, py, cam) {
@@ -144,7 +144,7 @@
 
     const parts = [`<defs><radialGradient id="pib-globe" cx="38%" cy="34%" r="72%">
       <stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></radialGradient></defs>`];
-    parts.push(`<circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#pib-globe)" stroke="#0a0a0a" stroke-width="2"/>`);
+    parts.push(`<circle cx="${cx}" cy="${cy}" r="${R * view.zoom}" fill="url(#pib-globe)" stroke="#0a0a0a" stroke-width="2"/>`);
 
     // graticule (a few meridians/parallels on the visible hemisphere)
     for (let lat = 30; lat < 180; lat += 30) {
@@ -332,20 +332,35 @@
     sel = model.pins.length - 1; render();
   }
 
-  let drag = null, dragged = false;
+  let drag = null, pinDrag = null, dragged = false;
   function onDown(e) {
     dragged = false;
-    if (e.target.closest('.pib-pin')) return;
+    const g = e.target.closest('.pib-pin');
+    if (g) {
+      // In select mode, grabbing a pin starts a move; in place/link mode the
+      // click is handled by onCanvasClick, so don't start a drag here.
+      if (tool === 'select') pinDrag = { i: +g.dataset.i, x: e.clientX, y: e.clientY };
+      return;
+    }
     drag = { x: e.clientX, y: e.clientY, t: view.theta0, p: view.phi0 };
   }
   function onMove(e) {
+    if (pinDrag) {
+      if (Math.abs(e.clientX - pinDrag.x) + Math.abs(e.clientY - pinDrag.y) > 3) {
+        dragged = true;
+        const sph = unproject(svgLocal(e).x, svgLocal(e).y, camera());
+        const p = model.pins[pinDrag.i];
+        if (sph && p) { p.lat = sph.th; p.lon = sph.ph; sel = pinDrag.i; markDirty(); render(); }
+      }
+      return;
+    }
     if (!drag) return;
     if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) dragged = true;
     view.phi0 = drag.p - (e.clientX - drag.x) * 0.008;
     view.theta0 = Math.max(0.15, Math.min(Math.PI - 0.15, drag.t - (e.clientY - drag.y) * 0.008));
     render();
   }
-  function onUp() { drag = null; }
+  function onUp() { drag = null; pinDrag = null; }
 
   function recenter() {
     if (!model.pins.length) { view.zoom = 1; return; }
@@ -643,6 +658,12 @@
     $('#pib-cc').addEventListener('change', (e) => { model.cmd_ctr_level = +e.target.value; markDirty(); render(); });
     $('#pib-diam').addEventListener('change', (e) => { model.diameter = parseFloat(e.target.value) || model.diameter; markDirty(); render(); });
     $('#pib-new').addEventListener('click', () => { model = emptyModel($('#pib-planet').value || 'Barren'); sel = null; dirty = false; renderPalette(); setMeta(); render(); });
+    // Clear: empty the colony (pins/links/routes) but keep the planet + CC settings.
+    $('#pib-clear').addEventListener('click', () => {
+      if (!(model.pins || []).length && !(model.links || []).length) return;
+      model.pins = []; model.links = []; model.routes = [];
+      sel = null; linkFrom = null; markDirty(); render();
+    });
     $('#pib-load').addEventListener('click', requestLoadTemplate);
     $('#pib-save').addEventListener('click', saveTemplate);
 

@@ -544,6 +544,7 @@
       <p class="muted">Place command centers, extractors, factories, storage and launchpads on a real planet, link them, and watch the CPU/Powergrid budget. Load existing colonies from — and save importable templates straight to — your EVE <code id="pib-dir" class="pib-dir"></code> folder.</p>
       <div class="pib-toolbar">
         <button id="pib-new" type="button" class="secondary">New</button>
+        <button id="pib-clear" type="button" class="secondary">Clear</button>
         <label>Planet
           <select id="pib-planet"><option>Barren</option><option>Gas</option><option>Ice</option><option>Lava</option><option>Oceanic</option><option>Plasma</option><option>Storm</option><option>Temperate</option></select>
         </label>
@@ -563,6 +564,7 @@
             </label>
             <label>× <input id="pib-calc-qty" type="number" min="0" step="1" value="1" style="width:7em" /></label>
             <span id="pib-calc-runs" class="muted"></span>
+            <button class="popout-btn" data-popout="pi-calc" type="button" title="Open the chain calculator in its own window">⤢ Pop out</button>
           </div>
           <p class="muted pib-calc-hint">Every quantity below is editable — change any input or output and the whole chain rescales. "run(s)" = factory cycles at that tier.</p>
           <div id="pib-calc-out" class="pib-calc-out"></div>
@@ -1051,8 +1053,14 @@
       var t = new URLSearchParams(location.search).get('popout');
       if (t) {
         document.body.classList.add('popout');
-        var btn = document.querySelector('.tab-btn[data-tab="' + t + '"]');
+        var tabToClick = t;
+        if (t === 'pi-calc') {            // the chain calculator lives inside the PI Builder tab
+          document.body.classList.add('popout-calc');
+          tabToClick = 'pi-builder';
+        }
+        var btn = document.querySelector('.tab-btn[data-tab="' + tabToClick + '"]');
         if (btn) btn.click();
+        if (t === 'pi-calc') { var d = document.querySelector('.pib-calc'); if (d) d.open = true; }
       }
     })();
   </script>
