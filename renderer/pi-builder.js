@@ -33,6 +33,7 @@
   let view = { theta0: 1.4, phi0: 0.8, zoom: 1 };   // camera direction (colat, azimuth) + magnification
   let tool = 'select';   // 'select', 'link', or a pin type_id string to place
   let sel = null;        // selected pin index
+  let selLink = null;    // selected link index (for inspecting / deleting a connection)
   let linkFrom = null;   // pin index awaiting a link target
   let dirty = false;     // unsaved edits in the current colony
   let initialised = false;
@@ -156,14 +157,20 @@
       parts.push(`<path d="${d}" fill="none" stroke="#ffffff14" stroke-width="1"/>`);
     }
 
-    // links
-    for (const l of model.links) {
+    // links — each wrapped in a group with a fat transparent hit line so it's
+    // easy to click, plus a visible line that brightens when the link is selected.
+    model.links.forEach((l, li) => {
       const a = pinAt(l.a), b = pinAt(l.b);
-      if (!a || !b) continue;
+      if (!a || !b) return;
       const pa = project(a.lat, a.lon, cam), pb = project(b.lat, b.lon, cam);
-      if (!pa.visible && !pb.visible) continue;
-      parts.push(`<line x1="${cx + pa.x}" y1="${cy + pa.y}" x2="${cx + pb.x}" y2="${cy + pb.y}" stroke="#ffd27f66" stroke-width="1.5"/>`);
-    }
+      if (!pa.visible && !pb.visible) return;
+      const x1 = cx + pa.x, y1 = cy + pa.y, x2 = cx + pb.x, y2 = cy + pb.y;
+      const on = li === selLink;
+      parts.push(`<g class="pib-link" data-li="${li}" style="cursor:pointer">
+        <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="transparent" stroke-width="10"/>
+        <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${on ? '#4af' : '#ffd27f66'}" stroke-width="${on ? 3 : 1.5}"/>
+      </g>`);
+    });
 
     // pins
     model.pins.forEach((p, i) => {
@@ -229,8 +236,23 @@
       + `Extractor-head load is included when you set heads on an ECU.</div>`;
   }
 
+  function pinLabel(idx) {
+    return idx === 'cc' ? 'Command Center' : (pin(model.pins[idx].type_id).name || `pin ${idx}`);
+  }
+
   function renderSelection() {
     const el = $('#pib-selinfo');
+    if (selLink != null && model.links[selLink]) {
+      const l = model.links[selLink];
+      const a = pinAt(l.a), b = pinAt(l.b);
+      const km = (a && b) ? greatCircleKm(a, b) : 0;
+      el.innerHTML = `<div class="pib-selhead"><strong>Link</strong>
+        <span class="muted">${escapeHtml(pinLabel(l.a))} ↔ ${escapeHtml(pinLabel(l.b))}${km ? ` · ${km.toFixed(0)} km` : ''}</span>
+        <button id="pib-ldel" class="secondary">Delete link</button></div>
+        <div class="muted" style="font-size:.82em;margin-top:.4em">Tip: click any connector line to select it, then Delete removes it.</div>`;
+      $('#pib-ldel').onclick = () => { model.links.splice(selLink, 1); selLink = null; markDirty(); render(); };
+      return;
+    }
     if (sel == null || !model.pins[sel]) {
       el.innerHTML = '<span class="muted">No pin selected. Click a pin to select; pick a tool to place.</span>';
       return;
@@ -280,7 +302,7 @@
       ${assign}
       <div class="pib-routes"><div class="pib-routes-h">Routes</div>${routeList}${addRoute}</div>`;
 
-    $('#pib-del').onclick = () => { model.pins.splice(sel, 1); remapAfterDelete(sel); markDirty(); sel = null; linkFrom = null; render(); };
+    $('#pib-del').onclick = () => { model.pins.splice(sel, 1); remapAfterDelete(sel); markDirty(); sel = null; selLink = null; linkFrom = null; render(); };
     $('#pib-link').onclick = () => { linkFrom = sel; render(); };
     const schEl = $('#pib-sch');
     if (schEl) schEl.onchange = (e) => { p.schematic = e.target.value ? +e.target.value : null; markDirty(); render(); };
@@ -318,18 +340,25 @@
       const i = +g.dataset.i;
       if (linkFrom != null && linkFrom !== i) {
         model.links.push({ a: linkFrom, b: i, level: 0 }); markDirty();
-        linkFrom = null; sel = i; render(); return;
+        linkFrom = null; sel = i; selLink = null; render(); return;
       }
-      if (tool === 'link') { linkFrom = i; sel = i; render(); return; }   // start a link
-      sel = i; render(); return;
+      if (tool === 'link') { linkFrom = i; sel = i; selLink = null; render(); return; }   // start a link
+      sel = i; selLink = null; render(); return;
     }
-    if (tool === 'select' || tool === 'link') { linkFrom = null; return; }
+    if (tool === 'select') {
+      // Click a connector line to select it (Delete or the panel button removes it);
+      // clicking empty space clears the selection.
+      const lg = e.target.closest('.pib-link');
+      if (lg) { selLink = +lg.dataset.li; sel = null; linkFrom = null; render(); return; }
+      sel = null; selLink = null; linkFrom = null; render(); return;
+    }
+    if (tool === 'link') { linkFrom = null; render(); return; }
     const loc = svgLocal(e);
     const sph = unproject(loc.x, loc.y, camera());
     if (!sph) return;
     model.pins.push({ type_id: +tool, schematic: null, lat: sph.th, lon: sph.ph, height: 0 });
     markDirty();
-    sel = model.pins.length - 1; render();
+    sel = model.pins.length - 1; selLink = null; render();
   }
 
   let drag = null, pinDrag = null, dragged = false;
@@ -404,7 +433,7 @@
     if (!name) return;
     const r = await fetch(`${API}/api/pi/templates/read?name=${encodeURIComponent(name)}`).then((x) => x.json());
     if (!r.layout) { $('#pib-status').textContent = `Load failed: ${r.detail || 'bad template'}`; return; }
-    model = r.layout; sel = null; linkFrom = null; dirty = false; recenter();
+    model = r.layout; sel = null; selLink = null; linkFrom = null; dirty = false; recenter();
     renderPalette(); render(); setMeta();
     $('#pib-status').textContent = `Loaded ${name}.`;
   }
@@ -623,7 +652,7 @@
   async function loadModel(m) {
     bindOnce();
     await loadStatic();
-    model = m; sel = null; linkFrom = null; dirty = false; recenter();
+    model = m; sel = null; selLink = null; linkFrom = null; dirty = false; recenter();
     renderPalette(); setMeta(); render(); refreshTemplates();
     populateCalc();
   }
@@ -657,12 +686,12 @@
     });
     $('#pib-cc').addEventListener('change', (e) => { model.cmd_ctr_level = +e.target.value; markDirty(); render(); });
     $('#pib-diam').addEventListener('change', (e) => { model.diameter = parseFloat(e.target.value) || model.diameter; markDirty(); render(); });
-    $('#pib-new').addEventListener('click', () => { model = emptyModel($('#pib-planet').value || 'Barren'); sel = null; dirty = false; renderPalette(); setMeta(); render(); });
+    $('#pib-new').addEventListener('click', () => { model = emptyModel($('#pib-planet').value || 'Barren'); sel = null; selLink = null; dirty = false; renderPalette(); setMeta(); render(); });
     // Clear: empty the colony (pins/links/routes) but keep the planet + CC settings.
     $('#pib-clear').addEventListener('click', () => {
       if (!(model.pins || []).length && !(model.links || []).length) return;
       model.pins = []; model.links = []; model.routes = [];
-      sel = null; linkFrom = null; markDirty(); render();
+      sel = null; selLink = null; linkFrom = null; markDirty(); render();
     });
     $('#pib-load').addEventListener('click', requestLoadTemplate);
     $('#pib-save').addEventListener('click', saveTemplate);
@@ -686,7 +715,21 @@
       else { calcHi = null; applyHighlight(); }
     });
     let calcResize;
-    window.addEventListener('resize', () => { clearTimeout(calcResize); calcResize = setTimeout(drawFlowLines, 120); });
+    window.addEventListener('resize', () => { clearTimeout(calcResize); calcResize = setTimeout(drawFlowLines, 120); render(); });
+
+    // Delete / Backspace removes the selected link (or pin) — but only when the
+    // builder canvas is on screen and you're not typing in a field.
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (!$('#pib-svg') || !$('#pib-svg').offsetParent) return;   // builder not visible
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (selLink != null && model.links[selLink]) {
+        model.links.splice(selLink, 1); selLink = null; markDirty(); render(); e.preventDefault();
+      } else if (sel != null && model.pins[sel]) {
+        model.pins.splice(sel, 1); remapAfterDelete(sel); sel = null; linkFrom = null; markDirty(); render(); e.preventDefault();
+      }
+    });
   }
 
   document.querySelector('.tab-btn[data-tab="pi-builder"]')?.addEventListener('click', initTab);
