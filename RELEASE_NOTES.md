@@ -1,3 +1,41 @@
+## What's new in v2.4.0 — PI production optimizer, planner merge & in-app patch notes
+
+### PI planet optimizer (new)
+On the **PI Planner & Builder** page, tell it a **target commodity** and how many
+**planets** you have across your toons, and it allocates them for maximum output.
+- **Which planets to set as extractors vs. factories** — and for what inputs/outputs —
+  with each extractor row showing the P0 it pulls and the planet types it's on, and the
+  **bottleneck stage highlighted**. Three selectable role models (default: extractors make P1).
+- **Planet budget from ESI:** pulls each toon's true max planets (Interplanetary
+  Consolidation level). *Requires a one-time re-auth of your PI toons* to grant the new
+  read-skills scope — until then a toon shows "re-auth for skills". You can also just type a total.
+- **Auto-computed, editable capacity** (CC level, factories-per-planet, extraction rate) and a
+  **suggested split across your toons**.
+
+### Value & logistics
+- **ISK/day & /month** at **Jita buy**, **corp buyback %**, and **direct export to Jita
+  (PushX courier)** — all live-configurable.
+- **POCO export tax** charged on **every launch off a planet across the chain** (CCP adjusted
+  prices, not just the final product), with a live rate.
+- **Logistics:** per-tier haul **m³/day**, **Epithal/DST load** multiples, **final-product
+  volume per day & month**, and **move cadence** ("fill an Epithal every ~N h"). Ship holds configurable.
+- **Save/recall plans** locally (target, planets, all assumptions, valuation & holds).
+
+### "Top PI by value" suggestion
+For a given system, the **top 3 most valuable commodities per tier (P1–P4)**, ranked by
+**ISK/day for your planet budget** (with per-unit profit alongside). Infeasible tiers are flagged
+(e.g. P4 needs more planets). Click any suggestion to set it as the optimizer target.
+
+### PI Planner merged in
+The standalone **PI Planner** tab is gone — all planning now lives at the top of the
+**PI Planner & Builder** page (system search, planet types, ranked profitable chains, recipe drill-down).
+
+### In-app patch notes & help
+- A **"What's new"** drawer (🗒 by the version) shows recent release notes live from GitHub.
+- A **per-page help panel** explains the current tab.
+
+---
+
 ## What's new in v2.3.0 — PI Builder chain calculator & big canvas upgrades
 
 ### Chain calculator (new)
