@@ -631,6 +631,19 @@ def fetch_character_planets(character_id, access_token, user_agent):
     return resp.json() or []
 
 
+def fetch_character_skills(character_id, access_token, user_agent):
+    """The authed character's trained skills: ``{skills: [{skill_id,
+    active_skill_level, trained_skill_level, skillpoints_in_skill}], total_sp,
+    unallocated_sp}``. Needs esi-skills.read_skills.v1."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/skills/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or {}
+
+
 def fetch_character_planet_detail(character_id, planet_id, access_token, user_agent):
     """One colony's full layout: ``{links, pins, routes}``. Extractor pins carry
     ``extractor_details`` (product_type_id, cycle_time, qty_per_cycle, heads) and

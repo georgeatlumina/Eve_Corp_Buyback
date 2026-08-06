@@ -55,6 +55,7 @@ from esi import (
     fetch_corporation_info,
     fetch_character_planets,
     fetch_character_planet_detail,
+    fetch_character_skills,
     fetch_incursions,
     fetch_market_prices,
     fetch_planet_info,
@@ -617,6 +618,101 @@ def pi_colony_detail(character_id: int, planet_id: int):
     layout = pi_layout.from_esi_detail(
         detail, ptype_id, 5000.0, level, f'{ptname} (from live colony)', sch_to_out)
     return {'layout': layout, 'diameter_default': True}
+
+
+# Interplanetary Consolidation adds +1 deployable planet per level (base 1, so V => 6).
+PI_SKILLS_SCOPE = 'esi-skills.read_skills.v1'
+INTERPLANETARY_CONSOLIDATION_SKILL_ID = 2495
+
+
+@app.get('/api/pi/planet-capacity')
+def pi_planet_capacity():
+    """Per-toon maximum deployable PI planets = 1 + Interplanetary Consolidation
+    level, read from ESI skills. Powers the optimizer's planet budget. Toons
+    authed before the read_skills scope was added are flagged ``needs_reauth`` —
+    re-auth them in the PI Characters section to include them."""
+    ua = get_user_agent()
+    toons, total, seen = [], 0, set()
+    for _slot, token, cid, cname in _pi_scoped_slots():
+        if cid in seen:
+            continue
+        seen.add(cid)
+        payload = decode_jwt_payload(token)
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        if PI_SKILLS_SCOPE not in scope_list:
+            toons.append({'character_id': cid, 'name': cname, 'ic_level': None,
+                          'max_planets': None, 'needs_reauth': True})
+            continue
+        try:
+            skills = fetch_character_skills(cid, token, ua)
+        except Exception as e:  # network / 403 after a revoked token
+            toons.append({'character_id': cid, 'name': cname, 'ic_level': None,
+                          'max_planets': None, 'needs_reauth': False, 'error': str(e)})
+            continue
+        level = 0
+        for s in skills.get('skills') or []:
+            if s.get('skill_id') == INTERPLANETARY_CONSOLIDATION_SKILL_ID:
+                level = int(s.get('active_skill_level') or 0)
+                break
+        mx = 1 + level
+        total += mx
+        toons.append({'character_id': cid, 'name': cname, 'ic_level': level,
+                      'max_planets': mx, 'needs_reauth': False})
+    toons.sort(key=lambda t: (t.get('name') or '').lower())
+    return {'toons': toons, 'total_max': total,
+            'skill_id': INTERPLANETARY_CONSOLIDATION_SKILL_ID}
+
+
+_pi_price_cache: dict[int, dict] = {}
+_PI_PRICE_TTL = 300  # 5 min — plenty fresh for a per-day/month value estimate
+
+
+def _pi_poco_tax_base(type_id: int, ua: str):
+    """The per-1-final-unit taxable base for a commodity's whole production chain:
+    sum over every produced tier of (CCP adjusted price * units produced per final
+    unit). POCO export tax = tax_rate * this — i.e. tax is charged on every launch
+    off a planet across the chain, exactly as pi.evaluate() models it. Returns None
+    if the item isn't producible or adjusted prices are unavailable."""
+    try:
+        base_values = fetch_market_prices(ua)  # ESI adjusted prices (keyless) — what POCO taxes on
+        ev = pi_planner.evaluate(type_id, {}, base_values, tax_rate=1.0)
+        return ev['chain_export_tax']
+    except Exception:
+        return None
+
+
+@app.get('/api/pi/price')
+def pi_price(type_id: int, bust: bool = False):
+    """Immediate Jita per-unit buy/sell for one commodity, plus the chain-wide POCO
+    tax base, for the optimizer's ISK/day valuation. ``poco_tax_base`` is the
+    taxable value of every export across the chain per 1 final unit (charge =
+    tax_rate * poco_tax_base). Buy/sell need a Janice API key; the tax base and the
+    saved POCO rate do not."""
+    now = time.time()
+    if not bust:
+        cached = _pi_price_cache.get(type_id)
+        if cached and (now - cached['fetched_at']) < _PI_PRICE_TTL:
+            return cached['result']
+    cfg = load_config()
+    ua = get_user_agent()
+    api_key = cfg.get('janice_api_key') or None
+    poco = float(cfg.get('pi_poco_tax_rate') or 0.05)
+    poco_base = _pi_poco_tax_base(type_id, ua)
+    row = {}
+    if api_key:
+        try:
+            priced = fetch_immediate_prices([type_id], 'Jita 4-4', api_key=api_key, user_agent=ua)
+        except Exception as e:
+            raise HTTPException(502, f'Jita price lookup failed: {e}')
+        row = priced.get(int(type_id)) or {}
+    result = {'type_id': type_id, 'buy': row.get('buy'), 'sell': row.get('sell'),
+              'priced': row.get('buy') is not None, 'poco_tax_rate': poco,
+              'poco_tax_base': poco_base, 'market': 'Jita 4-4'}
+    if not api_key:
+        result['note'] = 'Set a Janice API key in Config to price PI output.'
+    _pi_price_cache[type_id] = {'fetched_at': now, 'result': result}
+    return result
 
 
 def _slot_status(slot: str) -> dict:

@@ -24,7 +24,11 @@ VALID_SLOTS = ('slot1', 'slot2', 'slot3', 'slot4')
 # PI characters without re-scoping (or spending main slots on) them. Stored in
 # the same cache but iterated separately from the main VALID_SLOTS. Up to 24.
 PI_SLOTS = tuple(f'pi{i}' for i in range(1, 25))
-PI_SCOPES = ('publicData', 'esi-planets.manage_planets.v1')
+# manage_planets drives the colony reads; read_skills lets the optimizer read
+# Interplanetary Consolidation (max planets per toon). Toons authed before
+# read_skills was added keep working for colonies but need a one-time re-auth
+# for the optimizer's planet-capacity pull.
+PI_SCOPES = ('publicData', 'esi-planets.manage_planets.v1', 'esi-skills.read_skills.v1')
 ALL_SLOTS = VALID_SLOTS + PI_SLOTS
 
 
