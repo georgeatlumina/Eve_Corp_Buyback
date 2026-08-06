@@ -235,11 +235,11 @@
     $('#pi-perunit').addEventListener('change', renderTable);   // re-render only; no re-fetch
 
     // Row click / Enter -> recipe drill-down.
-    $('#tab-pi').addEventListener('click', (e) => {
+    $('#pi-planner').addEventListener('click', (e) => {
       const tr = e.target.closest('[data-pi-recipe]');
       if (tr) showRecipe(tr.dataset.piRecipe);
     });
-    $('#tab-pi').addEventListener('keydown', (e) => {
+    $('#pi-planner').addEventListener('keydown', (e) => {
       const tr = e.target.closest('[data-pi-recipe]');
       if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); showRecipe(tr.dataset.piRecipe); }
     });
@@ -248,5 +248,6 @@
     });
   }
 
-  document.querySelector('.tab-btn[data-tab="pi"]')?.addEventListener('click', initTab);
+  // The planner is merged into the PI Builder page, so it inits when that tab opens.
+  document.querySelector('.tab-btn[data-tab="pi-builder"]')?.addEventListener('click', initTab);
 })();
