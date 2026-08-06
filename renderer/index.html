@@ -8,7 +8,7 @@
 </head>
 <body>
   <header>
-    <h1>Naval Defence Alliance Management Tool <span id="app-version" class="app-version"></span><button id="btn-check-update" class="check-update-btn" type="button" title="Check for updates now">⟳</button><span id="app-author" class="app-author"></span></h1>
+    <h1>Naval Defence Alliance Management Tool <span id="app-version" class="app-version"></span><button id="btn-patch-notes" class="patch-notes-btn" type="button" title="What's new — patch notes">What's new</button><button id="btn-check-update" class="check-update-btn" type="button" title="Check for updates now">⟳</button><span id="app-author" class="app-author"></span></h1>
     <nav class="nav-menu">
       <div class="view-mode" role="group" aria-label="View mode">
         <button id="view-member" class="view-mode-btn active" type="button" data-mode="member">Member</button>
@@ -63,6 +63,8 @@
           <button class="tab-btn" data-tab="auth">Auth</button>
           <button class="tab-btn" data-tab="mail">Mail</button>
         </div>
+      </div>
+      <button id="btn-help" class="help-btn" type="button" title="Help for this page" aria-label="Help for this page">? Help</button>
     </nav>
   </header>
   <main>
@@ -963,6 +965,26 @@
     </section>
   </main>
 
+  <!-- Patch-notes drawer (slides from the left, opened by the "What's new" button by the version) -->
+  <div id="notes-overlay" class="side-drawer-overlay" hidden></div>
+  <aside id="notes-drawer" class="side-drawer side-drawer-left" hidden aria-hidden="true" aria-label="Patch notes">
+    <div class="side-drawer-head">
+      <h3>What's new</h3>
+      <button id="notes-close" class="side-drawer-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div id="notes-body" class="side-drawer-body"></div>
+  </aside>
+
+  <!-- Help drawer (slides from the right, opened by the ? Help button; content follows the active tab) -->
+  <div id="help-overlay" class="side-drawer-overlay" hidden></div>
+  <aside id="help-drawer" class="side-drawer side-drawer-right" hidden aria-hidden="true" aria-label="Help">
+    <div class="side-drawer-head">
+      <h3 id="help-title">Help</h3>
+      <button id="help-close" class="side-drawer-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div id="help-body" class="side-drawer-body"></div>
+  </aside>
+
   <div id="indy-paste-overlay" class="indy-drawer-overlay" hidden></div>
   <aside id="indy-paste-drawer" class="indy-drawer" hidden aria-hidden="true">
     <div class="indy-drawer-head">
@@ -1036,6 +1058,7 @@
   <script src="doctrine-stock.js"></script>
   <script src="module-sorter.js"></script>
   <script src="plex-value.js"></script>
+  <script src="panels.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="pi-colonies.js"></script>

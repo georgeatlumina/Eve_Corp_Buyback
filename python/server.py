@@ -2399,6 +2399,50 @@ def get_forex_rates(bust: bool = False):
     return result
 
 
+_RELEASES_REPO = 'georgeatlumina/Eve_Corp_Buyback'
+_releases_cache: dict = {}
+_RELEASES_TTL = 1800  # 30m — release notes rarely change; keep well under GitHub's
+                      # 60/hr unauthenticated rate limit
+
+
+@app.get('/api/releases')
+def get_releases(bust: bool = False):
+    """Recent GitHub releases (tag, name, notes, date, url) for the in-app patch
+    notes panel. Cached 30m; serves the stale cache if GitHub is unreachable so
+    the panel still shows the last-known notes offline."""
+    now = time.time()
+    if not bust and _releases_cache and (now - _releases_cache['fetched_at']) < _RELEASES_TTL:
+        return _releases_cache['result']
+    try:
+        resp = requests.get(
+            f'https://api.github.com/repos/{_RELEASES_REPO}/releases',
+            headers={'User-Agent': get_user_agent(), 'Accept': 'application/vnd.github+json',
+                     'X-GitHub-Api-Version': '2022-11-28'},
+            params={'per_page': 15}, timeout=15)
+        resp.raise_for_status()
+        body = resp.json()
+    except Exception as e:
+        if _releases_cache:
+            return {**_releases_cache['result'], 'stale': True}
+        raise HTTPException(502, f'Release lookup failed: {e}')
+    if not isinstance(body, list):
+        if _releases_cache:
+            return {**_releases_cache['result'], 'stale': True}
+        raise HTTPException(502, 'GitHub returned an unexpected releases response')
+    releases = [{
+        'tag': r.get('tag_name') or '',
+        'name': r.get('name') or r.get('tag_name') or '',
+        'body': r.get('body') or '',
+        'published_at': r.get('published_at') or r.get('created_at') or '',
+        'html_url': r.get('html_url') or '',
+        'prerelease': bool(r.get('prerelease')),
+    } for r in body if not r.get('draft')]
+    result = {'releases': releases, 'stale': False}
+    _releases_cache.clear()
+    _releases_cache.update({'fetched_at': now, 'result': result})
+    return result
+
+
 _jita_buy_cache: dict[int, dict] = {}
 
 @app.get('/api/market/jita-buy')

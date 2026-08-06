@@ -1264,3 +1264,66 @@ body.popout-calc .pib-calc > summary { display: none; }
 .auth-pi-add-row { display: flex; align-items: center; gap: 0.8em; margin-top: 0.6em; }
 .auth-pi-add { font-size: 0.9em; }
 .auth-pi-count { font-size: 0.85em; }
+
+/* ===== Header: patch-notes + help buttons ===== */
+.patch-notes-btn, .help-btn {
+  background: #232323; color: #cde; border: 1px solid #3a3a3a; border-radius: 5px;
+  cursor: pointer; font-size: 0.8em; line-height: 1; padding: 0.25em 0.5em; margin-left: 0.4em;
+  vertical-align: middle; transition: background 0.15s, border-color 0.15s;
+}
+.patch-notes-btn:hover, .help-btn:hover { background: #2f2f2f; border-color: #4a8; color: #eff; }
+.help-btn { align-self: center; font-weight: 600; padding: 0.4em 0.7em; margin-left: 0.6em; }
+
+/* ===== Slide-out drawers (patch notes / help) ===== */
+.side-drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 950; }
+.side-drawer {
+  position: fixed; top: 0; bottom: 0; width: min(460px, 94vw); background: #1c1c1c;
+  z-index: 951; display: flex; flex-direction: column; box-shadow: 0 0 30px rgba(0,0,0,0.6);
+  transition: transform 0.2s ease;
+}
+.side-drawer-left { left: 0; border-right: 1px solid #3a3a3a; transform: translateX(-100%); }
+.side-drawer-right { right: 0; border-left: 1px solid #3a3a3a; transform: translateX(100%); }
+.side-drawer.open { transform: translateX(0); }
+.side-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 1em;
+  padding: 0.9em 1.1em; border-bottom: 1px solid #333; flex: 0 0 auto;
+}
+.side-drawer-head h3 { margin: 0; font-size: 1.1em; color: #eff; }
+.side-drawer-close {
+  background: transparent; border: 0; color: #aaa; font-size: 1.5em; line-height: 1;
+  cursor: pointer; padding: 0 0.2em; border-radius: 4px;
+}
+.side-drawer-close:hover { color: #fff; background: #333; }
+.side-drawer-body { padding: 1em 1.1em 1.6em; overflow-y: auto; flex: 1 1 auto; }
+
+/* patch-notes content */
+.notes-stale { color: #d8a72a; }
+.notes-release { padding: 0.2em 0 1em; border-bottom: 1px solid #2a2a2a; margin-bottom: 1em; }
+.notes-release:last-child { border-bottom: 0; }
+.notes-release-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.6em; margin-bottom: 0.4em; }
+.notes-tag { font-weight: 700; color: #6dd6a6; font-size: 1.05em; }
+.notes-pre { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.4px; color: #d8a72a; border: 1px solid #55491a; border-radius: 999px; padding: 0.05em 0.5em; }
+.notes-date { font-size: 0.82em; color: #999; }
+.notes-link { font-size: 0.8em; color: #7aa7c7; margin-left: auto; }
+.notes-md { font-size: 0.9em; color: #ddd; line-height: 1.5; }
+.notes-md h4, .notes-md h5, .notes-md h6 { margin: 0.8em 0 0.3em; color: #cde; }
+.notes-md ul { margin: 0.3em 0 0.3em 1.1em; padding: 0; }
+.notes-md li { margin: 0.15em 0; }
+.notes-md p { margin: 0.4em 0; }
+.notes-md code { background: #262626; border: 1px solid #383838; border-radius: 3px; padding: 0 0.3em; font-size: 0.9em; }
+.notes-md a { color: #7aa7c7; }
+.notes-table { border-collapse: collapse; margin: 0.5em 0; font-size: 0.85em; width: 100%; }
+.notes-table th, .notes-table td { border: 1px solid #333; padding: 0.3em 0.5em; text-align: left; }
+.notes-table th { background: #242424; color: #cde; }
+
+/* help content */
+.help-intro { color: #dfe6ea; line-height: 1.5; margin: 0 0 0.6em; }
+.side-drawer-body h4 { margin: 1em 0 0.4em; font-size: 0.95em; color: #6dd6a6; text-transform: uppercase; letter-spacing: 0.4px; }
+.help-controls { list-style: none; margin: 0; padding: 0; }
+.help-controls li { padding: 0.4em 0; border-bottom: 1px solid #262626; }
+.help-controls li:last-child { border-bottom: 0; }
+.help-ctl { display: block; font-weight: 600; color: #cfe6da; font-size: 0.9em; }
+.help-desc { display: block; color: #b8b8b8; font-size: 0.86em; line-height: 1.45; margin-top: 0.1em; }
+.help-flow { margin: 0.3em 0 0 1.2em; padding: 0; color: #ddd; font-size: 0.88em; line-height: 1.55; }
+.help-flow li { margin: 0.2em 0; }
+.help-note { margin-top: 0.9em; padding: 0.6em 0.8em; background: #1a2a26; border: 1px solid #2d5a44; border-radius: 5px; color: #cde; font-size: 0.86em; }
