@@ -27,6 +27,7 @@
           <button class="tab-btn" data-tab="plex-value">PLEX Value</button>
           <button class="tab-btn" data-tab="fitting">Fitting</button>
           <button class="tab-btn" data-tab="market">Market</button>
+          <button class="tab-btn" data-tab="dscan">D-Scan</button>
         </div>
       </div>
 
@@ -525,6 +526,29 @@
         <p class="pv-breakdown muted" id="pv-breakdown"></p>
       </div>
       <p class="pv-rates muted" id="pv-rates"></p>
+    </section>
+
+    <section id="tab-dscan" class="tab">
+      <h2>D-Scan share</h2>
+      <p class="muted">Paste a directional scan (in space: open the D-Scan window, <kbd>Ctrl</kbd>+<kbd>A</kbd> then <kbd>Ctrl</kbd>+<kbd>C</kbd>) to get a shareable <a href="https://dscan.info" data-ext-link>dscan.info</a> link anyone can open in a browser. A quick local breakdown by type is shown before you share.</p>
+      <div class="dscan-input">
+        <textarea id="dscan-paste" placeholder="Paste your D-scan here — one object per line (id&#9;name&#9;type&#9;distance)…" spellcheck="false"></textarea>
+      </div>
+      <div class="actions">
+        <button id="dscan-share" type="button">Create share link</button>
+        <button id="dscan-clear" type="button" class="secondary">Clear</button>
+        <span id="dscan-status" class="muted"></span>
+      </div>
+      <div id="dscan-result" class="dscan-result" hidden>
+        <label class="dscan-url-label">Shareable link
+          <span class="dscan-url-row">
+            <input id="dscan-url" type="text" readonly spellcheck="false" />
+            <button id="dscan-copy" type="button" class="secondary">Copy</button>
+            <button id="dscan-open" type="button" class="secondary">Open</button>
+          </span>
+        </label>
+      </div>
+      <div id="dscan-summary" class="dscan-summary"></div>
     </section>
 
     <section id="tab-pi-builder" class="tab">
@@ -1153,6 +1177,7 @@
   <script src="module-sorter.js"></script>
   <script src="plex-value.js"></script>
   <script src="panels.js"></script>
+  <script src="dscan.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="fitting.js"></script>

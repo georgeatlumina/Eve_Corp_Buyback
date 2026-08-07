@@ -2865,6 +2865,40 @@ def get_releases(bust: bool = False):
     return result
 
 
+class DscanShareRequest(BaseModel):
+    paste: str = ''
+
+
+@app.post('/api/dscan/share')
+def dscan_share(req: DscanShareRequest):
+    """Submit a pasted directional scan to dscan.info and return a shareable
+    link. dscan.info has no documented API; this posts the same form the site's
+    own page uses (POST / with `paste=…`), which replies ``OK;<id>`` — the share
+    URL is then https://dscan.info/v/<id>. Routed through the sidecar (not the
+    renderer) to avoid CORS. Best-effort: depends on that undocumented form, so
+    a change on their side would surface here as a 502."""
+    paste = (req.paste or '').strip()
+    if not paste:
+        raise HTTPException(400, 'Nothing to share — paste a D-scan first.')
+    try:
+        resp = requests.post(
+            'https://dscan.info/',
+            data={'paste': paste},
+            headers={'User-Agent': get_user_agent(), 'X-Requested-With': 'XMLHttpRequest'},
+            timeout=20)
+        resp.raise_for_status()
+    except Exception as e:
+        raise HTTPException(502, f'dscan.info submission failed: {e}')
+    text = (resp.text or '').strip()
+    # Success looks like "OK;<12-hex-id>". Anything else is an error/format change.
+    if not text.startswith('OK;'):
+        raise HTTPException(502, f'dscan.info returned an unexpected response: {text[:120]}')
+    scan_id = text[3:].strip()
+    if not scan_id:
+        raise HTTPException(502, 'dscan.info accepted the scan but returned no id')
+    return {'id': scan_id, 'url': f'https://dscan.info/v/{scan_id}'}
+
+
 _jita_buy_cache: dict[int, dict] = {}
 
 @app.get('/api/market/jita-buy')

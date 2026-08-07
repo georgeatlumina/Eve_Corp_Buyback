@@ -255,6 +255,18 @@
       ],
       workflow: ['Tab auto-loads the snapshot (or Refresh market)', 'Read the tiles/turnover', 'Narrow with search + filters (or Clear)', 'Sort by clicking headers', 'Flip on Doctrine lens to check stock vs your Readiness scan'],
     },
+    dscan: {
+      title: 'D-Scan share',
+      intro: 'Paste an in-game directional scan and get a shareable dscan.info link anyone can open in a browser. A quick local breakdown by object type is shown before you share.',
+      controls: [
+        ['Paste box', 'Paste your D-scan (in space: open the D-Scan window, Ctrl+A then Ctrl+C). A type breakdown appears live as you paste.'],
+        ['Create share link', 'Submits the scan to dscan.info and returns a shareable https://dscan.info/v/… URL.'],
+        ['Clear', 'Empties the paste box, the link, and the breakdown.'],
+        ['Shareable link + Copy / Open', 'The generated dscan.info URL — Copy it to the clipboard or Open it in the in-app browser.'],
+      ],
+      workflow: ['In space, D-scan and copy (Ctrl+A, Ctrl+C)', 'Paste it here', 'Click Create share link', 'Copy or Open the dscan.info URL to share'],
+      note: 'Sharing sends the scan to the third-party dscan.info service.',
+    },
   };
 
   function activeTabId() {
