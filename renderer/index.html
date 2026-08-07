@@ -285,6 +285,7 @@
       <div class="bb-subtoggle" role="group" aria-label="Buyback type">
         <button type="button" class="bb-sub-btn active" data-pane="general">General Buyback</button>
         <button type="button" class="bb-sub-btn" data-pane="ore">Ore Buyback</button>
+        <button type="button" class="bb-sub-btn" data-pane="processed">Processed Orders</button>
       </div>
       <div id="bb-pane-general" class="bb-pane">
       <h2>Buyback contracts</h2>
@@ -343,6 +344,20 @@
           <p class="muted calc-help">Click the display, then use numpad to type. 70/80/90% copies to clipboard.</p>
         </aside>
       </div>
+      </div>
+
+      <div id="bb-pane-processed" class="bb-pane" hidden>
+        <h2>Processed Orders</h2>
+        <div class="actions">
+          <input id="processed-search-input" type="text" placeholder="Search item name… (e.g. robotics)" style="width:260px;margin-right:8px">
+          <button id="btn-processed-search">Search</button>
+        </div>
+        <p id="processed-status" class="muted"></p>
+        <div class="progress-area" id="processed-progress" hidden>
+          <div class="progress-bar"><div class="progress-fill"></div></div>
+          <div class="progress-step muted">loading…</div>
+        </div>
+        <div id="processed-results"></div>
       </div>
     </section>
 
@@ -708,6 +723,7 @@
           <option value="under-quota">Sort by under quota count</option>
           <option value="under-quota-pct">Sort by under quota percentage</option>
           <option value="value">Sort by value</option>
+          <option value="sold-30d">Sort by sold 30 days</option>
         </select>
         <button id="btn-contracts-export-discord" type="button" class="secondary">Export for Discord</button>
         <button id="btn-contracts-export-csv" type="button" class="secondary">Export gap CSV</button>

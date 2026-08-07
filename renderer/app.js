@@ -371,12 +371,10 @@ applyViewMode(getViewMode());
 // Buybacks sub-toggle: switch the single Buybacks tab between the General
 // buyback pane and the Ore (moon) buyback pane. Choice persists.
 const BB_PANE_KEY = 'buybacksPane';
+const BB_VALID_PANES = ['general', 'ore', 'processed'];
 function setBuybacksPane(pane) {
-  const p = pane === 'ore' ? 'ore' : 'general';
-  const gen = $('#bb-pane-general');
-  const ore = $('#bb-pane-ore');
-  if (gen) gen.hidden = p !== 'general';
-  if (ore) ore.hidden = p !== 'ore';
+  const p = BB_VALID_PANES.includes(pane) ? pane : 'general';
+  $$('.bb-pane').forEach((el) => { el.hidden = el.id !== `bb-pane-${p}`; });
   $$('.bb-sub-btn').forEach((b) => b.classList.toggle('active', b.dataset.pane === p));
   localStorage.setItem(BB_PANE_KEY, p);
 }
@@ -851,7 +849,7 @@ async function refreshAuthStatus() {
     if (res.ok) slotsInfo = (await res.json()).slots || [];
   } catch (e) {
     if (container) {
-      container.innerHTML = `<p class="muted">Python sidecar not reachable on localhost:8765 (${escapeHtml(String(e))}). See sidecar.log.</p>`;
+      container.innerHTML = `<p class="muted">Python sidecar not reachable on localhost:8766 (${escapeHtml(String(e))}). See sidecar.log.</p>`;
     }
     if ($('#auth-status')) $('#auth-status').textContent = 'sidecar unreachable';
     return;
@@ -3680,6 +3678,7 @@ async function runSold30dScan() {
               soldEl.textContent = q.sold_30d ?? '—';
               if ((q.sold_30d ?? 0) > 0) soldEl.classList.remove('muted');
               else soldEl.classList.add('muted');
+              bar.dataset.sold = q.sold_30d ?? '';
             }
           }
         }
@@ -3840,6 +3839,11 @@ function sortQuotaDashboard() {
     if (order === 'value') {
       const av = a.dataset.price !== '' ? Number(a.dataset.price) : -1;
       const bv = b.dataset.price !== '' ? Number(b.dataset.price) : -1;
+      return bv - av;
+    }
+    if (order === 'sold-30d') {
+      const av = a.dataset.sold !== '' && a.dataset.sold != null ? Number(a.dataset.sold) : -1;
+      const bv = b.dataset.sold !== '' && b.dataset.sold != null ? Number(b.dataset.sold) : -1;
       return bv - av;
     }
     // default: ship name
@@ -4105,9 +4109,11 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
       const data = await res.json();
       if (data.sold_30d != null) {
         soldEl.textContent = data.sold_30d;
+        div.dataset.sold = data.sold_30d;
         if (data.sold_30d > 0) soldEl.classList.remove('muted');
       } else {
         soldEl.textContent = '—';
+        div.dataset.sold = '';
       }
     } catch {
       soldEl.textContent = '—';
@@ -6821,3 +6827,106 @@ $('#link-panel-popout')?.addEventListener('click', () => {
     if (label && e.url) label.textContent = e.url;
   });
 })();
+
+// ---- Processed Orders ----
+
+function buildProcessedRow(contract, query) {
+  const q = query.toLowerCase();
+  const matching = contract.items.filter((it) => it.name.toLowerCase().includes(q));
+  const rest = contract.items.filter((it) => !it.name.toLowerCase().includes(q));
+
+  const matchTable = renderItemsTable(
+    matching.map((it) => ({ name: it.name, quantity: it.quantity })),
+    ['name', 'quantity'],
+  );
+  const restBlock = rest.length
+    ? `<details style="margin-top:4px"><summary class="muted">${rest.length} more item${rest.length > 1 ? 's' : ''}</summary>${renderItemsTable(rest.map((it) => ({ name: it.name, quantity: it.quantity })), ['name', 'quantity'])}</details>`
+    : '';
+
+  const title = contract.title ? `<div class="meta">Title: ${escapeHtml(contract.title)}</div>` : '';
+  const accepted = contract.date_accepted
+    ? `<div class="meta">Accepted: ${fmtDate(contract.date_accepted)} (${fmtAge(contract.date_accepted)})</div>`
+    : '';
+  const price = contract.price
+    ? `<div class="meta">Price: ${fmtIskShort(contract.price)} ISK</div>`
+    : '';
+
+  return `<div class="result pass">
+  <h4>Contract ${contract.contract_id} — ${escapeHtml(contract.issuer_name || String(contract.issuer_id))}</h4>
+  ${accepted}${title}${price}
+  <details open>
+    <summary>${matching.length} matching item${matching.length !== 1 ? 's' : ''} (${contract.items.length} total)</summary>
+    ${matchTable}${restBlock}
+  </details>
+</div>`;
+}
+
+async function runProcessedSearch() {
+  const input = $('#processed-search-input');
+  const q = (input?.value || '').trim();
+  if (!q) return;
+
+  const status = $('#processed-status');
+  const results = $('#processed-results');
+  const progress = $('#processed-progress');
+  const progressFill = progress?.querySelector('.progress-fill');
+  const step = progress?.querySelector('.progress-step');
+
+  if (results) results.innerHTML = '';
+  if (status) status.textContent = '';
+  if (progress) progress.hidden = false;
+  if (step) step.textContent = 'Starting…';
+  if (progressFill) progressFill.style.width = '0%';
+
+  try {
+    const resp = await fetch(`${API}/api/contracts/processed/search?q=${encodeURIComponent(q)}`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let ev;
+        try { ev = JSON.parse(line); } catch { continue; }
+
+        if (ev.event === 'progress') {
+          if (step) step.textContent = ev.step || '';
+          if (progressFill && ev.total > 0) {
+            progressFill.style.width = `${Math.round((ev.current / ev.total) * 100)}%`;
+          }
+        } else if (ev.event === 'error') {
+          if (progress) progress.hidden = true;
+          if (status) status.textContent = `Error: ${ev.message}`;
+          return;
+        } else if (ev.event === 'done') {
+          if (progress) progress.hidden = true;
+          if (!ev.contracts.length) {
+            if (status) status.textContent = `No contracts found containing "${escapeHtml(q)}" (searched ${ev.total_fetched} finished contracts).`;
+          } else {
+            if (status) status.textContent = `${ev.total_matched} contract${ev.total_matched !== 1 ? 's' : ''} matched out of ${ev.total_fetched} finished.`;
+            if (results) results.innerHTML = ev.contracts.map((c) => buildProcessedRow(c, q)).join('');
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (progress) progress.hidden = true;
+    if (status) status.textContent = `Error: ${err.message}`;
+  }
+}
+
+$('#btn-processed-search')?.addEventListener('click', runProcessedSearch);
+$('#processed-search-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runProcessedSearch();
+});

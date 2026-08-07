@@ -114,7 +114,7 @@ from refining import compute_refined_payout, is_donation, is_mineable, is_prisma
 from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
 from workforce_plan import load_plan, save_plan
 
-PORT = 8765
+PORT = 8766
 REDIRECT_URI = f'http://localhost:{PORT}/callback'
 
 app = FastAPI(title='Naval Defence Alliance Management Tool')
@@ -4739,6 +4739,139 @@ def contracts_sold_30d(ship_type_id: int, title_filter: str = '', alliance: str 
         sold_30d += _matches_quota(quota, items_named, rec['contract'])
 
     return {'sold_30d': sold_30d}
+
+
+@app.get('/api/contracts/processed/search')
+def contracts_processed_search(q: str = ''):
+    """Stream finished inbound buyback contract search as NDJSON.
+
+    Events: progress | done | error.
+    Filters to assignee_id == corp_id, status == finished, type == item_exchange,
+    at least one item name contains q (case-insensitive).
+    """
+    cfg = load_config()
+    if not cfg.get('corp_id'):
+        raise HTTPException(400, 'Configure corp_id first')
+    if not q.strip():
+        raise HTTPException(400, 'q must not be empty')
+    return StreamingResponse(_processed_search_stream(cfg, q), media_type='application/x-ndjson')
+
+
+def _processed_search_stream(cfg, q):
+    client_id, secret_key = get_app_credentials()
+    try:
+        token = get_valid_access_token(client_id, secret_key, get_user_agent())
+    except Exception as e:
+        yield _emit('error', message=f'Not authenticated: {e}')
+        return
+
+    ua = get_user_agent()
+    corp_id = int(cfg['corp_id'])
+
+    yield _emit('progress', step='Fetching corp contracts from ESI…', current=0, total=0)
+
+    try:
+        all_contracts = fetch_corp_contracts(corp_id, token, ua)
+    except Exception as e:
+        yield _emit('error', message=f'ESI fetch failed: {e}')
+        return
+
+    finished = [
+        c for c in all_contracts
+        if c.get('type') == 'item_exchange'
+        and c.get('status') == 'finished'
+        and int(c.get('assignee_id') or 0) == corp_id
+    ]
+
+    yield _emit('progress', step=f'Found {len(finished)} finished inbound contracts — fetching items…',
+                current=0, total=len(finished))
+
+    def _fetch_one(cid_tok):
+        cid, tok = cid_tok
+        last_err = None
+        for attempt in range(3):
+            try:
+                return cid, fetch_contract_items(corp_id, cid, tok, ua), None
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    time.sleep(1.5 ** attempt)
+        return cid, [], str(last_err)
+
+    items_by_id: dict[int, list] = {}
+    uncached = {
+        int(c['contract_id']): token
+        for c in finished
+        if _contract_items_cache.get(int(c['contract_id'])) is None
+    }
+    for c in finished:
+        cid = int(c['contract_id'])
+        if cid not in uncached:
+            items_by_id[cid] = _contract_items_cache[cid]
+
+    done_count = len(finished) - len(uncached)
+    total = len(finished)
+
+    if uncached:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_fetch_one, (cid, tok)): cid for cid, tok in uncached.items()}
+            for future in as_completed(futures):
+                cid, items, err = future.result()
+                items_by_id[cid] = items
+                if not err:
+                    _contract_items_cache[cid] = items
+                done_count += 1
+                yield _emit('progress', step=f'Fetching items… {done_count}/{total}',
+                            current=done_count, total=total)
+
+    yield _emit('progress', step='Resolving item names…', current=total, total=total)
+
+    all_type_ids = {
+        int(i.get('type_id') or 0)
+        for items in items_by_id.values()
+        for i in items
+        if i.get('type_id')
+    }
+    try:
+        names = resolve_names(all_type_ids, ua)
+    except Exception:
+        names = {}
+
+    issuer_ids = {int(c.get('issuer_id') or 0) for c in finished if c.get('issuer_id')}
+    try:
+        issuer_names = resolve_names(issuer_ids, ua)
+    except Exception:
+        issuer_names = {}
+
+    q_lower = q.strip().lower()
+    matched = []
+    for c in finished:
+        cid = int(c['contract_id'])
+        raw_items = items_by_id.get(cid, [])
+        items_named = [
+            {
+                'type_id': int(i.get('type_id') or 0),
+                'quantity': int(i.get('quantity') or 0),
+                'name': names.get(int(i.get('type_id') or 0), ''),
+            }
+            for i in raw_items
+            if i.get('is_included', True)
+        ]
+        if not any(q_lower in it['name'].lower() for it in items_named):
+            continue
+        matched.append({
+            'contract_id': cid,
+            'title': c.get('title') or '',
+            'issuer_id': int(c.get('issuer_id') or 0),
+            'issuer_name': issuer_names.get(int(c.get('issuer_id') or 0), ''),
+            'date_accepted': c.get('date_accepted') or '',
+            'date_completed': c.get('date_completed') or '',
+            'price': float(c.get('price') or 0),
+            'items': items_named,
+        })
+
+    matched.sort(key=lambda x: x['date_completed'], reverse=True)
+    yield _emit('done', contracts=matched, total_fetched=len(finished), total_matched=len(matched))
 
 
 # Sov-structure type IDs. ESI returns structure_type_id on each sov record.
