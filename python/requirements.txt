@@ -2,3 +2,10 @@ fastapi>=0.110
 uvicorn[standard]>=0.27
 requests>=2.31
 pydantic>=2.6
+
+# Vendored Pyfa `eos` fitting engine (python/pyfa/eos) — headless deps only (no wxPython).
+sqlalchemy==1.4.50
+logbook>=1.7
+python-dateutil>=2.8
+roman>=4.1
+numpy>=1.26

@@ -96,6 +96,11 @@ import liquidation
 import pi as pi_planner
 import pi_layout
 import stockpile
+try:
+    import pyfa_engine  # vendored Pyfa eos fitting engine (optional; needs deps + eve.db)
+except Exception as _e:  # pragma: no cover - keeps the sidecar up if eos/deps missing
+    pyfa_engine = None
+    _PYFA_IMPORT_ERROR = str(_e)
 from market import enrich as enrich_types, missing_ids as meta_missing_ids
 from acquisitions import load_acquisitions, save_acquisitions
 from pinned import (
@@ -713,6 +718,124 @@ def pi_price(type_id: int, bust: bool = False):
         result['note'] = 'Set a Janice API key in Config to price PI output.'
     _pi_price_cache[type_id] = {'fetched_at': now, 'result': result}
     return result
+
+
+# ============================ Ship fitting (Pyfa eos) ============================
+# Vendored Pyfa `eos` engine (python/pyfa) computes fit stats headless; the
+# renderer owns the fit document and posts it here for a stateless recompute.
+
+def _require_pyfa():
+    if pyfa_engine is None:
+        raise HTTPException(503, f'Fitting engine unavailable: {globals().get("_PYFA_IMPORT_ERROR", "not loaded")}')
+    if not pyfa_engine.available():
+        raise HTTPException(503, 'Fitting engine unavailable: eve.db missing (build with build_eve_db.py).')
+
+
+def _fit_price(doc):
+    """Best-effort Jita sell valuation of everything in a fit (needs a Janice key)."""
+    cfg = load_config()
+    api_key = cfg.get('janice_api_key') or None
+    if not api_key:
+        return None
+    ids = set()
+    if doc.get('ship'):
+        d = pyfa_engine.item_detail(doc['ship']) if str(doc['ship']).isdigit() else None
+        if d:
+            ids.add(d['typeID'])
+    for coll in ('modules', 'drones', 'cargo'):
+        for row in doc.get(coll, []) or []:
+            for k in ('type', 'charge'):
+                v = row.get(k)
+                if v and str(v).isdigit():
+                    ids.add(int(v))
+    if not ids:
+        return None
+    try:
+        priced = fetch_immediate_prices(sorted(ids), 'Jita 4-4', api_key=api_key, user_agent=get_user_agent())
+    except Exception:
+        return None
+    total = 0.0
+    for row in doc.get('modules', []) or []:
+        for k in ('type', 'charge'):
+            v = row.get(k)
+            if v and str(v).isdigit():
+                total += (priced.get(int(v), {}) or {}).get('sell') or 0
+    for coll in ('drones', 'cargo'):
+        for row in doc.get(coll, []) or []:
+            v = row.get('type')
+            if v and str(v).isdigit():
+                total += ((priced.get(int(v), {}) or {}).get('sell') or 0) * int(row.get('amount', 1))
+    if doc.get('ship') and str(doc['ship']).isdigit():
+        total += (priced.get(int(doc['ship']), {}) or {}).get('sell') or 0
+    return round(total, 2)
+
+
+@app.get('/api/fit/status')
+def fit_status():
+    """Whether the fitting engine is ready (deps + eve.db present)."""
+    ok = pyfa_engine is not None and pyfa_engine.available()
+    return {'available': ok, 'error': None if ok else globals().get('_PYFA_IMPORT_ERROR', 'eve.db missing')}
+
+
+@app.get('/api/fit/ships')
+def fit_ships():
+    _require_pyfa()
+    return {'ships': pyfa_engine.list_ships()}
+
+
+@app.get('/api/fit/skills')
+def fit_skills():
+    _require_pyfa()
+    return {'skills': pyfa_engine.list_skills()}
+
+
+@app.get('/api/fit/items')
+def fit_items(q: str, categories: Optional[str] = None, limit: int = 60, slot: Optional[str] = None):
+    _require_pyfa()
+    cats = [c.strip() for c in categories.split(',')] if categories else None
+    return {'items': pyfa_engine.search_items(q, categories=cats, limit=min(200, max(1, limit)), slot=slot)}
+
+
+@app.get('/api/fit/item/{type_id}')
+def fit_item(type_id: int):
+    _require_pyfa()
+    d = pyfa_engine.item_detail(type_id)
+    if not d:
+        raise HTTPException(404, 'item not found')
+    return d
+
+
+@app.post('/api/fit/compute')
+def fit_compute(doc: dict, price: bool = True):
+    """Compute stats for a fit document. Optionally include a Jita sell valuation."""
+    _require_pyfa()
+    if not doc.get('ship'):
+        raise HTTPException(400, 'fit doc requires a ship')
+    stats = pyfa_engine.compute_fit(doc)
+    if stats.get('error'):
+        raise HTTPException(400, stats['error'])
+    if price:
+        stats['price'] = _fit_price(doc)
+    return stats
+
+
+@app.post('/api/fit/parse')
+def fit_parse(body: dict):
+    """Parse an EFT block into a fit document."""
+    _require_pyfa()
+    doc = pyfa_engine.parse_eft(body.get('eft', ''))
+    if doc.get('error'):
+        raise HTTPException(400, doc['error'])
+    return doc
+
+
+@app.post('/api/fit/export')
+def fit_export(doc: dict):
+    """Render a fit document back to EFT text."""
+    _require_pyfa()
+    if not doc.get('ship'):
+        raise HTTPException(400, 'fit doc requires a ship')
+    return {'eft': pyfa_engine.render_eft(doc)}
 
 
 def _slot_status(slot: str) -> dict:
