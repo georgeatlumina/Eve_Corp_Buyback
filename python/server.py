@@ -26,6 +26,10 @@ from auth import (
     VALID_SLOTS,
     PI_SLOTS,
     PI_SCOPES,
+    FIT_SLOTS,
+    FIT_SCOPES,
+    FIT_READ_SCOPE,
+    FIT_WRITE_SCOPE,
     build_authorize_url,
     character_id_from_access_token,
     clear_cached_tokens,
@@ -36,6 +40,7 @@ from auth import (
     get_valid_access_token,
     list_authenticated_slots,
     list_authenticated_pi_slots,
+    list_authenticated_fit_slots,
     load_cached_tokens,
     refresh_access_token,
     save_cached_tokens,
@@ -56,6 +61,9 @@ from esi import (
     fetch_character_planets,
     fetch_character_planet_detail,
     fetch_character_skills,
+    fetch_character_fittings,
+    create_character_fitting,
+    delete_character_fitting,
     fetch_incursions,
     fetch_market_prices,
     fetch_planet_info,
@@ -132,8 +140,8 @@ _auth_lock = threading.Lock()
 
 def _normalize_slot(slot: Optional[str]) -> str:
     s = slot or DEFAULT_SLOT
-    if s not in VALID_SLOTS and s not in PI_SLOTS:
-        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS + PI_SLOTS}')
+    if s not in VALID_SLOTS and s not in PI_SLOTS and s not in FIT_SLOTS:
+        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS + PI_SLOTS + FIT_SLOTS}')
     return s
 
 
@@ -805,6 +813,14 @@ def fit_item(type_id: int):
     return d
 
 
+@app.get('/api/fit/charges')
+def fit_charges(module_type_id: int):
+    """Charges/scripts a module accepts (its chargeGroups + size) — for a
+    compatible, browsable ammo picker."""
+    _require_pyfa()
+    return {'charges': pyfa_engine.compatible_charges(module_type_id)}
+
+
 @app.post('/api/fit/compute')
 def fit_compute(doc: dict, price: bool = True):
     """Compute stats for a fit document. Optionally include a Jita sell valuation."""
@@ -836,6 +852,182 @@ def fit_export(doc: dict):
     if not doc.get('ship'):
         raise HTTPException(400, 'fit doc requires a ship')
     return {'eft': pyfa_engine.render_eft(doc)}
+
+
+# ---- ESI in-game fitting sync (open/save/delete character fittings) ----
+_SLOT_FLAG = {3: 'HiSlot', 2: 'MedSlot', 1: 'LoSlot', 4: 'RigSlot', 5: 'SubSystemSlot'}
+_FLAG_SLOT = {'HiSlot': 3, 'MedSlot': 2, 'LoSlot': 1, 'RigSlot': 4, 'SubSystemSlot': 5}
+
+
+def _fit_scoped_slots():
+    """Yield (slot, token, character_id, name) for every authed slot carrying the
+    read_fittings scope — dedicated fitting slots plus any main slot (they have it)."""
+    try:
+        client_id, secret_key = get_app_credentials()
+    except Exception:
+        return
+    ua = get_user_agent()
+    for slot in list_authenticated_slots() + list_authenticated_fit_slots():
+        try:
+            token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            payload = decode_jwt_payload(token)
+        except Exception:
+            continue
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        if FIT_READ_SCOPE in scope_list:
+            yield slot, token, character_id_from_access_token(token), payload.get('name')
+
+
+def _fit_token_for(character_id, need_write=False):
+    """Return an access token for a character that can read (or write) fittings."""
+    want = FIT_WRITE_SCOPE if need_write else FIT_READ_SCOPE
+    client_id, secret_key = get_app_credentials()
+    ua = get_user_agent()
+    for slot in list_authenticated_slots() + list_authenticated_fit_slots():
+        try:
+            token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            payload = decode_jwt_payload(token)
+        except Exception:
+            continue
+        if character_id_from_access_token(token) != int(character_id):
+            continue
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        if want in scope_list:
+            return token
+    return None
+
+
+def _esi_fit_to_doc(esi_fit):
+    """Convert an ESI fitting to our fit document (modules + charges grouped by
+    slot flag, drones from DroneBay, cargo from Cargo)."""
+    by_flag = {}
+    drones, cargo = [], []
+    for it in esi_fit.get('items', []):
+        flag = it.get('flag', '')
+        tid, qty = it.get('type_id'), int(it.get('quantity', 1))
+        if flag == 'DroneBay':
+            drones.append({'type': tid, 'amount': qty})
+        elif flag == 'Cargo':
+            cargo.append({'type': tid, 'amount': qty})
+        else:
+            by_flag.setdefault(flag, []).append((tid, qty))
+    modules = []
+    for flag in sorted(by_flag, key=lambda f: (f.rstrip('0123456789'), int(''.join(filter(str.isdigit, f)) or 0))):
+        module_tid, charge_tid = None, None
+        for tid, _q in by_flag[flag]:
+            d = pyfa_engine.item_detail(tid)
+            if d and d.get('category') == 'Charge':
+                charge_tid = tid
+            else:
+                module_tid = tid
+        if module_tid is not None:
+            m = {'type': module_tid}
+            if charge_tid is not None:
+                m['charge'] = charge_tid
+            modules.append(m)
+    return {'ship': esi_fit.get('ship_type_id'), 'name': esi_fit.get('name', 'Imported'),
+            'description': esi_fit.get('description', ''), 'modules': modules, 'drones': drones,
+            'cargo': cargo, 'implants': [], 'boosters': [], 'skills': 'all5'}
+
+
+def _doc_to_esi_fit(doc):
+    """Convert our fit document to an ESI fitting body. Uses a compute pass to get
+    each module's slot + per-slot index for the flags (charges share the flag)."""
+    stats = pyfa_engine.compute_fit(doc)
+    if stats.get('error'):
+        raise HTTPException(400, stats['error'])
+    items = []
+    slot_counters = {}
+    for m in stats.get('modules', []):
+        base = _SLOT_FLAG.get(m.get('slot'))
+        if not base:
+            continue
+        idx = slot_counters.get(base, 0)
+        slot_counters[base] = idx + 1
+        flag = f'{base}{idx}'
+        items.append({'flag': flag, 'quantity': 1, 'type_id': m['typeID']})
+        if m.get('charge'):
+            items.append({'flag': flag, 'quantity': 1, 'type_id': m['charge']['typeID']})
+    for d in doc.get('drones', []) or []:
+        items.append({'flag': 'DroneBay', 'quantity': int(d.get('amount', 1)), 'type_id': int(d['type'])})
+    for c in doc.get('cargo', []) or []:
+        items.append({'flag': 'Cargo', 'quantity': int(c.get('amount', 1)), 'type_id': int(c['type'])})
+    name = (doc.get('name') or 'Fit')[:50]
+    desc = (doc.get('description') or 'Made with NDA Management Tool')[:500]
+    return {'name': name, 'description': desc, 'ship_type_id': stats['ship']['typeID'], 'items': items}
+
+
+@app.get('/api/fit/esi/characters')
+def fit_esi_characters():
+    """Characters (deduped) whose token can read/write in-game fittings."""
+    seen, out = set(), []
+    for _slot, token, cid, cname in _fit_scoped_slots():
+        if cid in seen:
+            continue
+        seen.add(cid)
+        payload = decode_jwt_payload(token)
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        out.append({'character_id': cid, 'name': cname, 'can_write': FIT_WRITE_SCOPE in scope_list})
+    out.sort(key=lambda c: (c.get('name') or '').lower())
+    return {'characters': out}
+
+
+@app.get('/api/fit/esi/fittings')
+def fit_esi_fittings(character_id: int):
+    """List a character's in-game saved fittings, converted to fit documents."""
+    _require_pyfa()
+    token = _fit_token_for(character_id)
+    if not token:
+        raise HTTPException(403, 'no authorized character with read_fittings for that id')
+    try:
+        raw = fetch_character_fittings(character_id, token, get_user_agent())
+    except Exception as e:
+        raise HTTPException(502, f'ESI fittings fetch failed: {e}')
+    out = []
+    for f in raw:
+        try:
+            doc = _esi_fit_to_doc(f)
+            out.append({'fitting_id': f.get('fitting_id'), 'name': f.get('name'),
+                        'ship_type_id': f.get('ship_type_id'), 'items': len(f.get('items', [])), 'doc': doc})
+        except Exception:
+            pass
+    out.sort(key=lambda x: (x.get('name') or '').lower())
+    return {'fittings': out}
+
+
+@app.post('/api/fit/esi/save')
+def fit_esi_save(body: dict):
+    """Save the given fit document to a character's in-game fittings (ESI write)."""
+    _require_pyfa()
+    character_id = body.get('character_id')
+    doc = body.get('doc')
+    if not character_id or not doc or not doc.get('ship'):
+        raise HTTPException(400, 'character_id and a fit doc with a ship are required')
+    token = _fit_token_for(character_id, need_write=True)
+    if not token:
+        raise HTTPException(403, 'no authorized character with write_fittings for that id')
+    esi_fit = _doc_to_esi_fit(doc)
+    try:
+        res = create_character_fitting(character_id, esi_fit, token, get_user_agent())
+    except Exception as e:
+        raise HTTPException(502, f'ESI fitting save failed: {e}')
+    return {'saved': True, 'fitting_id': res.get('fitting_id'), 'name': esi_fit['name']}
+
+
+@app.delete('/api/fit/esi/fittings')
+def fit_esi_delete(character_id: int, fitting_id: int):
+    """Delete an in-game saved fitting (ESI write)."""
+    token = _fit_token_for(character_id, need_write=True)
+    if not token:
+        raise HTTPException(403, 'no authorized character with write_fittings for that id')
+    try:
+        delete_character_fitting(character_id, fitting_id, token, get_user_agent())
+    except Exception as e:
+        raise HTTPException(502, f'ESI fitting delete failed: {e}')
+    return {'deleted': True, 'fitting_id': fitting_id}
 
 
 def _slot_status(slot: str) -> dict:
@@ -881,9 +1073,14 @@ def auth_login(slot: Optional[str] = None):
     cfg = load_config()
     client_id, _ = get_app_credentials()
     slot_name = _normalize_slot(slot)
-    # PI slots authorize alts with only the planetary scope; main slots get the
-    # full configured scope set.
-    scopes = list(PI_SCOPES) if slot_name in PI_SLOTS else cfg['scopes']
+    # PI/fitting slots authorize alts with only their minimal scope set; main
+    # slots get the full configured scope set (which includes fittings too).
+    if slot_name in PI_SLOTS:
+        scopes = list(PI_SCOPES)
+    elif slot_name in FIT_SLOTS:
+        scopes = list(FIT_SCOPES)
+    else:
+        scopes = cfg['scopes']
     state_token = secrets.token_urlsafe(32)
     with _auth_lock:
         _auth_state['pending'][state_token] = slot_name
@@ -892,6 +1089,12 @@ def auth_login(slot: Optional[str] = None):
     url = build_authorize_url(client_id, REDIRECT_URI, scopes, state_token)
     webbrowser.open(url)
     return {'opened': True, 'url': url, 'slot': slot_name}
+
+
+@app.get('/api/auth/fit-slots')
+def auth_fit_slots():
+    """Status for every dedicated fitting slot — Auth tab's Fitting Characters section."""
+    return {'slots': [_slot_status(s) for s in FIT_SLOTS]}
 
 
 @app.get('/api/auth/pi-slots')

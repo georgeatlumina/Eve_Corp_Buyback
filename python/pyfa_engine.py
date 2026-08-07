@@ -71,9 +71,9 @@ _SLOT_EFFECT = {'high': 12, 'med': 13, 'low': 11, 'rig': 2663, 'subsystem': 3772
 
 
 def search_items(query, categories=None, limit=60, slot=None):
+    """Search/browse fittable items. An empty query browses the whole
+    category/slot-filtered set (so the picker is scrollable without typing)."""
     query = (query or '').strip()
-    if len(query) < 2:
-        return []
     cats = tuple(categories) if categories else _FIT_CATEGORIES
     ph = ','.join('?' * len(cats))
     slot_join, slot_where, slot_params = '', '', ()
@@ -82,14 +82,54 @@ def search_items(query, categories=None, limit=60, slot=None):
         slot_join = 'join dgmtypeeffects te on te.typeID=t.typeID'
         slot_where = 'and te.effectID=?'
         slot_params = (eff,)
+    name_where, name_order, name_params = '', 't.metaLevel, t.typeName', ()
+    if query:
+        name_where = 'and t.typeName like ?'
+        name_order = '(t.typeName like ?) desc, t.metaLevel, t.typeName'
+        name_params = (f'%{query}%', f'{query}%')
     rows = _query(
         f"""select t.typeID, t.typeName, g.name gname, c.name cname, t.metaGroupID, t.metaLevel
             from invtypes t join invgroups g on t.groupID=g.groupID
             join invcategories c on g.categoryID=c.categoryID {slot_join}
-            where t.published=1 and c.name in ({ph}) and t.typeName like ? {slot_where}
-            order by (t.typeName like ?) desc, t.metaLevel, t.typeName limit ?""",
-        (*cats, f'%{query}%', *slot_params, f'{query}%', int(limit)))
+            where t.published=1 and c.name in ({ph}) {slot_where} {name_where}
+            order by {name_order} limit ?""",
+        (*cats, *slot_params, *name_params, int(min(400, limit))))
     return [{'typeID': r['typeID'], 'name': r['typeName'], 'group': r['gname'], 'category': r['cname'],
+             'metaGroupID': r['metaGroupID'], 'metaLevel': r['metaLevel']} for r in rows]
+
+
+# Module charge-compatibility: chargeGroup1..5 (allowed charge groups) + chargeSize.
+_CHARGE_GROUP_ATTRS = (604, 605, 606, 609, 610)
+_CHARGE_SIZE_ATTR = 128
+
+
+def compatible_charges(module_type_id):
+    """Charges a module accepts: items in its chargeGroup1..5 groups matching its
+    chargeSize (covers ammo AND scripts). Empty if the module takes no charge."""
+    attrs = _query(
+        'select attributeID, value from dgmtypeattribs where typeID=? and attributeID in (604,605,606,609,610,128)',
+        (int(module_type_id),))
+    groups, size = [], None
+    for r in attrs:
+        if r['attributeID'] == _CHARGE_SIZE_ATTR:
+            size = r['value']
+        elif r['value']:
+            groups.append(int(r['value']))
+    if not groups:
+        return []
+    gph = ','.join('?' * len(groups))
+    size_where, size_params = '', ()
+    if size is not None:
+        size_where = 'and (sz.value = ? or sz.value is null)'
+        size_params = (size,)
+    rows = _query(
+        f"""select t.typeID, t.typeName, g.name gname, t.metaGroupID, t.metaLevel
+            from invtypes t join invgroups g on t.groupID=g.groupID
+            left join dgmtypeattribs sz on sz.typeID=t.typeID and sz.attributeID=128
+            where t.published=1 and t.groupID in ({gph}) {size_where}
+            order by t.metaGroupID, t.metaLevel, t.typeName""",
+        (*groups, *size_params))
+    return [{'typeID': r['typeID'], 'name': r['typeName'], 'group': r['gname'], 'category': 'Charge',
              'metaGroupID': r['metaGroupID'], 'metaLevel': r['metaLevel']} for r in rows]
 
 
@@ -492,6 +532,7 @@ def _extract(fit):
             slot = int(m.slot) if m.slot is not None else None
             if slot is not None:
                 used_by_slot[slot] = used_by_slot.get(slot, 0) + 1
+            chargeable = bool(m.getModifiedItemAttr('chargeSize') or m.getModifiedItemAttr('chargeGroup1'))
             modules.append({
                 'position': m.position,
                 'slot': slot,
@@ -499,6 +540,7 @@ def _extract(fit):
                 'name': m.item.name,
                 'state': int(m.state),
                 'charge': ({'typeID': m.charge.ID, 'name': m.charge.name} if m.charge else None),
+                'chargeable': chargeable,
                 'cpu': round(m.getModifiedItemAttr('cpu') or 0, 2),
                 'pg': round(m.getModifiedItemAttr('power') or 0, 2),
             })

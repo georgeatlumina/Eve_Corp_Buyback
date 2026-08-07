@@ -631,6 +631,44 @@ def fetch_character_planets(character_id, access_token, user_agent):
     return resp.json() or []
 
 
+def fetch_character_fittings(character_id, access_token, user_agent):
+    """The character's saved in-game fittings: list of ``{fitting_id, name,
+    description, ship_type_id, items:[{type_id, flag, quantity}]}``. Needs
+    esi-fittings.read_fittings.v1."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/fittings/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or []
+
+
+def create_character_fitting(character_id, fitting, access_token, user_agent):
+    """Create a saved fitting so it shows in-game. ``fitting`` =
+    ``{name, description, ship_type_id, items:[{flag, quantity, type_id}]}``.
+    Returns ``{fitting_id}``. Needs esi-fittings.write_fittings.v1."""
+    resp = _session.post(
+        f'{ESI_BASE}/characters/{int(character_id)}/fittings/',
+        headers={'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+        json=fitting,
+    )
+    resp.raise_for_status()
+    return resp.json() or {}
+
+
+def delete_character_fitting(character_id, fitting_id, access_token, user_agent):
+    """Delete a saved fitting. Needs esi-fittings.write_fittings.v1."""
+    resp = _session.delete(
+        f'{ESI_BASE}/characters/{int(character_id)}/fittings/{int(fitting_id)}/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return True
+
+
 def fetch_character_skills(character_id, access_token, user_agent):
     """The authed character's trained skills: ``{skills: [{skill_id,
     active_skill_level, trained_skill_level, skillpoints_in_skill}], total_sp,

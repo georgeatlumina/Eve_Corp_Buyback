@@ -113,9 +113,9 @@
 
   function moduleCell(m, idx) {
     const st = STATE_OF[String(m.state)] || 'active';
-    const charge = m.charge
-      ? `<span class="fit-charge" data-charge="${idx}" title="Change charge">${escapeHtml(m.charge.name)}</span>`
-      : `<span class="fit-charge fit-charge-empty" data-charge="${idx}" title="Add charge">+ ammo</span>`;
+    let charge = '';
+    if (m.charge) charge = `<span class="fit-charge" data-charge="${idx}" title="Change ammo/script">${escapeHtml(m.charge.name)}</span>`;
+    else if (m.chargeable) charge = `<span class="fit-charge fit-charge-empty" data-charge="${idx}" title="Load ammo/script">+ ammo</span>`;
     return `<div class="fit-slot fit-mod" data-idx="${idx}">
       <span class="fit-state fit-state-${st}" data-state="${idx}" title="State: ${st} — click to cycle"></span>
       <span class="fit-mod-name" data-state="${idx}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
@@ -256,24 +256,43 @@
     inp.addEventListener('input', () => render(inp.value));
   }
 
+  function resultRow(it) {
+    return `<div class="fit-result" data-pick="${it.typeID}"><span class="fit-result-name">${escapeHtml(it.name)}</span><span class="fit-result-grp muted">${escapeHtml(it.group || '')}</span></div>`;
+  }
   function openItemBrowser(title, categories, onPick, slotKey) {
-    openModal(title, `<input class="fit-search" id="fit-search" placeholder="Search (2+ chars)…" autocomplete="off" />
-      <div class="fit-results" id="fit-results"><span class="muted">Type to search…</span></div>`);
+    openModal(title, `<input class="fit-search" id="fit-search" placeholder="Filter… (scroll to browse)" autocomplete="off" />
+      <div class="fit-results" id="fit-results"><span class="muted">Loading…</span></div>`);
     const inp = $('#fit-search'); inp.focus();
     let t;
     const search = async () => {
       const q = inp.value.trim();
-      if (q.length < 2) { $('#fit-results').innerHTML = '<span class="muted">Type to search…</span>'; return; }
       let url = `${API}/api/fit/items?q=${encodeURIComponent(q)}&categories=${encodeURIComponent(categories.join(','))}`;
       if (slotKey) url += `&slot=${slotKey}`;
       try {
         const items = (await fetch(url).then((r) => r.json())).items || [];
-        $('#fit-results').innerHTML = items.map((it) =>
-          `<div class="fit-result" data-pick="${it.typeID}"><span class="fit-result-name">${escapeHtml(it.name)}</span><span class="fit-result-grp muted">${escapeHtml(it.group)}</span></div>`).join('')
-          || '<span class="muted">No items match.</span>';
+        $('#fit-results').innerHTML = items.map(resultRow).join('') || '<span class="muted">No items match.</span>';
       } catch (e) { $('#fit-results').innerHTML = '<span class="fit-invalid">Search failed.</span>'; }
     };
+    search();   // browse immediately — no search required
     inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(search, 200); });
+    $('#fit-results')._onPick = onPick;
+  }
+
+  // Ammo/script picker restricted to a module's compatible charges, browsable.
+  async function openChargeBrowser(moduleTypeId, onPick) {
+    openModal('Load ammo / script', `<input class="fit-search" id="fit-search" placeholder="Filter compatible charges…" autocomplete="off" />
+      <div class="fit-results" id="fit-results"><span class="muted">Loading…</span></div>`);
+    const inp = $('#fit-search'); inp.focus();
+    let charges = [];
+    try { charges = (await fetch(`${API}/api/fit/charges?module_type_id=${moduleTypeId}`).then((r) => r.json())).charges || []; }
+    catch (e) { $('#fit-results').innerHTML = '<span class="fit-invalid">Failed to load charges.</span>'; return; }
+    const render = (q) => {
+      q = (q || '').trim().toLowerCase();
+      const list = q ? charges.filter((c) => c.name.toLowerCase().includes(q)) : charges;
+      $('#fit-results').innerHTML = list.length ? list.map(resultRow).join('') : '<span class="muted">No compatible charges.</span>';
+    };
+    render('');
+    inp.addEventListener('input', () => render(inp.value));
     $('#fit-results')._onPick = onPick;
   }
 
@@ -302,6 +321,71 @@
         <div class="fit-modal-actions"><button id="fit-eft-copy" type="button">Copy</button></div>`);
       $('#fit-eft-copy').addEventListener('click', () => { $('#fit-eft-out').select(); document.execCommand('copy'); setStatus('Copied EFT.'); });
     } catch (e) { setStatus('Export failed.'); }
+  }
+
+  // ------------------------------ ESI in-game fittings ------------------------------
+  async function fitCharacters(needWrite) {
+    let chars;
+    try { chars = (await fetch(`${API}/api/fit/esi/characters`).then((r) => r.json())).characters || []; }
+    catch (e) { setStatus('Could not reach ESI.'); return null; }
+    return needWrite ? chars.filter((c) => c.can_write) : chars;
+  }
+  function pickCharacter(chars, title, cb) {
+    if (chars.length === 1) { cb(chars[0]); return; }
+    openModal(title, chars.map((c) => `<div class="fit-result" data-char="${c.character_id}"><span class="fit-result-name">${escapeHtml(c.name)}</span></div>`).join(''));
+    $('#fit-modal-body').querySelectorAll('[data-char]').forEach((el) =>
+      el.addEventListener('click', () => cb(chars.find((c) => String(c.character_id) === el.dataset.char))));
+  }
+  async function openEveFittings() {
+    const chars = await fitCharacters(false);
+    if (chars == null) return;
+    if (!chars.length) { setStatus('No fitting-authorized character — re-login a main, or add a Fitting character, on the Auth tab.'); return; }
+    pickCharacter(chars, 'Open from which character?', async (c) => {
+      openModal(`${c.name} — in-game fits`, '<div class="fit-results" id="fit-eve-list"><span class="muted">Loading…</span></div>');
+      let fits;
+      try { fits = (await fetch(`${API}/api/fit/esi/fittings?character_id=${c.character_id}`).then((r) => r.json())).fittings || []; }
+      catch (e) { $('#fit-eve-list').innerHTML = '<span class="fit-invalid">Failed to load fittings.</span>'; return; }
+      const list = $('#fit-eve-list');
+      list.innerHTML = fits.length ? fits.map((f) => `<div class="fit-result" data-fit="${f.fitting_id}">
+        <span class="fit-result-name">${escapeHtml(f.name)}</span><span class="fit-result-grp muted">${f.items} items</span>
+        <button class="fit-del" data-delfit="${f.fitting_id}" title="Delete in-game" type="button">✕</button></div>`).join('')
+        : '<span class="muted">No saved fittings in-game.</span>';
+      list.addEventListener('click', (e) => {
+        const del = e.target.closest('[data-delfit]');
+        if (del) { e.stopPropagation(); deleteEveFit(c.character_id, del.dataset.delfit, del); return; }
+        const row = e.target.closest('[data-fit]');
+        if (row) { const f = fits.find((x) => String(x.fitting_id) === row.dataset.fit); if (f) loadEveFit(f); }
+      });
+    });
+  }
+  function loadEveFit(f) {
+    fit = f.doc; fit.skills = fit.skills || 'all5';
+    $('#fit-name').value = fit.name || '';
+    updateSkillsLabel(); closeModal(); recompute();
+  }
+  async function deleteEveFit(charId, fitId, btn) {
+    if (!confirm('Delete this fitting from the game?')) return;
+    try {
+      const r = await fetch(`${API}/api/fit/esi/fittings?character_id=${charId}&fitting_id=${fitId}`, { method: 'DELETE' });
+      if (r.ok) { const row = btn.closest('[data-fit]'); if (row) row.remove(); setStatus('Deleted in-game fit.'); }
+      else setStatus('Delete failed.');
+    } catch (e) { setStatus('Delete failed.'); }
+  }
+  async function saveToEve() {
+    if (!fit || !fit.ship) { setStatus('Nothing to save.'); return; }
+    const chars = await fitCharacters(true);
+    if (chars == null) return;
+    if (!chars.length) { setStatus('No write-authorized character — re-login a main on the Auth tab.'); return; }
+    const doSave = async (c) => {
+      fit.name = ($('#fit-name').value || '').trim() || fit.name || 'Fit';
+      closeModal(); setStatus(`Saving to ${c.name}…`);
+      try {
+        const r = await fetch(`${API}/api/fit/esi/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ character_id: c.character_id, doc: fit }) });
+        const d = await r.json();
+        setStatus(r.ok ? `Saved "${d.name}" to ${c.name}'s in-game fittings.` : `Save failed: ${d.detail || r.statusText}`);
+      } catch (e) { setStatus('Save failed.'); }
+    };
+    pickCharacter(chars, 'Save to which character?', doSave);
   }
 
   // ------------------------------ saved fits (localStorage) ------------------------------
@@ -429,6 +513,8 @@
     $('#fit-ship-btn').addEventListener('click', openShipBrowser);
     $('#fit-import-btn').addEventListener('click', openEftImport);
     $('#fit-export-btn').addEventListener('click', () => { if (fit) openEftExport(); else setStatus('Nothing to export.'); });
+    $('#fit-eve-open-btn').addEventListener('click', openEveFittings);
+    $('#fit-eve-save-btn').addEventListener('click', saveToEve);
     $('#fit-clear-btn').addEventListener('click', () => { if (fit) { fit.modules = []; fit.drones = []; fit.cargo = []; recompute(); } });
     $('#fit-name').addEventListener('change', (e) => { if (fit) fit.name = e.target.value; });
     $('#fit-skills-btn').addEventListener('click', openSkillsEditor);
@@ -446,7 +532,12 @@
       const del = e.target.closest('[data-del]');
       if (del) { removeModule(+del.dataset.del); return; }
       const chg = e.target.closest('[data-charge]');
-      if (chg) { const idx = +chg.dataset.charge; openItemBrowser('Choose charge', ['Charge'], (id) => { setCharge(idx, id); closeModal(); }); return; }
+      if (chg) {
+        const idx = +chg.dataset.charge;
+        const mtid = (lastStats && lastStats.modules[idx]) ? lastStats.modules[idx].typeID : null;
+        if (mtid) openChargeBrowser(mtid, (id) => { setCharge(idx, id); closeModal(); });
+        return;
+      }
       const stt = e.target.closest('[data-state]');
       if (stt) { cycleState(+stt.dataset.state); return; }
       const adrone = e.target.closest('[data-adddrone]');

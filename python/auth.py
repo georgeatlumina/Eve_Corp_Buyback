@@ -29,7 +29,14 @@ PI_SLOTS = tuple(f'pi{i}' for i in range(1, 25))
 # read_skills was added keep working for colonies but need a one-time re-auth
 # for the optimizer's planet-capacity pull.
 PI_SCOPES = ('publicData', 'esi-planets.manage_planets.v1', 'esi-skills.read_skills.v1')
-ALL_SLOTS = VALID_SLOTS + PI_SLOTS
+# Fitting slots authorize alts *just* for reading/writing in-game saved fittings,
+# so you can sync fits from extra characters without spending main slots. The
+# main slots also carry these scopes (see config DEFAULTS) so your mains sync too.
+FIT_SLOTS = tuple(f'fit{i}' for i in range(1, 13))
+FIT_READ_SCOPE = 'esi-fittings.read_fittings.v1'
+FIT_WRITE_SCOPE = 'esi-fittings.write_fittings.v1'
+FIT_SCOPES = ('publicData', FIT_READ_SCOPE, FIT_WRITE_SCOPE)
+ALL_SLOTS = VALID_SLOTS + PI_SLOTS + FIT_SLOTS
 
 
 def get_app_credentials():
@@ -141,6 +148,12 @@ def list_authenticated_pi_slots():
     """Return authenticated PI slot names (planetary-scope alts)."""
     slots = _load_all_slots()
     return [s for s in PI_SLOTS if s in slots]
+
+
+def list_authenticated_fit_slots():
+    """Return authenticated dedicated fitting slot names."""
+    slots = _load_all_slots()
+    return [s for s in FIT_SLOTS if s in slots]
 
 
 def get_valid_access_token(client_id, secret_key, user_agent, slot=DEFAULT_SLOT):

@@ -842,6 +842,24 @@ function renderPiAuthSection(container, piInfo) {
     <div class="auth-pi-add-row">${add} ${count}</div>`;
 }
 
+function renderFitAuthSection(container, info) {
+  const authed = info.filter((s) => s.authenticated);
+  const free = info.find((s) => !s.authenticated);
+  const cards = authed.map((s) => {
+    const err = s.error ? `<span class="auth-pi-err" title="${escapeHtml(s.error)}">⚠</span>` : '';
+    return `<div class="auth-pi-card" data-slot="${s.slot}">
+      <span class="auth-pi-name">${escapeHtml(s.character || s.slot)}${err}</span>
+      <button type="button" class="auth-slot-logout linklike auth-pi-x" data-slot="${s.slot}" title="Log out">✕</button>
+    </div>`;
+  }).join('');
+  const count = `<span class="muted auth-pi-count">${authed.length}/${info.length} authorized</span>`;
+  const add = free
+    ? `<button type="button" class="auth-slot-login auth-pi-add" data-slot="${free.slot}">+ Add fitting character</button>`
+    : `<span class="muted">All ${info.length} fitting slots in use.</span>`;
+  container.innerHTML = `<div class="auth-pi-grid">${cards || '<span class="muted">No fitting characters yet.</span>'}</div>
+    <div class="auth-pi-add-row">${add} ${count}</div>`;
+}
+
 async function refreshAuthStatus() {
   const container = $('#auth-slots');
   if (container) container.innerHTML = '<p class="muted">Checking slots…</p>';
@@ -871,6 +889,15 @@ async function refreshAuthStatus() {
       const pr = await fetch(`${API}/api/auth/pi-slots`);
       const piInfo = pr.ok ? ((await pr.json()).slots || []) : [];
       renderPiAuthSection(piContainer, piInfo);
+    } catch (_) { /* leave as-is on failure */ }
+  }
+  // Fitting Characters — a separate, minimal-scope auth just for in-game fittings.
+  const fitContainer = $('#auth-fit-slots');
+  if (fitContainer) {
+    try {
+      const fr = await fetch(`${API}/api/auth/fit-slots`);
+      const fitInfo = fr.ok ? ((await fr.json()).slots || []) : [];
+      renderFitAuthSection(fitContainer, fitInfo);
     } catch (_) { /* leave as-is on failure */ }
   }
 

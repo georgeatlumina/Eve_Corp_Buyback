@@ -44,6 +44,11 @@ DEFAULTS = {
         # open positions auto-reconcile. Needs Accountant or Trader corp role on
         # the authed character.
         'esi-markets.read_corporation_orders.v1',
+        # Fitting sync: read/write the character's in-game saved fittings so the
+        # Fitting tab can open and save fits. Also requested by the dedicated
+        # fitting slots (auth.FIT_SCOPES) for extra characters.
+        'esi-fittings.read_fittings.v1',
+        'esi-fittings.write_fittings.v1',
         # NB: the PI colony scope (esi-planets.manage_planets.v1) is NOT here —
         # it's requested only by the dedicated PI slots (auth.PI_SCOPES) so PI
         # alts can be authorized without re-scoping the main characters.
