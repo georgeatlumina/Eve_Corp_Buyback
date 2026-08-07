@@ -25,6 +25,7 @@
           <button class="tab-btn" data-tab="readiness">Market Readiness</button>
           <button class="tab-btn" data-tab="module-sorter">Module Sorter</button>
           <button class="tab-btn" data-tab="plex-value">PLEX Value</button>
+          <button class="tab-btn" data-tab="fitting">Fitting</button>
           <button class="tab-btn" data-tab="market">Market</button>
         </div>
       </div>
@@ -657,6 +658,40 @@
       <div id="pic-list" class="pic-list"></div>
     </section>
 
+    <section id="tab-fitting" class="tab">
+      <h2>Fitting <span class="muted" style="font-size:.5em;font-weight:400">— powered by Pyfa's eos engine</span></h2>
+      <div id="fit-unavailable" class="muted" hidden></div>
+      <div class="fit-toolbar">
+        <button id="fit-ship-btn" type="button">Choose ship…</button>
+        <input id="fit-name" type="text" class="fit-name" placeholder="fit name" />
+        <button id="fit-skills-btn" type="button" class="secondary">Skills: All V</button>
+        <button id="fit-save-btn" type="button" class="secondary">Save</button>
+        <select id="fit-saved" class="fit-saved" title="Saved fits"><option value="">— saved fits —</option></select>
+        <button id="fit-del-saved" type="button" class="secondary">Delete</button>
+        <button id="fit-import-btn" type="button" class="secondary">Import EFT</button>
+        <button id="fit-export-btn" type="button" class="secondary">Export EFT</button>
+        <button id="fit-clear-btn" type="button" class="secondary">Clear</button>
+        <span id="fit-status" class="muted"></span>
+      </div>
+      <div class="fit-layout">
+        <div class="fit-main">
+          <div id="fit-empty" class="fit-empty muted">Choose a ship to start fitting. Modules compute live (DPS, tank, cap, speed) at your chosen skills.</div>
+          <div id="fit-racks" class="fit-racks"></div>
+        </div>
+        <div id="fit-stats" class="fit-stats"></div>
+      </div>
+
+      <div id="fit-modal" class="fit-modal" hidden>
+        <div class="fit-modal-box">
+          <div class="fit-modal-head">
+            <strong id="fit-modal-title">Browse</strong>
+            <button id="fit-modal-close" type="button" class="fit-modal-close" aria-label="Close">✕</button>
+          </div>
+          <div class="fit-modal-body" id="fit-modal-body"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-contracts" class="tab">
       <h2>Contracts &amp; quotas</h2>
       <p class="muted">Scans every outstanding item-exchange contract posted at the configured home structure by <strong>any corp that a logged-in slot is a Contract Manager / Director of</strong>. Add more slots on the Auth tab to cover more corps — each one widens the visible set. <strong>ESI limitation:</strong> corps you don't have a director token for stay invisible, even if their contracts show in the in-game alliance tab. Expanding a ship also shows how many bare hulls of that type are currently in the Acquisitions Inventory, as of your last scan.</p>
@@ -1114,6 +1149,7 @@
   <script src="panels.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
+  <script src="fitting.js"></script>
   <script src="pi-colonies.js"></script>
   <script src="indy.js"></script>
   <script src="builds-overview.js"></script>
