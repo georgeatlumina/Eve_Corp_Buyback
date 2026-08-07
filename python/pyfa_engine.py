@@ -533,6 +533,14 @@ def _extract(fit):
             if slot is not None:
                 used_by_slot[slot] = used_by_slot.get(slot, 0) + 1
             chargeable = bool(m.getModifiedItemAttr('chargeSize') or m.getModifiedItemAttr('chargeGroup1'))
+
+            def ma(attr, factor=1.0):
+                try:
+                    v = m.getModifiedItemAttr(attr)
+                    return round(v * factor, 2) if v else None
+                except Exception:
+                    return None
+
             modules.append({
                 'position': m.position,
                 'slot': slot,
@@ -543,6 +551,12 @@ def _extract(fit):
                 'chargeable': chargeable,
                 'cpu': round(m.getModifiedItemAttr('cpu') or 0, 2),
                 'pg': round(m.getModifiedItemAttr('power') or 0, 2),
+                # detail line: cap use, cycle (s), optimal/falloff (m), tracking
+                'capUse': ma('capacitorNeed'),
+                'cycle': ma('duration', 0.001) or ma('speed', 0.001),
+                'optimal': ma('maxRange'),
+                'falloff': ma('falloff'),
+                'tracking': ma('trackingSpeed'),
             })
         except Exception:
             pass

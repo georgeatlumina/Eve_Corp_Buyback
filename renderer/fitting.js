@@ -36,6 +36,19 @@
     return Math.round(n);
   }
   const setStatus = (t) => { const e = $('#fit-status'); if (e) e.textContent = t || ''; };
+  const ICON = (id, size) => `https://images.evetech.net/types/${id}/icon?size=${size || 32}`;
+  const RENDER = (id, size) => `https://images.evetech.net/types/${id}/render?size=${size || 64}`;
+  const fmtKm = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`);
+  function moduleDetail(m) {
+    const parts = [];
+    if (m.cpu) parts.push(`CPU ${m.cpu}`);
+    if (m.pg) parts.push(`PG ${m.pg}`);
+    if (m.capUse) parts.push(`${m.capUse} GJ`);
+    if (m.cycle) parts.push(`${m.cycle}s`);
+    if (m.optimal) parts.push(m.falloff ? `${fmtKm(m.optimal)} +${fmtKm(m.falloff)}` : fmtKm(m.optimal));
+    if (m.tracking) parts.push(`trk ${m.tracking}`);
+    return parts.length ? `<div class="fit-mod-detail muted">${parts.join(' · ')}</div>` : '';
+  }
 
   // ------------------------------ compute ------------------------------
   async function recompute() {
@@ -59,7 +72,7 @@
     $('#fit-empty').hidden = true;
     const slots = s.resources.slots || {};
     const mods = (s.modules || []).map((m, i) => ({ m, i }));   // index i == fit.modules index
-    const header = `<div class="fit-ship-head"><strong>${escapeHtml(s.ship.name)}</strong></div>`;
+    const header = `<div class="fit-ship-head"><img class="fit-ship-img" src="${RENDER(s.ship.typeID, 64)}" alt="" loading="lazy"/><strong>${escapeHtml(s.ship.name)}</strong></div>`;
     const racks = RACKS.map((rack) => {
       const total = (slots[rack.key] || {}).total || 0;
       if (!total) return '';
@@ -100,6 +113,7 @@
     const rows = drones.map((d, i) => `
       <div class="fit-slot fit-drone" data-didx="${i}">
         <span class="fit-state ${d.active ? 'fit-state-active' : 'fit-state-offline'}" data-dtoggle="${i}" title="${d.active ? 'active' : 'inactive'} — click to toggle"></span>
+        <img class="fit-mod-ic" src="${ICON(d.typeID, 32)}" alt="" loading="lazy"/>
         <span class="fit-mod-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
         <span class="fit-drone-dps muted">${fmt(d.dps)} dps</span>
         <span class="fit-amt"><button data-damt="${i}" data-delta="-1" type="button">−</button><b>${d.amount}</b><button data-damt="${i}" data-delta="1" type="button">+</button></span>
@@ -114,13 +128,19 @@
   function moduleCell(m, idx) {
     const st = STATE_OF[String(m.state)] || 'active';
     let charge = '';
-    if (m.charge) charge = `<span class="fit-charge" data-charge="${idx}" title="Change ammo/script">${escapeHtml(m.charge.name)}</span>`;
+    if (m.charge) charge = `<span class="fit-charge" data-charge="${idx}" title="Change ammo/script"><img class="fit-charge-ic" src="${ICON(m.charge.typeID, 32)}" alt="" loading="lazy"/>${escapeHtml(m.charge.name)}</span>`;
     else if (m.chargeable) charge = `<span class="fit-charge fit-charge-empty" data-charge="${idx}" title="Load ammo/script">+ ammo</span>`;
     return `<div class="fit-slot fit-mod" data-idx="${idx}">
       <span class="fit-state fit-state-${st}" data-state="${idx}" title="State: ${st} — click to cycle"></span>
-      <span class="fit-mod-name" data-state="${idx}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
-      ${charge}
-      <button class="fit-del" data-del="${idx}" title="Remove" type="button">✕</button>
+      <img class="fit-mod-ic" src="${ICON(m.typeID, 32)}" alt="" loading="lazy" data-state="${idx}"/>
+      <div class="fit-mod-main">
+        <div class="fit-mod-top">
+          <span class="fit-mod-name" data-state="${idx}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
+          ${charge}
+          <button class="fit-del" data-del="${idx}" title="Remove" type="button">✕</button>
+        </div>
+        ${moduleDetail(m)}
+      </div>
     </div>`;
   }
 
@@ -257,7 +277,7 @@
   }
 
   function resultRow(it) {
-    return `<div class="fit-result" data-pick="${it.typeID}"><span class="fit-result-name">${escapeHtml(it.name)}</span><span class="fit-result-grp muted">${escapeHtml(it.group || '')}</span></div>`;
+    return `<div class="fit-result" data-pick="${it.typeID}"><img class="fit-result-ic" src="${ICON(it.typeID, 32)}" alt="" loading="lazy"/><span class="fit-result-name">${escapeHtml(it.name)}</span><span class="fit-result-grp muted">${escapeHtml(it.group || '')}</span></div>`;
   }
   function openItemBrowser(title, categories, onPick, slotKey) {
     openModal(title, `<input class="fit-search" id="fit-search" placeholder="Filter… (scroll to browse)" autocomplete="off" />
