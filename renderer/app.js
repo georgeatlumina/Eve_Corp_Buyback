@@ -4553,7 +4553,19 @@ async function acqRunHullAnalysis(root, statusEl) {
 
   let market = aaState.market || null;
   if (!market) {
+    // Poll marketProgress to show real page-by-page fill while stream loads.
+    const pollId = setInterval(() => {
+      const p = aaState.marketProgress;
+      if (!p) return;
+      if (p.maxPages) {
+        const pct = Math.min(55, Math.round((p.page / p.maxPages) * 55));
+        acqProgressSet(progressBar, pct, `Loading UEXO market… page ${p.page}/${p.maxPages}`, false);
+      } else {
+        acqProgressSet(progressBar, 0, p.message || 'Loading UEXO market…', true);
+      }
+    }, 150);
     await loadMarket(false);
+    clearInterval(pollId);
     market = aaState.market || null;
   }
 
