@@ -1854,6 +1854,11 @@ def _validate_stream(cfg, req):
     ice_refining_eff = float(cfg.get('ice_refining_efficiency') or non_moon_ore_refining_eff)
     non_moon_payout_frac = float(cfg.get('non_moon_payout_fraction') or 0.90)
     moon_payout_frac = float(cfg.get('moon_payout_fraction') or 0.80)
+    # Pay out the oldest contracts first: process (and therefore stream/display)
+    # moon/ore contracts oldest -> newest by issue date. ESI's date_issued is
+    # ISO-8601, so a lexicographic sort is chronological; any contract missing
+    # the field sorts first.
+    buckets['moon'].sort(key=lambda c: c.get('date_issued') or '')
     total_moon = len(buckets['moon'])
     moon_dropped = 0  # contracts hidden because they contain non-mining items
 

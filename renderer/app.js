@@ -625,6 +625,18 @@ function renderMoonTab() {
   for (const r of list) root.appendChild(buildMoonRow(r));
 }
 
+// "issued N days ago" for a contract's ISO date_issued. Whole days, floored;
+// "today" / "1 day ago" for the small cases. Empty string if the date is absent.
+function daysAgoLabel(iso) {
+  if (!iso) return '';
+  const then = new Date(iso);
+  if (isNaN(then.getTime())) return '';
+  const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+  if (days <= 0) return 'issued today';
+  if (days === 1) return 'issued 1 day ago';
+  return `issued ${days} days ago`;
+}
+
 function buildMoonRow(r) {
   const checks = r.checks || {};
   const flags = r.flags || [];
@@ -764,7 +776,7 @@ function buildMoonRow(r) {
     ${prismaticiteBlock}`;
 
   div.innerHTML = `
-    <h4>Contract ${r.contract_id} — ${escapeHtml(r.issuer_name || 'unknown issuer')}</h4>
+    <h4>Contract ${r.contract_id} — ${escapeHtml(r.issuer_name || 'unknown issuer')}${r.date_issued ? ` <span class="moon-age muted" title="${escapeAttr(new Date(r.date_issued).toLocaleString())}">· ${daysAgoLabel(r.date_issued)}</span>` : ''}</h4>
     ${flagBanners}
     <div class="meta">Issuer: ${escapeHtml(r.issuer_name || '')} (${r.issuer_id ?? '?'})</div>
     <div class="meta">Title: ${escapeHtml(r.title || '(empty)')}</div>

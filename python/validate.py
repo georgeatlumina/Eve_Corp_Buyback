@@ -113,6 +113,7 @@ def process_moon_contract(contract, structures, payout_lookup):
         'price': contract.get('price'),
         'start_location_id': contract.get('start_location_id'),
         'issuer_id': contract.get('issuer_id'),
+        'date_issued': contract.get('date_issued'),
         'checks': {},
         'flags': [],
     }
