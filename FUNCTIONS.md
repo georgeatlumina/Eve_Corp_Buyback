@@ -68,6 +68,17 @@ and a one-line description.
 | `POST /api/pi/templates/save` | `pi_template_save` | [server.py](python/server.py) | Write a colony model to the EVE folder as importable JSON (`pi_layout.save_template_file`). |
 | `GET /api/pi/colonies` | `pi_colonies` | [server.py](python/server.py) | Live colonies for every authed char with `esi-planets.manage_planets.v1`: extractor products + expiry + per-colony status. |
 | `GET /api/pi/colony` | `pi_colony_detail` | [server.py](python/server.py) | One live colony converted to the builder model (`pi_layout.from_esi_detail`) for "Open in Builder". |
+| `GET /api/pi/planet-capacity` | `pi_planet_capacity` | [server.py](python/server.py) | Per-toon max PI planets (1 + Interplanetary Consolidation skill) for the optimizer; needs `esi-skills.read_skills.v1` — toons without it are flagged `needs_reauth`. |
+| `GET /api/pi/price` | `pi_price` | [server.py](python/server.py) | Jita buy/sell for a commodity + chain-wide POCO tax base (adjusted prices) for the optimizer's ISK/day valuation. |
+| `GET /api/fit/status` | `fit_status` | [server.py](python/server.py) | Whether the fitting engine is ready (eos deps + `eve.db` present). |
+| `GET /api/fit/ships` / `skills` | `fit_ships` / `fit_skills` | [server.py](python/server.py) | Browsable ship / skill lists from `eve.db`. |
+| `GET /api/fit/items` | `fit_items` | [server.py](python/server.py) | Search/browse fittable items; `slot` filters to a rack, `max_pg`/`max_cpu` restrict to what the ship can fit. Empty `q` browses. |
+| `GET /api/fit/item/{id}` / `GET /api/fit/charges` | `fit_item` / `fit_charges` | [server.py](python/server.py) | Item detail; a module's compatible ammo/scripts (chargeGroups + size). |
+| `POST /api/fit/compute` | `fit_compute` | [server.py](python/server.py) | Compute a fit document → full stats (DPS/EHP/resists/reps/cap/nav/resources/per-module), optionally Jita-priced. Stateless (`pyfa_engine.compute_fit`). |
+| `POST /api/fit/parse` / `POST /api/fit/export` | `fit_parse` / `fit_export` | [server.py](python/server.py) | EFT text ↔ fit document. |
+| `GET /api/fit/esi/characters` / `fittings` | `fit_esi_characters` / `fit_esi_fittings` | [server.py](python/server.py) | Characters that can read/write in-game fittings; a character's saved fittings converted to fit documents. |
+| `POST /api/fit/esi/save` / `DELETE /api/fit/esi/fittings` | `fit_esi_save` / `fit_esi_delete` | [server.py](python/server.py) | Save a fit to / delete a fit from the in-game fitting window (ESI write). Doc↔ESI conversion derives slot flags from a compute pass. |
+| `GET /api/auth/fit-slots` | `auth_fit_slots` | [server.py](python/server.py) | Status for the dedicated fitting-auth slots (fit1..12, `fittings.read/write` only). |
 | `GET /api/liquidation/corp-orders` | `liquidation_corp_orders` | [server.py](python/server.py) | Live corp Jita **sell** orders enriched with cost basis, best-sell/undercut, days-to-sell, window time-left, STALE flag. Needs `esi-markets.read_corporation_orders.v1` (returns `{configured:false, reason}` otherwise). |
 | `GET /api/liquidation/courier-contracts` | `liquidation_courier_contracts` | [server.py](python/server.py) | Corp ESI **courier** contracts bucketed active/completed/problem, assignee + route names resolved, configured provider flagged. Needs `esi-contracts.read_corporation_contracts.v1`. |
 | `POST /api/builds/parse` | `builds_parse` | [2436](python/server.py#L2436) | Parse an in-game "missing materials" paste into categorized `{name, type_id, qty, category}` line items **without** saving (via `_builds_resolve_and_classify`). The planner stores the result into the target slot. 400 when nothing parses. |
@@ -252,6 +263,29 @@ Module constants: `STORE_PATH`, `CATEGORIES = ('minerals', 'pi', 'other')`, `MIN
 | `fetch_system_kills(user_agent)` | [428](python/esi.py#L428) | Per-system kill stats (last hour). |
 | `fetch_system_jumps(user_agent)` | [439](python/esi.py#L439) | Per-system jump counts. |
 | `fetch_incursions(user_agent)` | [450](python/esi.py#L450) | Active incursions. |
+| `fetch_character_planets` / `_planet_detail` | [esi.py](python/esi.py) | PI colony summary / one colony's layout (`manage_planets` scope). |
+| `fetch_character_skills(character_id, access_token, user_agent)` | [esi.py](python/esi.py) | Trained skills (`read_skills` scope) — PI optimizer's max-planets. |
+| `fetch_character_fittings(character_id, access_token, user_agent)` | [esi.py](python/esi.py) | Character's saved in-game fittings (`fittings.read`). |
+| `create_character_fitting(character_id, fitting, access_token, user_agent)` | [esi.py](python/esi.py) | Create a saved fitting so it shows in-game (`fittings.write`). |
+| `delete_character_fitting(character_id, fitting_id, access_token, user_agent)` | [esi.py](python/esi.py) | Delete a saved fitting (`fittings.write`). |
+
+---
+
+## `python/pyfa_engine.py` — headless Pyfa `eos` bridge (~450 LOC)
+
+[python/pyfa_engine.py](python/pyfa_engine.py) — see also the vendored engine in
+[python/pyfa/](python/pyfa/) and [NOTICE-fitting.md](NOTICE-fitting.md) (LGPL/GPL).
+
+| Function | Purpose |
+|---|---|
+| `available()` / `_bootstrap()` | Lazy one-time eos init: put `python/pyfa` on `sys.path`, force in-memory saveddata onto a shared `StaticPool` (so FastAPI worker threads see the schema), point gamedata at `eve.db`, import `eos.db`. |
+| `compute_fit(doc)` | Build a transient eos fit from the fit document (ship, modules w/ state+charge, drones, implants/boosters/cargo, T3 mode, skills), compute, extract the full stats dict (`_extract`), roll back. Pure per call (lock-serialized). |
+| `_extract(fit)` | Pull DPS (+byType, per-weapon), volley, HP/EHP + resists, reps (`tank`/`sustainableTank` → stable/max EHP/s), cap flow, speed/targeting, resources (CPU/PG/calibration/hardpoints/slots + over-limit), per-module detail (cap/cycle/optimal/falloff/tracking/chargeable), drones/implants/cargo, mode. |
+| `parse_eft(text)` / `render_eft(doc)` | EFT block ↔ fit document (names↔typeIDs via `eve.db`; drones/cargo by trailing `xN` + category). |
+| `list_ships()` / `list_skills()` / `item_detail(id)` | Raw read-only sqlite browse over `eve.db`. |
+| `search_items(query, categories, slot, max_pg, max_cpu)` | Browse/search fittable items; `slot` filters by fitting-effect, `max_pg`/`max_cpu` drop modules the ship can't fit. Empty query browses. |
+| `compatible_charges(module_type_id)` | A module's accepted ammo/scripts (chargeGroup1..5 + chargeSize). |
+| `build_eve_db.py` (script) | Rebuild `eve.db` from a Pyfa checkout's static data (wx-free config stub). |
 
 ---
 

@@ -36,6 +36,18 @@ payout. Highlights:
   let directors aggregate every builder's shortfall against alliance stock.
 - A **Stockpile** tab exposing the alliance's on-hand minerals / PI / other
   materials, with a one-click Janice appraisal of the whole pile.
+- A **Planetary** group — **PI Planner & Builder** (rank profitable P0→P4
+  chains for a system, then lay out a colony on a rotatable planet and export
+  importable templates; plus a planet **optimizer** that allocates your toons'
+  planets for maximum output with ISK/day, logistics, and saved plans) and
+  **PI Colonies** (live extractor countdowns across your characters).
+- A **Fitting** tab (Combat group) — a full ship fitter built on **Pyfa's
+  `eos` engine** run headless in the sidecar: browse ships/modules, load
+  compatible ammo/scripts, drones/implants/cargo/T3, configurable skills, and
+  **module grouping**; a Pyfa-style stats panel (DPS, EHP + resists, stable/max
+  reps, cap, nav, resources) and a **DPS-vs-distance** graph; **open/save fits
+  to the in-game fitting window via ESI**, plus EFT import/export and local
+  save/load.
 
 > Internal docs: [CONTEXT.md](CONTEXT.md) (architecture & key flows),
 > [STRUCTURE.md](STRUCTURE.md) (file layout), [FUNCTIONS.md](FUNCTIONS.md)

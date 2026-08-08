@@ -77,6 +77,26 @@ A **Stockpile** tab tracks the alliance's on-hand industry-material stock
 (minerals / PI / other) shared across admins, feeding the Build Fulfilment
 fill-status comparison.
 
+A **Planetary** group (needs no special scope for the planner) covers PI
+end-to-end: the **PI Planner & Builder** ranks the most profitable P0→P4 chains a
+system can build, lets you lay out a colony on a rotatable planet and export
+importable EVE templates, and includes a **planet optimizer** that allocates your
+authenticated toons' planets for maximum output (ISK/day at Jita buy / buyback /
+direct-export, chain-wide POCO tax, Epithal/DST logistics, saved plans; toon
+planet caps come from ESI skills). **PI Colonies** shows live extractor countdowns
+across characters.
+
+A **Fitting** tab (Combat group) is a full ship fitter built on **Pyfa's `eos`
+calculation engine**, vendored under `python/pyfa/` and run **headless** in the
+sidecar (no wxPython) against a bundled `eve.db`. The renderer owns the fit
+document and posts it to `/api/fit/compute` on every edit for a stateless,
+Pyfa-accurate recompute (DPS, EHP + resists, stable/max reps, cap, nav,
+resources) plus a DPS-vs-distance graph. It supports compatible-ammo browsing,
+drones/implants/cargo/T3, configurable skills, module grouping, EFT
+import/export, and — via ESI — **opening and saving fits to the in-game fitting
+window**. Because eos's calc core is GPLv3, the distributed app is licensed under
+the **GPL v3**; see [NOTICE-fitting.md](NOTICE-fitting.md).
+
 ## Stakeholders & users
 
 - **Primary user:** Naval Defence Alliance leadership running buyback intake. Single-user
