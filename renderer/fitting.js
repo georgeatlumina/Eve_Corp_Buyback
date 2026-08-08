@@ -416,7 +416,8 @@
   function resultRow(it) {
     return `<div class="fit-result" data-pick="${it.typeID}"><img class="fit-result-ic" src="${ICON(it.typeID, 32)}" alt="" loading="lazy"/><span class="fit-result-name">${escapeHtml(it.name)}</span><span class="fit-result-grp muted">${escapeHtml(it.group || '')}</span></div>`;
   }
-  function openItemBrowser(title, categories, onPick, slotKey) {
+  function openItemBrowser(title, categories, onPick, slotKey, opts) {
+    opts = opts || {};
     openModal(title, `<input class="fit-search" id="fit-search" placeholder="Filter… (scroll to browse)" autocomplete="off" />
       <div class="fit-results" id="fit-results"><span class="muted">Loading…</span></div>`);
     const inp = $('#fit-search'); inp.focus();
@@ -425,6 +426,8 @@
       const q = inp.value.trim();
       let url = `${API}/api/fit/items?q=${encodeURIComponent(q)}&categories=${encodeURIComponent(categories.join(','))}`;
       if (slotKey) url += `&slot=${slotKey}`;
+      if (opts.maxPg) url += `&max_pg=${opts.maxPg}`;
+      if (opts.maxCpu) url += `&max_cpu=${opts.maxCpu}`;
       try {
         const items = (await fetch(url).then((r) => r.json())).items || [];
         $('#fit-results').innerHTML = items.map(resultRow).join('') || '<span class="muted">No items match.</span>';
@@ -699,7 +702,13 @@
     // slot-grid interactions (delegated)
     $('#fit-racks').addEventListener('click', (e) => {
       const add = e.target.closest('[data-add]');
-      if (add) { const sk = SLOT_KEY[add.dataset.add]; openItemBrowser(`Add ${sk} module`, ['Module', 'Subsystem'], (id) => { addModule(id); closeModal(); }, sk); return; }
+      if (add) {
+        const sk = SLOT_KEY[add.dataset.add];
+        const r = lastStats && lastStats.resources;
+        const opts = r ? { maxPg: Math.round(Math.max(300, r.pg.total * 2.5)), maxCpu: Math.round(Math.max(500, r.cpu.total * 2.5)) } : {};
+        openItemBrowser(`Add ${sk} module`, ['Module', 'Subsystem'], (id) => { addModule(id); closeModal(); }, sk, opts);
+        return;
+      }
       const grpBtn = e.target.closest('[data-grouptype]');
       if (grpBtn) { toggleGroupType(grpBtn.dataset.grouptype); return; }
       const del = e.target.closest('[data-del]');

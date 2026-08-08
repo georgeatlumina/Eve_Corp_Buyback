@@ -70,9 +70,11 @@ def list_skills():
 _SLOT_EFFECT = {'high': 12, 'med': 13, 'low': 11, 'rig': 2663, 'subsystem': 3772}
 
 
-def search_items(query, categories=None, limit=60, slot=None):
+def search_items(query, categories=None, limit=60, slot=None, max_pg=None, max_cpu=None):
     """Search/browse fittable items. An empty query browses the whole
-    category/slot-filtered set (so the picker is scrollable without typing)."""
+    category/slot-filtered set (so the picker is scrollable without typing).
+    ``max_pg``/``max_cpu`` (a ship's outputs × a headroom factor) drop modules
+    the ship can't fit — so a frigate's list isn't led by capital modules."""
     query = (query or '').strip()
     cats = tuple(categories) if categories else _FIT_CATEGORIES
     ph = ','.join('?' * len(cats))
@@ -82,6 +84,17 @@ def search_items(query, categories=None, limit=60, slot=None):
         slot_join = 'join dgmtypeeffects te on te.typeID=t.typeID'
         slot_where = 'and te.effectID=?'
         slot_params = (eff,)
+    # fitting-headroom filter: module power (attr 30) / cpu (attr 50) must be
+    # within the ship's outputs (× factor). Modules with no such attr pass.
+    fit_join, fit_where, fit_params = '', '', ()
+    if max_pg is not None:
+        fit_join += ' left join dgmtypeattribs pw on pw.typeID=t.typeID and pw.attributeID=30'
+        fit_where += ' and (pw.value is null or pw.value <= ?)'
+        fit_params += (float(max_pg),)
+    if max_cpu is not None:
+        fit_join += ' left join dgmtypeattribs cp on cp.typeID=t.typeID and cp.attributeID=50'
+        fit_where += ' and (cp.value is null or cp.value <= ?)'
+        fit_params += (float(max_cpu),)
     name_where, name_order, name_params = '', 't.metaLevel, t.typeName', ()
     if query:
         name_where = 'and t.typeName like ?'
@@ -90,10 +103,10 @@ def search_items(query, categories=None, limit=60, slot=None):
     rows = _query(
         f"""select t.typeID, t.typeName, g.name gname, c.name cname, t.metaGroupID, t.metaLevel
             from invtypes t join invgroups g on t.groupID=g.groupID
-            join invcategories c on g.categoryID=c.categoryID {slot_join}
-            where t.published=1 and c.name in ({ph}) {slot_where} {name_where}
+            join invcategories c on g.categoryID=c.categoryID {slot_join}{fit_join}
+            where t.published=1 and c.name in ({ph}) {slot_where}{fit_where} {name_where}
             order by {name_order} limit ?""",
-        (*cats, *slot_params, *name_params, int(min(400, limit))))
+        (*cats, *slot_params, *fit_params, *name_params, int(min(400, limit))))
     return [{'typeID': r['typeID'], 'name': r['typeName'], 'group': r['gname'], 'category': r['cname'],
              'metaGroupID': r['metaGroupID'], 'metaLevel': r['metaLevel']} for r in rows]
 
