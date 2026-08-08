@@ -722,6 +722,35 @@ def fetch_market_prices(user_agent, ttl=3600):
     return out
 
 
+_industry_systems_cache = {'at': 0.0, 'data': None}
+
+
+def fetch_industry_systems(user_agent, ttl=1800):
+    """Return ``{system_id: {activity: cost_index}}`` from ESI /industry/systems/.
+
+    The per-system cost indices (manufacturing / reaction / invention / copying /
+    research_*) drive job install fees. Public endpoint; one call covers every
+    system, cached in-process for ``ttl`` seconds (indices move slowly)."""
+    now = time.time()
+    if _industry_systems_cache['data'] is not None and now - _industry_systems_cache['at'] < ttl:
+        return _industry_systems_cache['data']
+    resp = _session.get(
+        f'{ESI_BASE}/industry/systems/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+    )
+    resp.raise_for_status()
+    out = {}
+    for row in resp.json() or []:
+        sid = row.get('solar_system_id')
+        if sid is None:
+            continue
+        out[int(sid)] = {ci.get('activity'): float(ci.get('cost_index') or 0.0)
+                         for ci in (row.get('cost_indices') or [])}
+    _industry_systems_cache.update(at=now, data=out)
+    return out
+
+
 def fetch_constellation_info(constellation_id, user_agent):
     resp = _session.get(
         f'{ESI_BASE}/universe/constellations/{int(constellation_id)}/',

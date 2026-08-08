@@ -1604,3 +1604,14 @@ body.popout-calc .pib-calc > summary { display: none; }
 .prod-tree-root .prod-act { display: inline-block; min-width: 3.8em; font-size: 0.78em; }
 .prod-act-buy { color: #d0a24a; }
 .prod-act-raw { color: #8a9a8f; }
+
+/* Profit Favourites */
+.fav-add { display: flex; gap: 0.5em; align-items: center; margin: 0.6em 0; }
+.fav-add input { flex: 1; max-width: 420px; padding: 0.45em 0.6em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 5px; font-size: 0.9em; }
+.fav-table th[data-sort] { cursor: pointer; user-select: none; }
+.fav-table th[data-sort]:hover { color: #cfe6da; }
+.fav-table th.fav-sorted { color: #6fd0a0; }
+.fav-open { color: #7fb3d5; text-decoration: none; }
+.fav-open:hover { text-decoration: underline; }
+.good-text { color: #6fd0a0; }
+.bad-text { color: #e59a9a; }

@@ -37,6 +37,7 @@ hidden_imports = [
     'auth',
     'config',
     'esi',
+    'industry',
     'janice',
     'liquidation',
     'market',

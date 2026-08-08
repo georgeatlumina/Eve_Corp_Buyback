@@ -65,6 +65,7 @@ from esi import (
     create_character_fitting,
     delete_character_fitting,
     fetch_incursions,
+    fetch_industry_systems,
     fetch_market_prices,
     fetch_planet_info,
     fetch_region_info,
@@ -100,6 +101,7 @@ from janice import (
     items_from_appraisal,
 )
 import builds
+import industry
 import liquidation
 import pi as pi_planner
 import pi_layout
@@ -726,6 +728,310 @@ def pi_price(type_id: int, bust: bool = False):
         result['note'] = 'Set a Janice API key in Config to price PI output.'
     _pi_price_cache[type_id] = {'fetched_at': now, 'result': result}
     return result
+
+
+# ============================ Production Planner (industry) ============================
+# Multi-tier manufacturing + reaction BOM explosion (python/industry.py, backed by
+# the bundled data/industry.json). Given a target build list + on-hand stock and an
+# industry config (ME, structure/reaction bonuses, buy-vs-build overrides), returns
+# the jobs to run and the raw materials to buy, then prices both against Jita via
+# Janice (immediate sell = acquisition cost) and estimates job install cost from
+# ESI adjusted prices (EIV × system cost index × (1 + tax)). Pure-engine + pricing
+# split mirrors the PI and refining flows.
+
+class IndustryPlanRequest(BaseModel):
+    targets_text: Optional[str] = None          # pasted "Name xN" list
+    targets: Optional[list] = None              # [{type_id|name, qty}]
+    stock_text: Optional[str] = None            # pasted EVE inventory
+    stock: Optional[dict] = None                # {type_id: qty}
+    me: float = 10                              # global manufacturing ME %
+    structure_material_mult: float = 1.0        # manufacturing facility/rig material multiplier
+    reaction_material_mult: float = 1.0         # reaction facility/rig material multiplier
+    buy_ids: Optional[list] = None              # type_ids to buy instead of build
+    cost_index: float = 0.05                    # fallback flat cost index (when no system set)
+    system: Optional[str] = None                # solar system for live per-activity cost indices
+    tax: float = 0.0                            # facility tax fraction on install cost
+    invention: bool = True                      # account for T2 invention (datacores/decryptors/ME)
+    decryptor: Optional[str] = None             # decryptor name (industry.DECRYPTORS key) or None
+    invention_skill_level: int = 4              # assumed level of the 3 invention skills
+    include_tree: bool = True                   # build the hierarchical production tree
+    market: str = 'Jita 4-4'
+    price: bool = True
+
+
+@app.get('/api/industry/decryptors')
+def industry_decryptors():
+    """The invention decryptors (name + probability/ME/TE/run modifiers) for the
+    planner's decryptor picker."""
+    return {'decryptors': [
+        {'key': k, 'name': v['name'] or 'No decryptor', 'prob': v['prob'],
+         'me': v['me'], 'te': v['te'], 'runs': v['runs']}
+        for k, v in industry.DECRYPTORS.items()
+    ]}
+
+
+@app.get('/api/industry/cost-indices')
+def industry_cost_indices(system: str = ''):
+    """Live per-activity cost indices for a solar system (manufacturing /
+    reaction / invention / …), for the planner's system picker. Returns
+    ``{name, system_id, indices}`` or ``{name, error}`` when it can't resolve."""
+    _ci, info = _industry_cost_indices(system, 0.0, get_user_agent())
+    return info or {'name': '', 'indices': {}}
+
+
+@app.get('/api/industry/search')
+def industry_search(q: str = '', limit: int = 25):
+    """Type-ahead over buildable products (manufacturing + reaction outputs).
+    Returns ``[{type_id, name, activity}]`` matching ``q`` (case-insensitive
+    substring), prefix matches first."""
+    data = industry.load_industry_data()
+    ql = (q or '').strip().lower()
+    if not ql:
+        return {'results': []}
+    hits = []
+    for tid, recipe in data['recipes'].items():
+        name = industry.type_name(tid, data)
+        pos = name.lower().find(ql)
+        if pos >= 0:
+            hits.append((pos, name, tid, recipe['activity']))
+    hits.sort(key=lambda h: (h[0], h[1]))
+    return {'results': [{'type_id': t, 'name': n, 'activity': a}
+                        for _pos, n, t, a in hits[:max(1, min(200, limit))]]}
+
+
+def _industry_resolve_stock(stock_field, stock_text, data):
+    stock = {}
+    for k, v in (stock_field or {}).items():
+        try:
+            stock[int(k)] = stock.get(int(k), 0) + float(v)
+        except (TypeError, ValueError):
+            continue
+    if stock_text:
+        for row in stockpile.parse_paste(stock_text):
+            tid = industry.resolve_type(row['name'], data)
+            if tid:
+                stock[tid] = stock.get(tid, 0) + row['qty']
+    return stock
+
+
+def _industry_fetch_prices(type_ids, market, api_key, data):
+    """One Janice appraisal for a set of type_ids -> {type_id: {sell, buy}} + the
+    price source. Best-effort: returns ({}, 'error: …') on failure."""
+    prices = {}
+    if not type_ids:
+        return prices, None
+    paste = '\n'.join(industry.type_name(tid, data) for tid in sorted(type_ids))
+    try:
+        appr = appraise_items(paste, market, api_key=api_key)
+        for row in appr['items']:
+            prices[row['type_id']] = {'sell': row['sell_unit'], 'buy': row['buy_unit']}
+        return prices, appr.get('source')
+    except Exception as e:  # noqa: BLE001 — pricing is best-effort
+        return prices, f'error: {e}'
+
+
+def _industry_cost_indices(system_name, flat_index, ua):
+    """Resolve a system's live per-activity cost indices (manufacturing /
+    reaction / invention) from ESI, falling back to ``flat_index`` for anything
+    missing. Returns (cost_indices_dict, system_info | None). ``system_info``
+    carries an ``error`` key when the name doesn't resolve."""
+    cost_indices = {'default': flat_index}
+    if not (system_name or '').strip():
+        return cost_indices, None
+    try:
+        sid, canonical = resolve_system_id(system_name, ua)
+        if not sid:
+            return cost_indices, {'name': system_name, 'error': 'system not found'}
+        idx = fetch_industry_systems(ua).get(int(sid), {})
+        cost_indices = {
+            'manufacturing': idx.get('manufacturing', flat_index),
+            'reaction': idx.get('reaction', flat_index),
+            'invention': idx.get('invention', flat_index),
+            'default': flat_index,
+        }
+        return cost_indices, {'system_id': int(sid), 'name': canonical, 'indices': idx}
+    except Exception as e:  # noqa: BLE001 — index lookup is best-effort
+        return cost_indices, {'name': system_name, 'error': str(e)}
+
+
+def _industry_apply_prices(result, targets, prices, adjusted, cost_indices, tax, data):
+    """Cost a plan result against the shared price maps: annotates raw rows +
+    jobs with per-line cost and returns a totals dict. Raw acquisition = Jita
+    sell; job install = EIV (base materials × ESI adjusted price) × the activity's
+    cost index × (1+tax). ``cost_indices`` maps activity -> index (with a
+    'default' fallback), so manufacturing and reaction jobs bill at their own
+    system index."""
+    recipes = data['recipes']
+    default_idx = cost_indices.get('default', 0.0)
+    totals = {'materials_cost': 0.0, 'jobs_cost': 0.0, 'build_cost': 0.0,
+              'buy_cost': 0.0, 'product_sell_value': 0.0, 'invention_cost': 0.0}
+    for r in result['raw_materials']:
+        unit = (prices.get(r['type_id']) or {}).get('sell') or 0.0
+        r['unit_price'] = unit
+        r['line_cost'] = unit * r['qty']
+        totals['materials_cost'] += r['line_cost']
+        if r.get('invention'):
+            totals['invention_cost'] += r['line_cost']
+    for j in result['jobs']:
+        recipe = recipes.get(j['type_id'], {})
+        eiv = sum((adjusted.get(m[0], 0.0) * m[1]) for m in recipe.get('materials', [])) * j['runs']
+        install = eiv * cost_indices.get(j['activity'], default_idx) * (1.0 + tax)
+        j['eiv'] = eiv
+        j['install_cost'] = install
+        totals['jobs_cost'] += install
+    for t in targets:
+        p = prices.get(t['type_id']) or {}
+        totals['buy_cost'] += (p.get('sell') or 0.0) * t['qty']
+        totals['product_sell_value'] += (p.get('buy') or 0.0) * t['qty']
+    totals['build_cost'] = totals['materials_cost'] + totals['jobs_cost']
+    return totals
+
+
+@app.post('/api/industry/plan')
+def industry_plan(req: IndustryPlanRequest):
+    """Explode a build request into jobs + a raw shopping list, then price it."""
+    data = industry.load_industry_data()
+
+    targets = []
+    unresolved = []
+    for t in (req.targets or []):
+        tid = t.get('type_id') or industry.resolve_type(t.get('name', ''), data)
+        if tid:
+            targets.append({'type_id': int(tid), 'qty': int(t.get('qty') or 1)})
+        else:
+            unresolved.append(t.get('name'))
+    if req.targets_text:
+        for p in industry.parse_targets(req.targets_text, data):
+            if p['unresolved']:
+                unresolved.append(p['name'])
+            else:
+                targets.append({'type_id': p['type_id'], 'qty': p['qty']})
+    if not targets:
+        raise HTTPException(400, 'No resolvable build targets. Use exact EVE item names or type IDs.')
+
+    stock = _industry_resolve_stock(req.stock, req.stock_text, data)
+    engine_cfg = {
+        'me': req.me,
+        'structure_material_mult': req.structure_material_mult,
+        'reaction_material_mult': req.reaction_material_mult,
+        'buy_ids': req.buy_ids or [],
+        'invention': req.invention,
+        'decryptor': req.decryptor,
+        'invention_skill_level': req.invention_skill_level,
+        'include_tree': req.include_tree,
+    }
+    result = industry.plan(targets, stock=stock, config=engine_cfg, data=data)
+    result['unresolved_targets'] = unresolved
+
+    totals = {'materials_cost': 0.0, 'jobs_cost': 0.0, 'build_cost': 0.0,
+              'buy_cost': 0.0, 'product_sell_value': 0.0, 'invention_cost': 0.0}
+    pricing = {'market': req.market, 'priced': False, 'source': None,
+               'api_key': bool((load_config().get('janice_api_key') or '').strip())}
+
+    if req.price:
+        ua = get_user_agent()
+        api_key = load_config().get('janice_api_key') or None
+        price_ids = {r['type_id'] for r in result['raw_materials']} | {t['type_id'] for t in targets}
+        prices, pricing['source'] = _industry_fetch_prices(price_ids, req.market, api_key, data)
+        pricing['priced'] = bool(prices)
+        try:
+            adjusted = fetch_market_prices(ua)
+        except Exception:
+            adjusted = {}
+        cost_indices, cost_system = _industry_cost_indices(req.system, req.cost_index, ua)
+        totals = _industry_apply_prices(result, targets, prices, adjusted, cost_indices, req.tax, data)
+        result['cost_system'] = cost_system
+
+    result['totals'] = totals
+    result['pricing'] = pricing
+    result['config'] = {'me': req.me, 'structure_material_mult': req.structure_material_mult,
+                        'reaction_material_mult': req.reaction_material_mult,
+                        'cost_index': req.cost_index, 'tax': req.tax}
+    return result
+
+
+class IndustryProfitRequest(BaseModel):
+    items: list = []                            # [type_id] or [{type_id}] product ids
+    batch: int = 100                            # units built per item (amortizes reaction/invention minimums)
+    me: float = 10
+    structure_material_mult: float = 1.0
+    reaction_material_mult: float = 1.0
+    cost_index: float = 0.05
+    system: Optional[str] = None                # solar system for live per-activity cost indices
+    tax: float = 0.0
+    sales_fee: float = 0.036                    # broker + sales tax on the sell revenue
+    invention: bool = True
+    decryptor: Optional[str] = None
+    invention_skill_level: int = 4
+    market: str = 'Jita 4-4'
+
+
+@app.post('/api/industry/profit')
+def industry_profit(req: IndustryProfitRequest):
+    """Compare the build profitability of a list of favourite products.
+
+    Each item is built at a **batch** quantity (default 100) so reaction- and
+    invention-run minimums amortize the way they do in practice, then every
+    number is reported **per unit**. All materials + products are priced in ONE
+    Janice call, so N favourites cost a single round-trip. Sorted by unit profit."""
+    data = industry.load_industry_data()
+    batch = max(1, int(req.batch or 1))
+    ids = []
+    seen = set()
+    for it in (req.items or []):
+        tid = (it.get('type_id') or industry.resolve_type(it.get('name', ''), data)) if isinstance(it, dict) \
+            else industry.resolve_type(it, data)
+        if tid and int(tid) in data['recipes'] and int(tid) not in seen:
+            seen.add(int(tid))
+            ids.append(int(tid))
+    if not ids:
+        return {'rows': [], 'batch': batch, 'pricing': {'market': req.market, 'priced': False}}
+
+    engine_cfg = {'me': req.me, 'structure_material_mult': req.structure_material_mult,
+                  'reaction_material_mult': req.reaction_material_mult, 'invention': req.invention,
+                  'decryptor': req.decryptor, 'invention_skill_level': req.invention_skill_level,
+                  'include_tree': False}
+
+    plans = []
+    price_ids = set()
+    for tid in ids:
+        res = industry.plan([{'type_id': tid, 'qty': batch}], config=engine_cfg, data=data)
+        plans.append((tid, res))
+        price_ids |= {r['type_id'] for r in res['raw_materials']} | {tid}
+
+    ua = get_user_agent()
+    api_key = load_config().get('janice_api_key') or None
+    prices, source = _industry_fetch_prices(price_ids, req.market, api_key, data)
+    try:
+        adjusted = fetch_market_prices(ua)
+    except Exception:
+        adjusted = {}
+    cost_indices, cost_system = _industry_cost_indices(req.system, req.cost_index, ua)
+
+    rows = []
+    for tid, res in plans:
+        totals = _industry_apply_prices(res, [{'type_id': tid, 'qty': batch}], prices, adjusted,
+                                        cost_indices, req.tax, data)
+        sell_unit = (prices.get(tid) or {}).get('sell') or 0.0
+        revenue_unit = sell_unit * (1.0 - req.sales_fee)
+        build_unit = totals['build_cost'] / batch
+        profit_unit = revenue_unit - build_unit
+        rows.append({
+            'type_id': tid,
+            'name': industry.type_name(tid, data),
+            'build_cost': build_unit,
+            'materials_cost': totals['materials_cost'] / batch,
+            'jobs_cost': totals['jobs_cost'] / batch,
+            'invention_cost': totals['invention_cost'] / batch,
+            'sell_value': revenue_unit,
+            'profit': profit_unit,
+            'margin': (profit_unit / build_unit) if build_unit > 0 else None,
+            'priced': sell_unit > 0 and build_unit > 0,
+        })
+    rows.sort(key=lambda r: (r['profit'] is None, -(r['profit'] or 0)))
+    return {'rows': rows, 'batch': batch, 'cost_system': cost_system,
+            'pricing': {'market': req.market, 'source': source, 'priced': bool(prices),
+                        'api_key': bool((load_config().get('janice_api_key') or '').strip())}}
 
 
 # ============================ Ship fitting (Pyfa eos) ============================
