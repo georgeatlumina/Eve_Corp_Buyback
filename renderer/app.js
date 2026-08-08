@@ -466,6 +466,8 @@ async function loadConfig() {
   $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
   $('[name=moon_payout_fraction]').value = cfg.moon_payout_fraction ?? 0.80;
   $('[name=non_moon_payout_fraction]').value = cfg.non_moon_payout_fraction ?? 0.90;
+  $('[name=acq_shopping_min_coverage]').value = cfg.acq_shopping_min_coverage ?? 0.5;
+  $('[name=acq_shopping_max_isk_gap]').value = cfg.acq_shopping_max_isk_gap ?? 500_000_000;
 
   renderStructures(Array.isArray(cfg.structures) ? cfg.structures : []);
 
@@ -577,6 +579,8 @@ function collectConfigForm() {
     market_history_pat_write: (fd.get('market_history_pat_write') || '').toString().trim(),
     stockpile_group_name: (fd.get('stockpile_group_name') || '').toString().trim(),
     stockpile_allow_push: $('[name=stockpile_allow_push]')?.checked || false,
+    acq_shopping_min_coverage: parseFloat(fd.get('acq_shopping_min_coverage')) || 0.5,
+    acq_shopping_max_isk_gap: parseFloat(fd.get('acq_shopping_max_isk_gap')) || 500_000_000,
   };
 }
 
@@ -4431,18 +4435,17 @@ function acqUpdateFinderAvailability(root) {
   const missing = acqFinderMissingScans();
   const warnEl = root.querySelector('#acq-find-warning');
   const buttons = [
-    root.querySelector('#acq-find-full'),
+    root.querySelector('#acq-find-hulls'),
     root.querySelector('#acq-find-nohull'),
-    root.querySelector('#acq-find-market'),
   ];
   if (missing.length) {
     warnEl.hidden = false;
     warnEl.textContent = `Run ${missing.join(' and ')} first — the build finder needs both to match inventory against quota gaps.`;
-    buttons.forEach((b) => { b.disabled = true; });
+    buttons.forEach((b) => { if (b) b.disabled = true; });
   } else {
     warnEl.hidden = true;
     warnEl.textContent = '';
-    buttons.forEach((b) => { b.disabled = false; });
+    buttons.forEach((b) => { if (b) b.disabled = false; });
   }
 }
 
@@ -4731,12 +4734,16 @@ function renderAcquisitionsTab() {
     </div>
     <div id="acq-find-warning" class="muted" style="font-size:0.8rem;color:#e8a838;margin-top:0.6rem" hidden></div>
     <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
-      <button id="acq-find-full" class="btn" title="Quota ships this inventory can build outright">Find full hull + fits</button>
-      <button id="acq-find-nohull" class="btn" title="Every module present, hull missing">Find fits without hulls</button>
-      <button id="acq-find-market" class="btn" title="80%+ complete, remainder buyable at UEXO">Find market-completable</button>
+      <button id="acq-find-hulls" class="btn" title="Progressive hull completion analysis: inventory, market, shopping list">Analyse Hulls</button>
+      <button id="acq-find-nohull" class="btn" title="Every module present, hull missing">Analyse Fits</button>
       <span id="acq-find-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
-    <div id="acq-find-results" style="margin-top:0.75rem"></div>
+    <div id="acq-find-results" style="margin-top:0.75rem">
+      <div id="acq-section-inventory" hidden></div>
+      <div id="acq-section-market" hidden></div>
+      <div id="acq-section-shopping" hidden></div>
+      <div id="acq-section-outofreach" hidden></div>
+    </div>
     <div class="progress-area" id="acq-progress" hidden>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="progress-step muted">starting…</div>
@@ -4773,12 +4780,10 @@ function renderAcquisitionsTab() {
   const findStatusEl = root.querySelector('#acq-find-status');
   const findResultsEl = root.querySelector('#acq-find-results');
   acqUpdateFinderAvailability(root);
-  root.querySelector('#acq-find-full').addEventListener('click',
-    () => acqRunFinder(ACQ_MODES.FULL, findResultsEl, findStatusEl));
+  root.querySelector('#acq-find-hulls').addEventListener('click',
+    () => acqRunHullAnalysis(root, findStatusEl));
   root.querySelector('#acq-find-nohull').addEventListener('click',
     () => acqRunFinder(ACQ_MODES.FITS_NO_HULL, findResultsEl, findStatusEl));
-  root.querySelector('#acq-find-market').addEventListener('click',
-    () => acqRunMarketFinder(findResultsEl, findStatusEl));
 
   addBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add'));
   replaceBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'replace'));
