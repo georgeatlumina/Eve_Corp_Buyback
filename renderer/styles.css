@@ -665,6 +665,9 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .srp-table { width: 100%; }
 .srp-table .text-end, .srp-table th.text-end { text-align: right; }
 .srp-table td, .srp-table th { vertical-align: middle; }
+.srp-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.srp-sortable:hover { color: #cfe6da; }
+.srp-sort-arrow { color: #777; font-size: 0.85em; }
 .srp-table tr.srp-dec-accept { background: rgba(74, 170, 136, 0.12); }
 .srp-table tr.srp-dec-reject { background: rgba(212, 68, 68, 0.12); }
 .srp-info { font-size: 0.8em; margin-top: 0.15em; }

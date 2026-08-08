@@ -6230,7 +6230,7 @@ const SRP_CAT_ORDER = ['standard', 'logistics', 'links', 'interdictor', 'fightcl
 const SRP_LOGI_GROUPS = new Set(['logistics', 'logistics frigate']);
 const SRP_DICTOR_GROUPS = new Set(['interdictor']);
 
-let srpState = { fleets: [], rows: [], view: 'list', fleetId: null, csrf: null, wallet: null, scanned: false };
+let srpState = { fleets: [], rows: [], view: 'list', fleetId: null, csrf: null, wallet: null, scanned: false, pilotSort: null };
 
 function srpAutoCategory(shipName) {
   const g = (shipTypesByNameMap?.get((shipName || '').toLowerCase())?.group_name || '').toLowerCase();
@@ -6502,7 +6502,15 @@ function renderSrpFleet(root) {
   const freqs = (srpState.rows || []).filter((r) => r.fleetId === fid);
 
   let acceptTotal = 0, pendingTotal = 0, nAccept = 0, nReject = 0;
-  const body = freqs.map((r) => {
+  // Display-only ordering — sorts a copy so decisions (keyed by pk) and the
+  // totals below are unaffected. Natural (scan) order when pilotSort is null.
+  const ordered = srpState.pilotSort
+    ? [...freqs].sort((a, b) => {
+        const c = (a.pilot || '').localeCompare(b.pilot || '', undefined, { sensitivity: 'base' });
+        return srpState.pilotSort === 'desc' ? -c : c;
+      })
+    : freqs;
+  const body = ordered.map((r) => {
     const payout = srpPayout(r.category, r.lossAmt);
     const pending = srpIsPending(r);
     if (pending) pendingTotal += payout;
@@ -6548,7 +6556,7 @@ function renderSrpFleet(root) {
     </div>
     <table class="items-table srp-table">
       <thead><tr>
-        <th>Pilot</th><th>Ship</th><th class="text-end">KB Loss</th><th>Category</th>
+        <th class="srp-sortable" id="srp-sort-pilot" title="Sort by pilot name">Pilot <span class="srp-sort-arrow">${srpState.pilotSort === 'asc' ? '▲' : srpState.pilotSort === 'desc' ? '▼' : '⇅'}</span></th><th>Ship</th><th class="text-end">KB Loss</th><th>Category</th>
         <th class="text-end">Recommended</th><th>Decision</th><th>Kill</th><th>Status</th>
       </tr></thead>
       <tbody>${body || '<tr><td colspan="8" class="muted">No requests.</td></tr>'}</tbody>
@@ -6751,6 +6759,12 @@ document.addEventListener('click', async (e) => {
   if (delRow) { deleteSrpFleet(parseInt(delRow.dataset.fleet, 10)); return; }
   if (e.target.closest('#srp-delete-fleet')) { deleteSrpFleet(srpState.fleetId); return; }
   if (e.target.closest('#srp-back')) { srpBackToList(); return; }
+  if (e.target.closest('#srp-sort-pilot')) {
+    // First click sorts A→Z; clicking again flips the direction.
+    srpState.pilotSort = srpState.pilotSort === 'asc' ? 'desc' : 'asc';
+    renderSrp();
+    return;
+  }
   const tog = e.target.closest('#srp-content .srp-tog');
   if (tog && !tog.disabled) {
     const row = (srpState.rows || []).find((r) => String(r.pk) === String(tog.dataset.pk));
