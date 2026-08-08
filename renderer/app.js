@@ -4585,6 +4585,12 @@ async function acqRunHullAnalysis(root, statusEl) {
     const key = `${target.shipTypeId}||${target.fitName || ''}`;
     if (satisfiedAll.has(key)) continue;
 
+    const hullQty = depletedPool.get(String(target.shipTypeId)) || 0;
+    if (hullQty < 1) {
+      outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no hull in stock' });
+      continue;
+    }
+
     const gap = computeShoppingGap(target, depletedPool, market);
     if (gap.coverage >= minCoverage && gap.gapIsk <= maxGapIsk) {
       candidates.push({ target, gap });
