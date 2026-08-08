@@ -169,6 +169,13 @@ DEFAULTS = {
     # standard location (<Documents>/EVE/PlanetaryInteractionTemplates). The PI
     # layout builder lists saved templates here and saves exports straight to it.
     'pi_templates_dir': '',
+    # ---- Acquisitions analysis thresholds ----
+    # Hull must have at least this fraction of modules in stock to generate
+    # a shopping list. 0.5 = 50% inventory coverage required.
+    'acq_shopping_min_coverage': 0.5,
+    # Hull's missing modules (priced at UEXO min) must total less than this
+    # ISK value to generate a shopping list. 500m default.
+    'acq_shopping_max_isk_gap': 500_000_000.0,
 }
 
 _USER_KEYS = set(DEFAULTS)
