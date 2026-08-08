@@ -198,7 +198,10 @@ def _migrate(cfg):
 
     # Ensure all baseline scopes are present so newer features (e.g. mail send)
     # work after an app upgrade without manually editing the persisted config.
-    saved_scopes = list(cfg.get('scopes') or [])
+    # Also strip any scopes that are no longer valid (e.g. esi-fleets.read_fleet.v1
+    # was removed from the ESI spec and causes OAuth errors if requested).
+    _removed_scopes = {'esi-fleets.read_fleet.v1'}
+    saved_scopes = [s for s in (cfg.get('scopes') or []) if s not in _removed_scopes]
     for s in DEFAULTS['scopes']:
         if s not in saved_scopes:
             saved_scopes.append(s)
