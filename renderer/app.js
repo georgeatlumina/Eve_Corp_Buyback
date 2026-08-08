@@ -4518,6 +4518,21 @@ async function acqRunHullAnalysis(root, statusEl) {
     fullResult.builds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
   );
 
+  // Build a pool depleted by section-1 committed builds so shopping gap
+  // reflects what is actually still available, not the raw inventory.
+  const depletedPool = new Map(inputs.pool);
+  for (const b of fullResult.builds) {
+    const target = inputs.targets.find(
+      (t) => t.shipTypeId === b.shipTypeId && (t.fitName || null) === (b.fitName || null)
+    );
+    if (!target) continue;
+    const hullKey = String(b.shipTypeId);
+    depletedPool.set(hullKey, (depletedPool.get(hullKey) || 0) - 1);
+    for (const [tid, need] of target.units) {
+      depletedPool.set(tid, (depletedPool.get(tid) || 0) - need);
+    }
+  }
+
   statusEl.textContent = fullResult.builds.length + ' build(s) from inventory. Loading UEXO market…';
 
   let market = aaState.market || null;
@@ -4560,11 +4575,14 @@ async function acqRunHullAnalysis(root, statusEl) {
 
   for (const target of inputs.targets) {
     if ((target.needed || 0) <= 0) continue;
-    if (target.unevaluatable) continue;
+    if (target.unevaluatable) {
+      outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no fit registered — cannot evaluate' });
+      continue;
+    }
     const key = `${target.shipTypeId}||${target.fitName || ''}`;
     if (satisfiedAll.has(key)) continue;
 
-    const gap = computeShoppingGap(target, inputs.pool, market);
+    const gap = computeShoppingGap(target, depletedPool, market);
     if (gap.coverage >= minCoverage && gap.gapIsk <= maxGapIsk) {
       candidates.push({ target, gap });
     } else {
