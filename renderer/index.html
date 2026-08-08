@@ -255,6 +255,13 @@
           <label class="inline-check"><input name="stockpile_allow_push" type="checkbox" /> Allow stock edits (show the admin paste/save panel)</label>
         </fieldset>
 
+        <fieldset>
+          <legend>Acquisitions analysis</legend>
+          <p class="muted">Thresholds that control which hulls appear as shopping list candidates in the Hull Completion Analysis.</p>
+          <label>Min inventory coverage (0–1) <input name="acq_shopping_min_coverage" type="number" step="0.01" min="0" max="1" /></label>
+          <label>Max ISK gap <input name="acq_shopping_max_isk_gap" type="number" step="1000000" min="0" /></label>
+        </fieldset>
+
         <label>Janice API Key (optional) <input name="janice_api_key" type="text" autocomplete="off" placeholder="X-ApiKey from Janice" /></label>
 
         <fieldset>
