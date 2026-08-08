@@ -273,10 +273,56 @@ function buildTargets(quotas, fitsById) {
   });
 }
 
+/**
+ * Compute coverage fraction and estimated ISK gap for one target against a
+ * pool snapshot. Returns data for Section 3 (shopping candidates) and
+ * Section 4 (out of reach) of the Hull Completion Analysis.
+ *
+ * @param {object} target   - One entry from buildTargets() output
+ * @param {Map}    pool     - Mutable pool snapshot (not consumed — pure read)
+ * @param {object|null} market - aaState.market (may be null if market not loaded)
+ * @returns {{
+ *   coverage: number,       // 0–1 fraction of module units held
+ *   gapIsk: number,         // sum of short_qty × UEXO min_price for each missing item
+ *   items: Array<{          // one row per item short
+ *     type_id: string,
+ *     need: number,
+ *     have: number,
+ *     short: number,
+ *     price: number,        // UEXO min_price (0 if not in market)
+ *     onMarket: boolean,    // true if UEXO has >= short qty
+ *   }>
+ * }}
+ */
+function computeShoppingGap(target, pool, market) {
+  let required = 0;
+  let held = 0;
+  let gapIsk = 0;
+  const items = [];
+  const byType = market?.by_type || {};
+
+  for (const [tid, need] of target.units) {
+    const have = Math.min(pool.get(tid) || 0, need);
+    const short = need - have;
+    required += need;
+    held += have;
+    const entry = byType[tid] || byType[Number(tid)] || {};
+    const price = entry.min_price || 0;
+    const onMarket = !!entry && (entry.total_volume || 0) >= short;
+    if (short > 0) {
+      gapIsk += price * short;
+      items.push({ type_id: tid, need, have, short, price, onMarket });
+    }
+  }
+
+  const coverage = required === 0 ? 1 : held / required;
+  return { coverage, gapIsk, items };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     mergeInventory, splitInventory, formatJaniceExport, ACQ_HULL_CATEGORY_ID,
     ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits, evaluateBuild,
-    planAcquisitions, buildTargets,
+    planAcquisitions, buildTargets, computeShoppingGap,
   };
 }

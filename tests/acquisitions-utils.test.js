@@ -494,3 +494,49 @@ describe('buildTargets', () => {
     expect(buildTargets(null, null)).toEqual([]);
   });
 });
+
+// ── computeShoppingGap ────────────────────────────────────────────────────────
+
+const { computeShoppingGap } = require('../renderer/acquisitions-utils');
+
+describe('computeShoppingGap', () => {
+  const target = {
+    shipTypeId: 100,
+    units: new Map([['200', 5], ['201', 1]]),
+    unevaluatable: false,
+  };
+
+  test('full coverage → gapIsk 0, no items', () => {
+    const pool = new Map([['200', 10], ['201', 2]]);
+    const result = computeShoppingGap(target, pool, null);
+    expect(result.coverage).toBe(1);
+    expect(result.gapIsk).toBe(0);
+    expect(result.items).toHaveLength(0);
+  });
+
+  test('partial coverage → correct coverage fraction', () => {
+    const pool = new Map([['200', 2]]);  // have 2 of 5 for type 200, 0 of 1 for 201
+    const result = computeShoppingGap(target, pool, null);
+    // held=2, required=6 → coverage = 2/6
+    expect(result.coverage).toBeCloseTo(2 / 6);
+    expect(result.items).toHaveLength(2);
+  });
+
+  test('gap ISK uses market min_price × short qty', () => {
+    const pool = new Map();
+    const market = { by_type: { '200': { min_price: 1000000, total_volume: 10 }, '201': { min_price: 5000000, total_volume: 0 } } };
+    const result = computeShoppingGap(target, pool, market);
+    // type 200: short=5, price=1m → 5m. type 201: short=1, price=5m → 5m. Total=10m
+    expect(result.gapIsk).toBe(10_000_000);
+  });
+
+  test('onMarket true only when volume >= short', () => {
+    const pool = new Map();
+    const market = { by_type: { '200': { min_price: 100, total_volume: 10 }, '201': { min_price: 100, total_volume: 0 } } };
+    const result = computeShoppingGap(target, pool, market);
+    const item200 = result.items.find(i => i.type_id === '200');
+    const item201 = result.items.find(i => i.type_id === '201');
+    expect(item200.onMarket).toBe(true);
+    expect(item201.onMarket).toBe(false);
+  });
+});
