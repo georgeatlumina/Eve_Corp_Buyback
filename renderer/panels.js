@@ -88,7 +88,9 @@
       const res = await fetch(`${API}/api/releases${bust ? '?bust=1' : ''}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const rels = (data.releases || []);
+      // Show only the latest two releases (GitHub returns them newest-first);
+      // older history lives on GitHub / in CHANGELOG.md.
+      const rels = (data.releases || []).slice(0, 2);
       if (!rels.length) { body.innerHTML = '<p class="muted">No releases found.</p>'; return; }
       const stale = data.stale ? '<p class="muted notes-stale">Showing last-known notes (couldn’t reach GitHub).</p>' : '';
       body.innerHTML = stale + rels.map((r) => `

@@ -4,6 +4,25 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## What's new in v3.1.0 — Dotlan Maps
+
+### Dotlan Maps tab (new) — General group
+A live, in-app view of **evemaps.dotlan.net** — the complete Dotlan site embedded in a browser
+panel, so all of its tools are available without leaving the app:
+- **Region & system maps** with Dotlan's full layer set (sovereignty, jumps, ship/pod/NPC kills,
+  industry indices, structures, minerals…), plus the **Jump Planner**, **Route Planner**, **Range**,
+  **Sovereignty**, **Alliances** and **Faction Warfare** pages.
+- App-side **navigation chrome** (Back / Forward / Reload / Home + open-in-external-browser),
+  **quick-links** to Dotlan's main tools, and a **search box** for any system / region / alliance.
+- Your Dotlan **login persists** between visits (Favorites, jump beacons), and off-site links open
+  in your external browser.
+
+### Quality-of-life
+- The **"What's new"** drawer now shows just the **latest two** releases (older history stays on
+  GitHub and in `CHANGELOG.md`).
+
+---
+
 ## What's new in v3.0.0 — Ship Fitting (Pyfa engine), Production Planner, D-Scan & more
 
 ### Ship Fitting tab (new) — Combat group
