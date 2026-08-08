@@ -740,6 +740,24 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .link-panel-view { flex: 1 1 auto; width: 100%; border: 0; background: #fff; }
 body.link-panel-open main { margin-right: 46vw; }
 
+/* ===== Dotlan Maps tab — embedded evemaps.dotlan.net ===== */
+.dotlan-tab.active { display: flex; flex-direction: column; gap: 0.5em; }
+body.dotlan-active main { max-width: none; padding: 0.8em; }
+.dotlan-bar { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
+.dotlan-navbtns { display: flex; gap: 0.25em; }
+.dotlan-btn { background: #333; color: #eee; border: 0; padding: 0.35em 0.7em; cursor: pointer; border-radius: 4px; font-size: 0.9em; font-weight: 600; line-height: 1; }
+.dotlan-btn:hover:not(:disabled) { background: #444; }
+.dotlan-btn:disabled { opacity: 0.4; cursor: default; }
+.dotlan-links { display: flex; gap: 0.25em; flex-wrap: wrap; }
+.dotlan-link { background: #2a2a2a; color: #cfe; border: 1px solid #3a3a3a; padding: 0.35em 0.6em; cursor: pointer; border-radius: 4px; font-size: 0.82em; white-space: nowrap; }
+.dotlan-link:hover { background: #234a3a; color: #7fe0b3; }
+.dotlan-search { flex: 1 1 180px; min-width: 140px; margin: 0; }
+.dotlan-search input { width: 100%; box-sizing: border-box; background: #1c1c1c; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.4em 0.6em; font-size: 0.85em; }
+.dotlan-url { flex: 1 1 auto; min-width: 0; color: #9cd6b4; font-size: 0.75em; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dotlan-viewwrap { flex: 1 1 auto; min-height: 60vh; height: calc(100vh - 200px); background: #fff; border: 1px solid #333; border-radius: 6px; overflow: hidden; }
+.dotlan-view { width: 100%; height: 100%; border: 0; display: flex; }
+.dotlan-foot { margin: 0.4em 0 0; }
+
 /* ===================== Buybacks tab (General / Ore sub-toggle) ===================== */
 .bb-subtoggle { display: inline-flex; margin: 0 0 1em; }
 .bb-sub-btn { background: #2a2a2a; color: #bbb; border: 1px solid #444; padding: 0.5em 1.1em; cursor: pointer; font-size: 0.95em; font-weight: 600; }

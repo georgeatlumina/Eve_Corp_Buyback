@@ -26,6 +26,7 @@
           <button class="tab-btn" data-tab="module-sorter">Module Sorter</button>
           <button class="tab-btn" data-tab="plex-value">PLEX Value</button>
           <button class="tab-btn" data-tab="market">Market</button>
+          <button class="tab-btn" data-tab="dotlan">Dotlan Maps</button>
         </div>
       </div>
 
@@ -664,6 +665,35 @@
         </label>
       </div>
       <div id="dscan-summary" class="dscan-summary"></div>
+    </section>
+
+    <section id="tab-dotlan" class="tab dotlan-tab">
+      <div class="dotlan-bar">
+        <div class="dotlan-navbtns">
+          <button id="dotlan-back" class="dotlan-btn" type="button" title="Back" disabled>‹</button>
+          <button id="dotlan-fwd" class="dotlan-btn" type="button" title="Forward" disabled>›</button>
+          <button id="dotlan-reload" class="dotlan-btn" type="button" title="Reload">↻</button>
+          <button id="dotlan-home" class="dotlan-btn" type="button" title="Home">⌂</button>
+        </div>
+        <div class="dotlan-links">
+          <button class="dotlan-link" data-path="/map" type="button">Universe</button>
+          <button class="dotlan-link" data-path="/jump" type="button">Jump Planner</button>
+          <button class="dotlan-link" data-path="/route" type="button">Route</button>
+          <button class="dotlan-link" data-path="/range" type="button">Range</button>
+          <button class="dotlan-link" data-path="/sovereignty" type="button">Sovereignty</button>
+          <button class="dotlan-link" data-path="/alliances" type="button">Alliances</button>
+          <button class="dotlan-link" data-path="/factionwarfare" type="button">Faction&nbsp;War</button>
+        </div>
+        <form id="dotlan-search-form" class="dotlan-search">
+          <input id="dotlan-search" type="text" placeholder="Search system / region / alliance…" spellcheck="false" autocomplete="off" />
+        </form>
+        <span id="dotlan-url" class="dotlan-url muted"></span>
+        <button id="dotlan-external" class="dotlan-btn" type="button" title="Open the current page in your external browser">⇱</button>
+      </div>
+      <div class="dotlan-viewwrap">
+        <webview id="dotlan-view" class="dotlan-view" src="about:blank" partition="persist:dotlan"></webview>
+      </div>
+      <p class="dotlan-foot muted small">Live view of <a href="https://evemaps.dotlan.net" data-ext-link>evemaps.dotlan.net</a> — a third-party EVE maps site by Wollari. Log in there for Favorites &amp; jump beacons; your session is kept between visits.</p>
     </section>
 
     <section id="tab-pi-builder" class="tab">
@@ -1311,6 +1341,7 @@
   <script src="plex-value.js"></script>
   <script src="panels.js"></script>
   <script src="dscan.js"></script>
+  <script src="dotlan.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="fitting.js"></script>

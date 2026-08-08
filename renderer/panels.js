@@ -267,6 +267,18 @@
       workflow: ['In space, D-scan and copy (Ctrl+A, Ctrl+C)', 'Paste it here', 'Click Create share link', 'Copy or Open the dscan.info URL to share'],
       note: 'Sharing sends the scan to the third-party dscan.info service.',
     },
+    dotlan: {
+      title: 'Dotlan Maps',
+      intro: 'A live, in-app view of evemaps.dotlan.net — the full Dotlan site (region/system maps, jump & route planners, sovereignty, industry indices, alliances, faction warfare) embedded in a browser panel. Log in on the site to keep Favorites and jump beacons; your session persists between visits.',
+      controls: [
+        ['‹ › ↻ ⌂', 'Back, Forward, Reload, and Home (dotlan.net front page) for the embedded browser.'],
+        ['Quick-links', 'Jump straight to Dotlan tools: Universe map, Jump Planner, Route, Range, Sovereignty, Alliances, Faction War.'],
+        ['Search box', 'Look up any system, region, constellation, alliance or corporation via Dotlan search.'],
+        ['⇱ Open in browser', 'Opens the page you are viewing in your external web browser.'],
+      ],
+      workflow: ['Pick a quick-link or search for a system/region', 'Navigate Dotlan as normal inside the panel', 'Use ⌂ to return home or ⇱ to pop the current page into your browser'],
+      note: 'This embeds the third-party Dotlan site (by Wollari); its pages and ads load live from evemaps.dotlan.net.',
+    },
   };
 
   function activeTabId() {
