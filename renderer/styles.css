@@ -740,23 +740,23 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .link-panel-view { flex: 1 1 auto; width: 100%; border: 0; background: #fff; }
 body.link-panel-open main { margin-right: 46vw; }
 
-/* ===== Dotlan Maps tab — embedded evemaps.dotlan.net ===== */
-.dotlan-tab.active { display: flex; flex-direction: column; gap: 0.5em; }
-body.dotlan-active main { max-width: none; padding: 0.8em; }
-.dotlan-bar { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
-.dotlan-navbtns { display: flex; gap: 0.25em; }
-.dotlan-btn { background: #333; color: #eee; border: 0; padding: 0.35em 0.7em; cursor: pointer; border-radius: 4px; font-size: 0.9em; font-weight: 600; line-height: 1; }
-.dotlan-btn:hover:not(:disabled) { background: #444; }
-.dotlan-btn:disabled { opacity: 0.4; cursor: default; }
-.dotlan-links { display: flex; gap: 0.25em; flex-wrap: wrap; }
-.dotlan-link { background: #2a2a2a; color: #cfe; border: 1px solid #3a3a3a; padding: 0.35em 0.6em; cursor: pointer; border-radius: 4px; font-size: 0.82em; white-space: nowrap; }
-.dotlan-link:hover { background: #234a3a; color: #7fe0b3; }
-.dotlan-search { flex: 1 1 180px; min-width: 140px; margin: 0; }
-.dotlan-search input { width: 100%; box-sizing: border-box; background: #1c1c1c; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.4em 0.6em; font-size: 0.85em; }
-.dotlan-url { flex: 1 1 auto; min-width: 0; color: #9cd6b4; font-size: 0.75em; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dotlan-viewwrap { flex: 1 1 auto; min-height: 60vh; height: calc(100vh - 200px); background: #fff; border: 1px solid #333; border-radius: 6px; overflow: hidden; }
-.dotlan-view { width: 100%; height: 100%; border: 0; display: flex; }
-.dotlan-foot { margin: 0.4em 0 0; }
+/* ===== Embedded-site tabs (Dotlan Maps, zKillboard) — full-bleed <webview> ===== */
+.webtab.active { display: flex; flex-direction: column; gap: 0.5em; }
+body.webtab-active main { max-width: none; padding: 0.8em; }
+.webtab-bar { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
+.webtab-navbtns { display: flex; gap: 0.25em; }
+.webtab-btn { background: #333; color: #eee; border: 0; padding: 0.35em 0.7em; cursor: pointer; border-radius: 4px; font-size: 0.9em; font-weight: 600; line-height: 1; }
+.webtab-btn:hover:not(:disabled) { background: #444; }
+.webtab-btn:disabled { opacity: 0.4; cursor: default; }
+.webtab-links { display: flex; gap: 0.25em; flex-wrap: wrap; }
+.webtab-link { background: #2a2a2a; color: #cfe; border: 1px solid #3a3a3a; padding: 0.35em 0.6em; cursor: pointer; border-radius: 4px; font-size: 0.82em; white-space: nowrap; }
+.webtab-link:hover { background: #234a3a; color: #7fe0b3; }
+.webtab-search { flex: 1 1 180px; min-width: 140px; margin: 0; }
+.webtab-search input { width: 100%; box-sizing: border-box; background: #1c1c1c; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.4em 0.6em; font-size: 0.85em; }
+.webtab-url { flex: 1 1 auto; min-width: 0; color: #9cd6b4; font-size: 0.75em; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.webtab-viewwrap { flex: 1 1 auto; min-height: 60vh; height: calc(100vh - 200px); background: #fff; border: 1px solid #333; border-radius: 6px; overflow: hidden; }
+.webtab-view { width: 100%; height: 100%; border: 0; display: flex; }
+.webtab-foot { margin: 0.4em 0 0; }
 
 /* ===================== Buybacks tab (General / Ore sub-toggle) ===================== */
 .bb-subtoggle { display: inline-flex; margin: 0 0 1em; }
@@ -1611,15 +1611,31 @@ body.popout-calc .pib-calc > summary { display: none; }
 
 /* Production tree */
 .prod-tree-pane { margin-top: 1em; }
-#prod-tree { overflow-x: auto; }
+/* Set the tree font-size once on the container. Setting it on `li` compounds
+   (each nested li's em is relative to its parent li), shrinking deep nodes to
+   an unreadable size. */
+#prod-tree { overflow-x: auto; font-size: 0.95em; }
 .prod-tree-root, .prod-tree-root ul { list-style: none; margin: 0; padding: 0; }
 .prod-tree-root ul { margin-left: 1.1em; border-left: 1px solid #333; padding-left: 0.6em; }
-.prod-tree-root li { padding: 0.08em 0; font-size: 0.86em; }
+.prod-tree-root li { padding: 0.08em 0; }
 .prod-tree-root summary { cursor: pointer; list-style-position: outside; }
 .prod-tree-root summary::-webkit-details-marker { color: #6a8; }
 .prod-tree-root .prod-tree-leaf { padding-left: 1.0em; }
 .prod-tree-qty { color: #7fb0c8; font-variant-numeric: tabular-nums; }
 .prod-tree-root .prod-act { display: inline-block; min-width: 3.8em; font-size: 0.78em; }
+
+/* Reaction Calculator — catalog browser (reuses .prod-* for tables/tiles/tree) */
+.rx-catalog { margin: 0.6em 0; border: 1px solid #3a3a3a; border-radius: 6px; background: #1c1c1c; }
+.rx-catalog[hidden] { display: none; }
+.rx-catalog-head { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; padding: 0.5em 0.7em; border-bottom: 1px solid #333; }
+.rx-catalog-head input[type="text"] { flex: 1 1 200px; min-width: 140px; background: #111; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.35em 0.6em; }
+.rx-catalog-head input[type="number"] { width: 4em; background: #111; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.25em 0.4em; }
+.rx-catalog-list { max-height: 320px; overflow-y: auto; padding: 0.5em 0.7em; }
+.rx-cat-group { margin-bottom: 0.7em; }
+.rx-cat-group-h { font-weight: 600; color: #9cd6b4; margin-bottom: 0.35em; font-size: 0.9em; }
+.rx-cat-items { display: flex; flex-wrap: wrap; gap: 0.3em; }
+.rx-cat-item { background: #2a2a2a; color: #dfe; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.3em 0.55em; font-size: 0.82em; cursor: pointer; text-align: left; }
+.rx-cat-item:hover { background: #234a3a; color: #7fe0b3; border-color: #3fa87a; }
 .prod-act-buy { color: #d0a24a; }
 .prod-act-raw { color: #8a9a8f; }
 

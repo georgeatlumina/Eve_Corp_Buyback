@@ -799,6 +799,42 @@ def industry_search(q: str = '', limit: int = 25):
                         for _pos, n, t, a in hits[:max(1, min(200, limit))]]}
 
 
+# Preferred display order for the reaction catalog (product groups), roughly the
+# reaction chain order: composites/polymers/molecular first, then the simple
+# intermediates they consume.
+_REACTION_GROUP_ORDER = [
+    'Composite', 'Hybrid Polymers', 'Molecular-Forged Materials',
+    'Biochemical Material', 'Intermediate Materials', 'Unrefined Mineral',
+]
+
+
+@app.get('/api/reactions/recipes')
+def reaction_recipes():
+    """Catalog of every reaction recipe (product) for the Reaction Calculator's
+    browse panel, grouped by product group. Returns ``{groups: [{group, items:
+    [{type_id, name, output_qty, inputs}]}], total}`` where ``inputs`` is the
+    number of distinct input materials per run."""
+    data = industry.load_industry_data()
+    types = data['types']
+    by_group: dict = {}
+    for tid, recipe in data['recipes'].items():
+        if recipe.get('activity') != industry.REACTION:
+            continue
+        meta = types.get(tid) or {}
+        group = meta.get('group_name') or 'Other'
+        by_group.setdefault(group, []).append({
+            'type_id': tid,
+            'name': industry.type_name(tid, data),
+            'output_qty': recipe.get('output_qty') or 1,
+            'inputs': len(recipe.get('materials') or []),
+        })
+    order = {g: i for i, g in enumerate(_REACTION_GROUP_ORDER)}
+    groups = []
+    for group in sorted(by_group, key=lambda g: (order.get(g, 999), g)):
+        groups.append({'group': group, 'items': sorted(by_group[group], key=lambda x: x['name'])})
+    return {'groups': groups, 'total': sum(len(g['items']) for g in groups)}
+
+
 def _industry_resolve_stock(stock_field, stock_text, data):
     stock = {}
     for k, v in (stock_field or {}).items():

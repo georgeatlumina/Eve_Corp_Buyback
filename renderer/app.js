@@ -160,6 +160,8 @@ function activateTab(name) {
   $$('.tab').forEach((t) => t.classList.remove('active'));
   btn.classList.add('active');
   section.classList.add('active');
+  // Embedded-site tabs (Dotlan, zKillboard) go full window-width via body class.
+  document.body.classList.toggle('webtab-active', section.classList.contains('webtab'));
   if (name === 'buybacks') refreshWallets();
   closeAllNavMenus();
   updateNavTriggers();

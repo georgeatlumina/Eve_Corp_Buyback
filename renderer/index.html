@@ -27,6 +27,7 @@
           <button class="tab-btn" data-tab="plex-value">PLEX Value</button>
           <button class="tab-btn" data-tab="market">Market</button>
           <button class="tab-btn" data-tab="dotlan">Dotlan Maps</button>
+          <button class="tab-btn" data-tab="zkill">zKillboard</button>
         </div>
       </div>
 
@@ -50,6 +51,7 @@
         <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Production</span><span class="nav-caret" aria-hidden="true">▾</span></button>
         <div class="nav-panel" role="menu">
           <button class="tab-btn" data-tab="production">Production Planner</button>
+          <button class="tab-btn" data-tab="reactions">Reaction Calculator</button>
           <button class="tab-btn" data-tab="production-favourites">Profit Favourites</button>
         </div>
       </div>
@@ -611,6 +613,81 @@
       <div id="fav-table"></div>
     </section>
 
+    <section id="tab-reactions" class="tab">
+      <h2>Reaction Calculator</h2>
+      <p class="muted">Pick or paste reaction products and get the reactions to run and the raw materials (moon goo, gas, PI) to buy — the full multi-tier reaction chain, priced against Jita. Reactions ignore ME; material savings come only from a <strong>Tatara</strong> with Reactor&nbsp;Efficiency rigs. Inspired by <strong>ravworks.com</strong>.</p>
+      <div class="prod-inputs">
+        <div class="prod-col">
+          <label class="prod-label">Reaction targets <span class="muted">(one <code>Name xN</code> per line — or use Browse)</span></label>
+          <textarea id="rx-targets" spellcheck="false" placeholder="Ferrogel x10&#10;Fernite Alloy x100&#10;Nitrogen Fuel Block x500"></textarea>
+        </div>
+        <div class="prod-col">
+          <label class="prod-label">On-hand stock <span class="muted">(optional — offsets the build)</span></label>
+          <textarea id="rx-stock" spellcheck="false" placeholder="Paste an EVE inventory:&#10;Caesium&#9;40000&#10;Hydrogen Isotopes&#9;100000"></textarea>
+        </div>
+      </div>
+      <div class="prod-config">
+        <label title="Reactions run in an Athanor or Tatara refinery. Only a Tatara (large) can fit the Reactor Efficiency material rigs.">Structure <select id="rx-structure">
+          <option value="tatara" selected>Tatara</option>
+          <option value="athanor">Athanor</option>
+        </select></label>
+        <label title="Standup L-Set Reactor Efficiency rig (Tatara only): I = 2.0% material, II = 2.4%">Reactor rig <select id="rx-rig">
+          <option value="none">None</option>
+          <option value="re1">Reactor Efficiency I</option>
+          <option value="re2" selected>Reactor Efficiency II</option>
+        </select></label>
+        <label title="Rig bonuses scale with space: lowsec ×1.0, null / wormhole ×1.1. Reactions can't run in highsec.">Space <select id="rx-space">
+          <option value="lowsec">Lowsec</option>
+          <option value="nullwh" selected>Null / WH</option>
+        </select></label>
+        <label title="Reaction material reduction % — auto-filled from structure/rig/space, but editable">Mat&nbsp;% <input id="rx-matbonus" type="number" value="2.64" min="0" max="10" step="0.01" /></label>
+        <label title="Solar system for the live reaction cost index — blank uses the flat fallback">System <input id="rx-system" type="text" placeholder="e.g. 1DQ1-A" spellcheck="false" autocomplete="off" /></label>
+        <span id="rx-system-hint" class="muted"></span>
+        <label title="Fallback flat cost index when no system is set">Cost&nbsp;index&nbsp;% <input id="rx-index" type="number" value="5" min="0" step="0.1" /></label>
+        <label title="Facility tax on the job install fee">Tax&nbsp;% <input id="rx-tax" type="number" value="0.25" min="0" step="0.05" /></label>
+        <label>Market <select id="rx-market">
+          <option value="Jita 4-4">Jita 4-4</option>
+          <option value="Amarr">Amarr</option>
+          <option value="Dodixie">Dodixie</option>
+          <option value="Rens">Rens</option>
+        </select></label>
+        <button id="rx-browse" type="button" class="secondary">Browse reactions ▾</button>
+        <button id="rx-analyze" type="button">Analyze</button>
+      </div>
+      <div id="rx-catalog" class="rx-catalog" hidden>
+        <div class="rx-catalog-head">
+          <input id="rx-catalog-search" type="text" placeholder="Filter reactions…" spellcheck="false" autocomplete="off" />
+          <label class="muted">Add qty <input id="rx-catalog-qty" type="number" value="1" min="1" step="1" /></label>
+          <span id="rx-catalog-count" class="muted"></span>
+        </div>
+        <div id="rx-catalog-list" class="rx-catalog-list"></div>
+      </div>
+      <p id="rx-status" class="muted"></p>
+      <div id="rx-summary" class="prod-summary"></div>
+      <div class="prod-results">
+        <div class="prod-pane prod-pane-jobs">
+          <div class="prod-pane-head"><strong>Reactions</strong> <span id="rx-jobs-count" class="muted"></span></div>
+          <div id="rx-jobs"></div>
+        </div>
+        <div class="prod-pane">
+          <div class="prod-pane-head">
+            <strong>Shopping list</strong> <span id="rx-raw-count" class="muted"></span>
+            <button id="rx-copy-raw" type="button" class="secondary" title="Copy as an in-game Multibuy list (Name xN per line)">Copy multibuy</button>
+            <button id="rx-dl-raw" type="button" class="secondary">Download</button>
+          </div>
+          <div id="rx-raw"></div>
+        </div>
+      </div>
+      <div id="rx-tree-pane" class="prod-tree-pane" hidden>
+        <div class="prod-pane-head">
+          <strong>Reaction tree</strong> <span id="rx-tree-count" class="muted"></span>
+          <button id="rx-tree-expand" type="button" class="secondary">Expand all</button>
+          <button id="rx-tree-collapse" type="button" class="secondary">Collapse all</button>
+        </div>
+        <div id="rx-tree"></div>
+      </div>
+    </section>
+
     <section id="tab-plex-value" class="tab">
       <h2>Money → PLEX → ISK</h2>
       <p class="muted">Convert real-life money to PLEX (bought from CCP's store) and then to ISK at the live <strong>Jita PLEX price</strong>. Forex rates are fetched live; the PLEX→ISK price comes from Janice (or ESI market orders if no Janice key). Pick a CCP pack for its real per-PLEX cost, or enter your own <code>USD / PLEX</code> rate.</p>
@@ -667,33 +744,61 @@
       <div id="dscan-summary" class="dscan-summary"></div>
     </section>
 
-    <section id="tab-dotlan" class="tab dotlan-tab">
-      <div class="dotlan-bar">
-        <div class="dotlan-navbtns">
-          <button id="dotlan-back" class="dotlan-btn" type="button" title="Back" disabled>‹</button>
-          <button id="dotlan-fwd" class="dotlan-btn" type="button" title="Forward" disabled>›</button>
-          <button id="dotlan-reload" class="dotlan-btn" type="button" title="Reload">↻</button>
-          <button id="dotlan-home" class="dotlan-btn" type="button" title="Home">⌂</button>
+    <section id="tab-dotlan" class="tab webtab">
+      <div class="webtab-bar">
+        <div class="webtab-navbtns">
+          <button id="dotlan-back" class="webtab-btn" type="button" title="Back" disabled>‹</button>
+          <button id="dotlan-fwd" class="webtab-btn" type="button" title="Forward" disabled>›</button>
+          <button id="dotlan-reload" class="webtab-btn" type="button" title="Reload">↻</button>
+          <button id="dotlan-home" class="webtab-btn" type="button" title="Home">⌂</button>
         </div>
-        <div class="dotlan-links">
-          <button class="dotlan-link" data-path="/map" type="button">Universe</button>
-          <button class="dotlan-link" data-path="/jump" type="button">Jump Planner</button>
-          <button class="dotlan-link" data-path="/route" type="button">Route</button>
-          <button class="dotlan-link" data-path="/range" type="button">Range</button>
-          <button class="dotlan-link" data-path="/sovereignty" type="button">Sovereignty</button>
-          <button class="dotlan-link" data-path="/alliances" type="button">Alliances</button>
-          <button class="dotlan-link" data-path="/factionwarfare" type="button">Faction&nbsp;War</button>
+        <div class="webtab-links">
+          <button class="webtab-link" data-path="/map" type="button">Universe</button>
+          <button class="webtab-link" data-path="/jump" type="button">Jump Planner</button>
+          <button class="webtab-link" data-path="/route" type="button">Route</button>
+          <button class="webtab-link" data-path="/range" type="button">Range</button>
+          <button class="webtab-link" data-path="/sovereignty" type="button">Sovereignty</button>
+          <button class="webtab-link" data-path="/alliances" type="button">Alliances</button>
+          <button class="webtab-link" data-path="/factionwarfare" type="button">Faction&nbsp;War</button>
         </div>
-        <form id="dotlan-search-form" class="dotlan-search">
+        <form id="dotlan-search-form" class="webtab-search">
           <input id="dotlan-search" type="text" placeholder="Search system / region / alliance…" spellcheck="false" autocomplete="off" />
         </form>
-        <span id="dotlan-url" class="dotlan-url muted"></span>
-        <button id="dotlan-external" class="dotlan-btn" type="button" title="Open the current page in your external browser">⇱</button>
+        <span id="dotlan-url" class="webtab-url muted"></span>
+        <button id="dotlan-external" class="webtab-btn" type="button" title="Open the current page in your external browser">⇱</button>
       </div>
-      <div class="dotlan-viewwrap">
-        <webview id="dotlan-view" class="dotlan-view" src="about:blank" partition="persist:dotlan"></webview>
+      <div class="webtab-viewwrap">
+        <webview id="dotlan-view" class="webtab-view" src="about:blank" partition="persist:dotlan"></webview>
       </div>
-      <p class="dotlan-foot muted small">Live view of <a href="https://evemaps.dotlan.net" data-ext-link>evemaps.dotlan.net</a> — a third-party EVE maps site by Wollari. Log in there for Favorites &amp; jump beacons; your session is kept between visits.</p>
+      <p class="webtab-foot muted small">Live view of <a href="https://evemaps.dotlan.net" data-ext-link>evemaps.dotlan.net</a> — a third-party EVE maps site by Wollari. Log in there for Favorites &amp; jump beacons; your session is kept between visits.</p>
+    </section>
+
+    <section id="tab-zkill" class="tab webtab">
+      <div class="webtab-bar">
+        <div class="webtab-navbtns">
+          <button id="zkill-back" class="webtab-btn" type="button" title="Back" disabled>‹</button>
+          <button id="zkill-fwd" class="webtab-btn" type="button" title="Forward" disabled>›</button>
+          <button id="zkill-reload" class="webtab-btn" type="button" title="Reload">↻</button>
+          <button id="zkill-home" class="webtab-btn" type="button" title="Home">⌂</button>
+        </div>
+        <div class="webtab-links">
+          <button class="webtab-link" data-path="/" type="button">Recent</button>
+          <button class="webtab-link" data-path="/campaigns/" type="button">Campaigns</button>
+          <button class="webtab-link" data-path="/sovereignty/" type="button">Sovereignty</button>
+          <button class="webtab-link" data-path="/wars/" type="button">Wars</button>
+          <button class="webtab-link" data-path="/trophies/" type="button">Trophies</button>
+          <button class="webtab-link" data-path="/fits/" type="button">Inferred&nbsp;Fits</button>
+        </div>
+        <form id="zkill-search-form" class="webtab-search">
+          <input id="zkill-search" type="text" placeholder="Search pilot / corp / alliance / ship / system…" spellcheck="false" autocomplete="off" />
+        </form>
+        <span id="zkill-url" class="webtab-url muted"></span>
+        <button id="zkill-external" class="webtab-btn" type="button" title="Open the current page in your external browser">⇱</button>
+      </div>
+      <div class="webtab-viewwrap">
+        <webview id="zkill-view" class="webtab-view" src="about:blank" partition="persist:zkill"></webview>
+      </div>
+      <p class="webtab-foot muted small">Live view of <a href="https://zkillboard.com" data-ext-link>zkillboard.com</a> — the third-party EVE killboard by Squizz Caphinator. Your session is kept between visits; off-site links open in your browser.</p>
     </section>
 
     <section id="tab-pi-builder" class="tab">
@@ -1337,11 +1442,13 @@
   <script src="doctrine-stock.js"></script>
   <script src="module-sorter.js"></script>
   <script src="production.js"></script>
+  <script src="reactions.js"></script>
   <script src="production-favourites.js"></script>
   <script src="plex-value.js"></script>
   <script src="panels.js"></script>
   <script src="dscan.js"></script>
   <script src="dotlan.js"></script>
+  <script src="zkill.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="fitting.js"></script>

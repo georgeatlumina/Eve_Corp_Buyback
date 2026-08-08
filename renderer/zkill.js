@@ -1,27 +1,28 @@
-// Dotlan Maps tab — an in-app wrapper around evemaps.dotlan.net.
+// zKillboard tab — an in-app wrapper around zkillboard.com.
 //
-// Rather than reimplement Dotlan's huge feature set (region/system maps, jump &
-// route planners, sovereignty, industry indices, alliance/faction-war data), we
-// embed the live site in a <webview>. It gets its own persistent session
-// partition (persist:dotlan) so a user's Dotlan login — Favorites, jump beacons —
-// survives between visits. Dotlan sends no X-Frame-Options and no CSP
-// frame-ancestors, so embedding is permitted; the site loads its own pages + ads
-// straight from evemaps.dotlan.net.
+// Same approach as the Dotlan tab: embed the live site in a <webview> rather
+// than reimplement its killboard. It gets its own persistent session partition
+// (persist:zkill) so a user's zKill login survives between visits.
+//
+// Note: zKillboard sends `X-Frame-Options: DENY` and CSP `frame-ancestors 'self'`,
+// which block <iframe> embedding — but an Electron <webview> hosts the page as its
+// own *top-level* browsing context (a separate tab/process), not a cross-origin
+// subframe, so those headers don't apply. Verified loading in-app.
 (function () {
-  const ORIGIN = 'https://evemaps.dotlan.net';
+  const ORIGIN = 'https://zkillboard.com';
   const HOME = ORIGIN + '/';
 
-  const view = document.getElementById('dotlan-view');
+  const view = document.getElementById('zkill-view');
   if (!view) return;
 
-  const back = document.getElementById('dotlan-back');
-  const fwd = document.getElementById('dotlan-fwd');
-  const reload = document.getElementById('dotlan-reload');
-  const home = document.getElementById('dotlan-home');
-  const urlLabel = document.getElementById('dotlan-url');
-  const external = document.getElementById('dotlan-external');
-  const searchForm = document.getElementById('dotlan-search-form');
-  const searchInput = document.getElementById('dotlan-search');
+  const back = document.getElementById('zkill-back');
+  const fwd = document.getElementById('zkill-fwd');
+  const reload = document.getElementById('zkill-reload');
+  const home = document.getElementById('zkill-home');
+  const urlLabel = document.getElementById('zkill-url');
+  const external = document.getElementById('zkill-external');
+  const searchForm = document.getElementById('zkill-search-form');
+  const searchInput = document.getElementById('zkill-search');
 
   let loaded = false; // the site is loaded lazily, only once the tab is opened
   let currentUrl = HOME;
@@ -36,8 +37,8 @@
     navigate(HOME);
   }
 
-  function isDotlan(u) {
-    try { return new URL(u).hostname.endsWith('dotlan.net'); } catch (_) { return false; }
+  function isZkill(u) {
+    try { return new URL(u).hostname.endsWith('zkillboard.com'); } catch (_) { return false; }
   }
 
   // --- Nav chrome ---
@@ -49,17 +50,17 @@
     if (currentUrl && window.api && window.api.openExternal) window.api.openExternal(currentUrl);
   });
 
-  // --- Quick-links to Dotlan's main tools ---
-  document.querySelectorAll('#tab-dotlan .webtab-link[data-path]').forEach((b) => {
+  // --- Quick-links to zKillboard's main pages ---
+  document.querySelectorAll('#tab-zkill .webtab-link[data-path]').forEach((b) => {
     b.addEventListener('click', () => navigate(ORIGIN + b.dataset.path));
   });
 
-  // --- Quick search → Dotlan's universal search results page ---
+  // --- Quick search → zKill's search results page (trailing slash is required). ---
   searchForm?.addEventListener('submit', (e) => {
     e.preventDefault();
     const q = (searchInput && searchInput.value || '').trim();
     if (!q) return;
-    navigate(ORIGIN + '/search/?query=' + encodeURIComponent(q));
+    navigate(ORIGIN + '/search/' + encodeURIComponent(q) + '/');
   });
 
   // --- Keep the URL label + back/forward enablement in sync ---
@@ -74,17 +75,17 @@
   view.addEventListener('did-navigate', (e) => syncState(e.url));
   view.addEventListener('did-navigate-in-page', (e) => syncState(e.url));
 
-  // --- Popups / target=_blank: keep Dotlan links in-view (preserves the logged-in
+  // --- Popups / target=_blank: keep zKill links in-view (preserves the logged-in
   // session); send anything off-site out to the OS browser. ---
   view.addEventListener('new-window', (e) => {
     if (e.preventDefault) e.preventDefault();
-    if (isDotlan(e.url)) navigate(e.url);
+    if (isZkill(e.url)) navigate(e.url);
     else if (window.api && window.api.openExternal) window.api.openExternal(e.url);
   });
 
   // --- Lazy-load the site on first open of the tab. (Full-window width while a
   // webtab is active is handled generically in app.js activateTab.) ---
-  document.querySelectorAll('.tab-btn[data-tab="dotlan"]').forEach((btn) => {
+  document.querySelectorAll('.tab-btn[data-tab="zkill"]').forEach((btn) => {
     btn.addEventListener('click', ensureLoaded);
   });
 })();

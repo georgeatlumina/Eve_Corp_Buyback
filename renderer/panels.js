@@ -281,6 +281,32 @@
       workflow: ['Pick a quick-link or search for a system/region', 'Navigate Dotlan as normal inside the panel', 'Use ⌂ to return home or ⇱ to pop the current page into your browser'],
       note: 'This embeds the third-party Dotlan site (by Wollari); its pages and ads load live from evemaps.dotlan.net.',
     },
+    zkill: {
+      title: 'zKillboard',
+      intro: 'A live, in-app view of zkillboard.com — the full killboard embedded in a browser panel: recent kills, character/corp/alliance/ship/system stats, campaigns, wars, trophies, inferred fits and more. Log in on the site and your session persists between visits.',
+      controls: [
+        ['‹ › ↻ ⌂', 'Back, Forward, Reload, and Home (zkillboard.com front page) for the embedded browser.'],
+        ['Quick-links', 'Jump to zKill pages: Recent, Campaigns, Sovereignty, Wars, Trophies, Inferred Fits. Use the site\'s own ≡ menu for kill filters (solo, capitals, ganked…).'],
+        ['Search box', 'Look up any pilot, corporation, alliance, ship, system or region via zKill search.'],
+        ['⇱ Open in browser', 'Opens the page you are viewing in your external web browser.'],
+      ],
+      workflow: ['Pick a quick-link or search for a pilot/corp/ship', 'Browse zKillboard as normal inside the panel', 'Use ⌂ to return home or ⇱ to pop the current page into your browser'],
+      note: 'This embeds the third-party zKillboard site (by Squizz Caphinator); its pages and ads load live from zkillboard.com.',
+    },
+    reactions: {
+      title: 'Reaction Calculator',
+      intro: 'A ravworks-style planner scoped to reactions. Pick or paste reaction products and it explodes the full multi-tier reaction chain down to raw moon goo / gas / PI, then prices the buy list + job fees against Jita. Reactions ignore ME — material savings come only from a Tatara with Reactor Efficiency rigs.',
+      controls: [
+        ['Reaction targets', 'One "Name xN" per line, or add from Browse. Ctrl/Cmd+Enter runs Analyze.'],
+        ['Browse reactions', 'Opens a searchable catalog of every reaction recipe, grouped (Composite, Hybrid Polymers, Molecular-Forged, Biochemical, Intermediate, Unrefined). Click to add at the chosen qty.'],
+        ['Structure / Reactor rig / Space', 'Presets that auto-fill the material % — Tatara + Reactor Efficiency I (2.0%) or II (2.4%), scaled ×1.0 lowsec / ×1.1 null-WH. Athanor can\'t fit the rigs (0%). The % stays editable.'],
+        ['System / Cost index / Tax', 'System pulls the live reaction cost index for job fees; blank uses the flat fallback index. Tax is the facility install-fee tax.'],
+        ['→ buy / → react', 'Toggle any reaction to buy the product instead (or force a bought material back to reacting); the plan re-explodes.'],
+        ['Copy multibuy / Download', 'Export the raw shopping list as an in-game Multibuy list.'],
+      ],
+      workflow: ['Browse or paste your reaction targets', 'Set the structure/rig/space (or type a material %)', 'Add a system for live cost indices (optional)', 'Analyze → read the reactions to run + shopping list + build-vs-buy', 'Copy the multibuy list into EVE'],
+      note: 'Uses the same engine as the Production Planner, restricted to reactions. Pricing is best-effort via Janice (set a key in Config for best prices).',
+    },
   };
 
   function activeTabId() {
