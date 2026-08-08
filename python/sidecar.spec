@@ -5,8 +5,11 @@
 import os
 import sys
 
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
 is_windows = sys.platform == 'win32'
+SPEC_DIR = os.path.dirname(os.path.abspath(SPEC))
 
 # uvicorn relies on dynamically-imported submodules that PyInstaller's static
 # analysis doesn't always pick up. Local sibling modules of server.py are
@@ -48,7 +51,15 @@ hidden_imports = [
     'stockpile',
     'validate',
     'workforce_plan',
+    'pyfa_engine',
 ]
+
+# The Fitting tab embeds Pyfa's vendored `eos` engine (python/pyfa), which is
+# loaded off sys.path at runtime and imports these dynamically — so PyInstaller's
+# static analysis can't see them. Collect them explicitly. (eos itself is bundled
+# as data below and imported from disk, which handles its by-name effect imports.)
+hidden_imports += collect_submodules('sqlalchemy')
+hidden_imports += ['numpy', 'logbook', 'roman', 'dateutil', 'greenlet']
 
 # uvloop is a Unix-only event loop; pulling it in on Windows causes import
 # failures at runtime. uvicorn's `auto` loop selector falls back to asyncio
@@ -65,7 +76,16 @@ a = Analysis(
     # refining, plus the PI datasets (pi_data.json, pi_pins.json,
     # eve_systems.json). Bundling the directory means new data files are
     # picked up automatically.
-    datas=[(os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'data'), 'data')],
+    # data/ holds the refining CSV, PI + industry datasets, and the Fitting
+    # engine's eve.db. pyfa/ is the vendored Pyfa `eos` engine (+ its utils),
+    # bundled as source so it can be imported off sys.path at runtime
+    # (pyfa_engine adds sys._MEIPASS/pyfa to the path). eos loads its ~hundreds
+    # of effect modules by name, so shipping the .py tree is more reliable than
+    # freezing it into the archive.
+    datas=[
+        (os.path.join(SPEC_DIR, 'data'), 'data'),
+        (os.path.join(SPEC_DIR, 'pyfa'), 'pyfa'),
+    ],
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
