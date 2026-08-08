@@ -58,6 +58,9 @@ let mailPresets = [
 let srpRejectTemplate = { subject: '', body: '' };
 // How external links open: 'panel' (side panel) or 'window' (own window).
 let linkOpenMode = 'panel';
+// Acquisitions analysis thresholds (hydrated from config in loadConfig).
+let acqShoppingMinCoverage = 0.5;
+let acqShoppingMaxIskGap = 500_000_000;
 
 // Flags that mark a contract for attention but DON'T flip it out of the
 // Approve bucket — these are accepted, just with a visual banded marker
@@ -468,8 +471,10 @@ async function loadConfig() {
   $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
   $('[name=moon_payout_fraction]').value = cfg.moon_payout_fraction ?? 0.80;
   $('[name=non_moon_payout_fraction]').value = cfg.non_moon_payout_fraction ?? 0.90;
-  $('[name=acq_shopping_min_coverage]').value = cfg.acq_shopping_min_coverage ?? 0.5;
-  $('[name=acq_shopping_max_isk_gap]').value = cfg.acq_shopping_max_isk_gap ?? 500_000_000;
+  acqShoppingMinCoverage = cfg.acq_shopping_min_coverage ?? 0.5;
+  acqShoppingMaxIskGap = cfg.acq_shopping_max_isk_gap ?? 500_000_000;
+  $('[name=acq_shopping_min_coverage]').value = acqShoppingMinCoverage;
+  $('[name=acq_shopping_max_isk_gap]').value = acqShoppingMaxIskGap;
 
   renderStructures(Array.isArray(cfg.structures) ? cfg.structures : []);
 
@@ -4533,7 +4538,7 @@ async function acqRunHullAnalysis(root, statusEl) {
     }
   }
 
-  statusEl.textContent = fullResult.builds.length + ' build(s) from inventory. Loading UEXO market…';
+  statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. ⏳ Loading UEXO market…`;
 
   let market = aaState.market || null;
   if (!market) {
@@ -4567,8 +4572,8 @@ async function acqRunHullAnalysis(root, statusEl) {
   const satisfiedAll = new Set([...satisfiedByInventory, ...satisfiedByMarket]);
 
   // --- Sections 3 & 4: shopping candidates and out of reach ---
-  const minCoverage = appConfig.acq_shopping_min_coverage ?? 0.5;
-  const maxGapIsk = appConfig.acq_shopping_max_isk_gap ?? 500_000_000;
+  const minCoverage = acqShoppingMinCoverage;
+  const maxGapIsk = acqShoppingMaxIskGap;
 
   const candidates = [];
   const outOfReach = [];
@@ -4707,8 +4712,9 @@ function renderAcqSection3(el, candidates, market) {
     const coveragePct = Math.round(gap.coverage * 100);
     const gapIskStr = fmtIskShort(gap.gapIsk);
     const shipLabel = escapeHtml(`${target.shipName} — ${target.fitName || 'unknown fit'}`);
-    const btnId = `acq-copy-gap-${target.shipTypeId}`;
-    const btnBId = `acq-copy-gapb-${target.shipTypeId}`;
+    const fitSlug = (target.fitName || 'nofit').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const btnId = `acq-copy-gap-${target.shipTypeId}-${fitSlug}`;
+    const btnBId = `acq-copy-gapb-${target.shipTypeId}-${fitSlug}`;
 
     return `
       <div style="margin-bottom:0.75rem;padding:0.6rem 0.75rem;background:#1a1208;border:1px solid #92400e;border-radius:5px">
@@ -4744,7 +4750,8 @@ function renderAcqSection3(el, candidates, market) {
     </div>`;
 
   for (const { target } of candidates) {
-    for (const id of [`acq-copy-gap-${target.shipTypeId}`, `acq-copy-gapb-${target.shipTypeId}`]) {
+    const fitSlug = (target.fitName || 'nofit').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    for (const id of [`acq-copy-gap-${target.shipTypeId}-${fitSlug}`, `acq-copy-gapb-${target.shipTypeId}-${fitSlug}`]) {
       const btn = el.querySelector(`#${id}`);
       if (!btn) continue;
       btn.addEventListener('click', async () => {
@@ -4972,8 +4979,12 @@ function renderAcquisitionsTab() {
   const findStatusEl = root.querySelector('#acq-find-status');
   const findResultsEl = root.querySelector('#acq-find-results');
   acqUpdateFinderAvailability(root);
-  root.querySelector('#acq-find-hulls').addEventListener('click',
-    () => acqRunHullAnalysis(root, findStatusEl));
+  root.querySelector('#acq-find-hulls').addEventListener('click', async () => {
+    const btn = root.querySelector('#acq-find-hulls');
+    btn.disabled = true;
+    try { await acqRunHullAnalysis(root, findStatusEl); }
+    finally { btn.disabled = false; }
+  });
   root.querySelector('#acq-find-nohull').addEventListener('click',
     () => acqRunFinder(ACQ_MODES.FITS_NO_HULL, findResultsEl, findStatusEl));
 
