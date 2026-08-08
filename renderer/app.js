@@ -4904,7 +4904,14 @@ function acqTypeName(typeId) {
   const key = String(typeId);
   const row = [...acquisitionsHulls, ...acquisitionsItems]
     .find((r) => String(r.type_id) === key);
-  return row?.name || `type ${key}`;
+  if (row?.name) return row.name;
+  // Fall back to fit item names from the readiness scan (covers missing modules
+  // that have zero inventory and therefore aren't in the acquisitions lists).
+  for (const fit of (readinessState.scan?.fits || [])) {
+    const item = (fit.items || []).find((it) => String(it.typeId) === key);
+    if (item?.name) return item.name;
+  }
+  return `type ${key}`;
 }
 
 function renderAcquisitionsResults(hullsEl, itemsEl) {
