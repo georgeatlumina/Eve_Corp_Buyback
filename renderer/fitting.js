@@ -22,6 +22,8 @@
 
   let fit = null;          // { ship, name, modules:[{type,state,charge}], drones:[], cargo:[] }
   let lastStats = null;
+  let ehpMode = 'ehp';     // DEFENSE table: 'ehp' | 'hp'
+  let panel = 'stats';     // right panel: 'stats' | 'graphs'
   let shipsCache = null;
   let initialised = false;
   let available = null;
@@ -63,6 +65,7 @@
       lastStats = s;
       renderRacks(s);
       renderStats(s);
+      if (panel === 'graphs') renderGraphs();
       setStatus((s.warnings || []).length ? s.warnings.join(' · ') : '');
     } catch (e) { setStatus('Compute failed.'); }
   }
@@ -153,52 +156,138 @@
       <span class="fit-bar-num ${over ? 'over' : ''}">${fmt(used)} / ${fmt(total)}</span></div>`;
   }
 
+  const LAYERS = [['shield', 'Shield'], ['armor', 'Armor'], ['hull', 'Hull']];
   function renderStats(s) {
     const bt = s.dps.byType || {};
     const dmgSegs = ['em', 'thermal', 'kinetic', 'explosive'].map((k) => {
       const pct = s.dps.total > 0 ? (bt[k] || 0) / s.dps.total * 100 : 0;
       return `<span style="width:${pct}%;background:${DMG[k]}" title="${k}: ${fmt(bt[k])}"></span>`;
     }).join('');
-    const resistRow = (layer, label) => {
-      const r = s.resists[layer] || {};
-      return `<div class="fit-resist-row"><span class="fit-resist-lbl">${label}</span>` +
-        ['em', 'thermal', 'kinetic', 'explosive'].map((k) =>
-          `<span class="fit-resist-cell" title="${k}: ${Math.round(r[k] || 0)}%"><span class="fit-resist-bar" style="width:${Math.round(r[k] || 0)}%;background:${DMG[k]}"></span><span class="fit-resist-n">${Math.round(r[k] || 0)}</span></span>`).join('') +
-        `</div>`;
-    };
     const cap = s.capacitor;
-    const capTxt = cap.stable ? `stable ${cap.stableFraction}%` : `depletes in ${cap.lasts_s}s`;
-    const ehpTotal = (s.ehp.shield || 0) + (s.ehp.armor || 0) + (s.ehp.hull || 0);
+    const capTxt = cap.stable ? `stable ${cap.stableFraction}%` : `${cap.lasts_s}s`;
+
+    // DEFENSE — resist grid + EHP/HP per-layer (toggle) + total
+    const defVal = (l) => (ehpMode === 'ehp' ? s.ehp : s.hp)[l] || 0;
+    const defTotal = LAYERS.reduce((a, [l]) => a + defVal(l), 0);
+    const resistRow = ([l, label]) => `<tr>
+      <td class="fit-t-l">${label}</td>
+      ${['em', 'thermal', 'kinetic', 'explosive'].map((k) => `<td>${Math.round((s.resists[l] || {})[k] || 0)}%</td>`).join('')}
+      <td class="fit-t-v">${fmt(defVal(l))}</td></tr>`;
+
+    // RECHARGE / REPS — stable vs max EHP/s per layer
+    const reps = s.reps || { max: {}, stable: {} };
+    const hasReps = LAYERS.some(([l]) => (reps.max[l] || 0) > 0);
+    const repRow = (label, d) => `<tr><td class="fit-t-l">${label}</td>${LAYERS.map(([l]) => `<td>${fmt(d[l] || 0)}</td>`).join('')}</tr>`;
+
     $('#fit-stats').innerHTML = `
       <div class="fit-stat-block">
+        <div class="fit-block-h">Firepower</div>
         <div class="fit-big"><span class="fit-big-v">${fmt(s.dps.total)}</span> <span class="fit-big-u">DPS</span></div>
         <div class="fit-dmgbar">${dmgSegs}</div>
         <div class="muted fit-sub">weapon ${fmt(s.dps.weapon)} · drone ${fmt(s.dps.drone)} · volley ${fmt(s.volley)}</div>
       </div>
+
       <div class="fit-stat-block">
-        <div class="fit-row"><span>EHP</span><b>${fmt(ehpTotal)}</b></div>
-        <div class="fit-resist-head"><span></span><span>EM</span><span>Th</span><span>Kin</span><span>Exp</span></div>
-        ${resistRow('shield', 'Shield')}${resistRow('armor', 'Armor')}${resistRow('hull', 'Hull')}
-        <div class="muted fit-sub">S ${fmt(s.hp.shield)} · A ${fmt(s.hp.armor)} · H ${fmt(s.hp.hull)}</div>
+        <div class="fit-block-h">Resistances / Defense
+          <span class="fit-toggle"><button type="button" class="fit-tg ${ehpMode === 'ehp' ? 'on' : ''}" data-ehp="ehp">EHP</button><button type="button" class="fit-tg ${ehpMode === 'hp' ? 'on' : ''}" data-ehp="hp">HP</button></span>
+        </div>
+        <table class="fit-t">
+          <thead><tr><th></th><th>EM</th><th>Th</th><th>Kin</th><th>Exp</th><th>${ehpMode === 'ehp' ? 'EHP' : 'HP'}</th></tr></thead>
+          <tbody>${LAYERS.map(resistRow).join('')}</tbody>
+          <tfoot><tr><td class="fit-t-l">Total</td><td colspan="4" class="muted">${ehpMode === 'ehp' ? 'effective' : 'raw'} hp</td><td class="fit-t-v">${fmt(defTotal)}</td></tr></tfoot>
+        </table>
       </div>
+
       <div class="fit-stat-block">
+        <div class="fit-block-h">Recharge / Reps</div>
+        ${hasReps ? `<table class="fit-t fit-t-reps">
+          <thead><tr><th></th><th>Shield</th><th>Armor</th><th>Hull</th></tr></thead>
+          <tbody>${repRow('Stable', reps.stable)}${repRow('Max', reps.max)}</tbody></table>
+          <div class="muted fit-sub">EHP/s, stable / max</div>` : '<div class="muted fit-sub">No active reps fitted.</div>'}
         <div class="fit-row"><span>Capacitor</span><b class="${cap.stable ? 'fit-ok' : 'fit-warnt'}">${capTxt}</b></div>
+        <div class="muted fit-sub">recharge ${cap.recharge}/s · used ${cap.used}/s · Δ ${cap.delta}/s</div>
+      </div>
+
+      <div class="fit-stat-block">
+        <div class="fit-block-h">Navigation / Targeting</div>
         <div class="fit-row"><span>Max speed</span><b>${fmt(s.speed.max)} m/s</b></div>
         <div class="fit-row"><span>Align</span><b>${s.speed.alignTime}s</b></div>
         <div class="fit-row"><span>Targeting</span><b>${fmt(s.targeting.maxTargetRange / 1000)} km · ${fmt(s.targeting.maxLockedTargets)}×</b></div>
-        <div class="fit-row"><span>Sensor str</span><b>${s.targeting.sensorStrength}</b></div>
+        <div class="fit-row"><span>Scan res</span><b>${fmt(s.targeting.scanResolution)} mm · sensor ${s.targeting.sensorStrength}</b></div>
       </div>
+
       <div class="fit-stat-block">
+        <div class="fit-block-h">Resources</div>
         ${bar('CPU', s.resources.cpu.used, s.resources.cpu.total)}
         ${bar('Powergrid', s.resources.pg.used, s.resources.pg.total)}
         ${s.resources.calibration.total ? bar('Calibration', s.resources.calibration.used, s.resources.calibration.total) : ''}
-        ${s.resources.droneBandwidth.total ? bar('Drone bandwidth', s.resources.droneBandwidth.used, s.resources.droneBandwidth.total) : ''}
-      </div>
-      <div class="fit-stat-block">
+        ${s.resources.droneBandwidth.total ? bar('Drone bw', s.resources.droneBandwidth.used, s.resources.droneBandwidth.total) : ''}
         <div class="fit-row"><span>Est. value (Jita)</span><b>${iskShort(s.price)} ISK</b></div>
-        ${s.valid ? '<div class="fit-ok fit-sub">✓ Fits within CPU/PG/calibration</div>'
-                  : `<div class="fit-invalid">⚠ Over limit: ${(s.overLimit || []).join(', ')}</div>`}
+        ${s.valid ? '' : `<div class="fit-invalid">⚠ Over limit: ${(s.overLimit || []).join(', ')}</div>`}
       </div>`;
+  }
+
+  // ------------------------------ graphs ------------------------------
+  function renderGraphs() {
+    const box = $('#fit-graph-body'); if (!box) return;
+    if (!lastStats) { box.innerHTML = '<span class="muted">Add modules to see graphs.</span>'; return; }
+    const type = $('#fit-graph-type').value;
+    if (type === 'cap-time') { box.innerHTML = capChart(lastStats); return; }
+    box.innerHTML = dpsRangeChart(lastStats);
+  }
+
+  function dpsRangeChart(s) {
+    const weapons = (s.modules || []).filter((m) => m.dps);
+    const drone = s.dps.drone || 0;
+    if (!weapons.length && !drone) return '<span class="muted">No weapons or drones to plot.</span>';
+    // x-axis: out to where turret damage has faded (optimal + 3·falloff), min 10km
+    let maxD = 10000;
+    for (const w of weapons) maxD = Math.max(maxD, (w.optimal || 0) + 3 * (w.falloff || 0), (w.optimal || 0) * 1.2);
+    const N = 100;
+    const effAt = (r) => {
+      let d = drone;
+      for (const w of weapons) {
+        const mult = w.falloff
+          ? Math.pow(0.5, Math.pow(Math.max(0, r - (w.optimal || 0)) / w.falloff, 2))   // turret falloff
+          : (r <= (w.optimal || 0) ? 1 : 0);                                            // missile: full to max range
+        d += (w.dps || 0) * mult;
+      }
+      return d;
+    };
+    const pts = [];
+    let peak = 0;
+    for (let i = 0; i <= N; i++) { const r = maxD * i / N; const d = effAt(r); pts.push([r, d]); peak = Math.max(peak, d); }
+    peak = peak || 1;
+    return lineChart(pts, maxD, peak, 'km', 'DPS', (r) => (r / 1000).toFixed(0), '#6db3f2');
+  }
+
+  function capChart(s) {
+    // simple linear cap-over-time when cap-negative; flat when stable
+    const cap = s.capacitor;
+    const cap0 = cap.capacity || 0;
+    const dur = cap.stable ? 60 : Math.max(1, cap.lasts_s || 1);
+    const N = 100; const pts = [];
+    for (let i = 0; i <= N; i++) {
+      const t = dur * i / N;
+      const level = cap.stable ? cap0 * (cap.stableFraction / 100) : Math.max(0, cap0 * (1 - i / N));
+      pts.push([t, level]);
+    }
+    return lineChart(pts, dur, cap0 || 1, 's', 'GJ', (t) => t.toFixed(0), '#e0a34a');
+  }
+
+  function lineChart(pts, maxX, maxY, xUnit, yLabel, xFmt, color) {
+    const W = 300, H = 200, pad = 34;
+    const x = (v) => pad + (v / maxX) * (W - pad - 6);
+    const y = (v) => H - pad - (v / maxY) * (H - pad - 10);
+    const path = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${x(px).toFixed(1)} ${y(py).toFixed(1)}`).join(' ');
+    const ticksX = [0, 0.25, 0.5, 0.75, 1].map((f) => `<text x="${x(maxX * f)}" y="${H - pad + 12}" class="fit-axis" text-anchor="middle">${xFmt(maxX * f)}</text>`).join('');
+    const ticksY = [0, 0.5, 1].map((f) => `<text x="${pad - 5}" y="${y(maxY * f) + 3}" class="fit-axis" text-anchor="end">${Math.round(maxY * f)}</text><line x1="${pad}" y1="${y(maxY * f)}" x2="${W - 6}" y2="${y(maxY * f)}" class="fit-grid"/>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" class="fit-chart" xmlns="http://www.w3.org/2000/svg">
+      ${ticksY}${ticksX}
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>
+      <text x="${W / 2}" y="${H - 4}" class="fit-axis" text-anchor="middle">${xUnit === 'km' ? 'distance (km)' : 'time (s)'}</text>
+      <text x="8" y="12" class="fit-axis">${yLabel} · peak ${Math.round(maxY)}</text>
+    </svg>`;
   }
 
   // ------------------------------ editing ------------------------------
@@ -535,6 +624,20 @@
     $('#fit-export-btn').addEventListener('click', () => { if (fit) openEftExport(); else setStatus('Nothing to export.'); });
     $('#fit-eve-open-btn').addEventListener('click', openEveFittings);
     $('#fit-eve-save-btn').addEventListener('click', saveToEve);
+    // right-panel Stats/Graphs tabs
+    document.querySelectorAll('.fit-ptab').forEach((b) => b.addEventListener('click', () => {
+      panel = b.dataset.panel;
+      document.querySelectorAll('.fit-ptab').forEach((x) => x.classList.toggle('active', x === b));
+      $('#fit-stats').hidden = panel !== 'stats';
+      $('#fit-graphs').hidden = panel !== 'graphs';
+      if (panel === 'graphs') renderGraphs();
+    }));
+    $('#fit-graph-type').addEventListener('change', renderGraphs);
+    // EHP/HP toggle (delegated — the stats panel re-renders)
+    $('#fit-stats').addEventListener('click', (e) => {
+      const t = e.target.closest('[data-ehp]');
+      if (t) { ehpMode = t.dataset.ehp; if (lastStats) renderStats(lastStats); }
+    });
     $('#fit-clear-btn').addEventListener('click', () => { if (fit) { fit.modules = []; fit.drones = []; fit.cargo = []; recompute(); } });
     $('#fit-name').addEventListener('change', (e) => { if (fit) fit.name = e.target.value; });
     $('#fit-skills-btn').addEventListener('click', openSkillsEditor);

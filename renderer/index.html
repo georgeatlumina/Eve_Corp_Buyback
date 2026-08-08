@@ -39,6 +39,13 @@
         </div>
       </div>
 
+      <div class="nav-group" data-group="production">
+        <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Production</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-panel" role="menu">
+          <button class="tab-btn" data-tab="production">Production Planner</button>
+        </div>
+      </div>
+
       <div class="nav-group" data-group="operations">
         <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Operations</span><span class="nav-caret" aria-hidden="true">▾</span></button>
         <div class="nav-panel" role="menu">
@@ -495,6 +502,54 @@
       </div>
     </section>
 
+    <section id="tab-production" class="tab">
+      <h2>Production Planner</h2>
+      <p class="muted">Paste what you want to build (one <code>Item xN</code> per line). The planner explodes the full manufacturing + reaction tree down to raw materials, applies ME and whole-run rounding, subtracts any stock you list, and prices the buy list + jobs against Jita. Inspired by <strong>ravworks.com</strong>.</p>
+      <div class="prod-inputs">
+        <div class="prod-col">
+          <label class="prod-label">Build targets</label>
+          <textarea id="prod-targets" spellcheck="false" placeholder="Sabre x2&#10;Damage Control II x10&#10;Hobgoblin II x50"></textarea>
+        </div>
+        <div class="prod-col">
+          <label class="prod-label">On-hand stock <span class="muted">(optional — offsets the build)</span></label>
+          <textarea id="prod-stock" spellcheck="false" placeholder="Paste an EVE inventory:&#10;Fernite Carbide&#9;20000&#10;Nanotransistors&#9;500"></textarea>
+        </div>
+      </div>
+      <div class="prod-config">
+        <label>ME&nbsp;% <input id="prod-me" type="number" value="10" min="0" max="10" step="1" /></label>
+        <label title="Manufacturing structure + rig material reduction">Struct&nbsp;mat&nbsp;% <input id="prod-struct" type="number" value="0" min="0" max="10" step="0.1" /></label>
+        <label title="Reaction structure + rig material reduction">Rx&nbsp;mat&nbsp;% <input id="prod-rx" type="number" value="0" min="0" max="10" step="0.1" /></label>
+        <label title="System cost index used to estimate job install fees">Cost&nbsp;index&nbsp;% <input id="prod-index" type="number" value="5" min="0" step="0.1" /></label>
+        <label title="Facility tax on the job install fee">Tax&nbsp;% <input id="prod-tax" type="number" value="0.25" min="0" step="0.05" /></label>
+        <label title="Account for T2 invention: datacores, an optional decryptor, and the invented BPC's ME"><input id="prod-invention" type="checkbox" checked /> Invention</label>
+        <label>Decryptor <select id="prod-decryptor"></select></label>
+        <label title="Assumed level of the three invention skills (Encryption + 2 sciences)">Inv&nbsp;skill <input id="prod-inv-skill" type="number" value="4" min="0" max="5" step="1" /></label>
+        <label>Market <select id="prod-market">
+          <option value="Jita 4-4">Jita 4-4</option>
+          <option value="Amarr">Amarr</option>
+          <option value="Dodixie">Dodixie</option>
+          <option value="Rens">Rens</option>
+        </select></label>
+        <button id="prod-analyze" type="button">Analyze</button>
+      </div>
+      <p id="prod-status" class="muted"></p>
+      <div id="prod-summary" class="prod-summary"></div>
+      <div class="prod-results">
+        <div class="prod-pane prod-pane-jobs">
+          <div class="prod-pane-head"><strong>Jobs</strong> <span id="prod-jobs-count" class="muted"></span></div>
+          <div id="prod-jobs"></div>
+        </div>
+        <div class="prod-pane">
+          <div class="prod-pane-head">
+            <strong>Shopping list</strong> <span id="prod-raw-count" class="muted"></span>
+            <button id="prod-copy-raw" type="button" class="secondary" title="Copy as an in-game Multibuy list (Name xN per line)">Copy multibuy</button>
+            <button id="prod-dl-raw" type="button" class="secondary">Download</button>
+          </div>
+          <div id="prod-raw"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-plex-value" class="tab">
       <h2>Money → PLEX → ISK</h2>
       <p class="muted">Convert real-life money to PLEX (bought from CCP's store) and then to ISK at the live <strong>Jita PLEX price</strong>. Forex rates are fetched live; the PLEX→ISK price comes from Janice (or ESI market orders if no Janice key). Pick a CCP pack for its real per-PLEX cost, or enter your own <code>USD / PLEX</code> rate.</p>
@@ -708,7 +763,22 @@
           <div id="fit-empty" class="fit-empty muted">Choose a ship to start fitting. Modules compute live (DPS, tank, cap, speed) at your chosen skills.</div>
           <div id="fit-racks" class="fit-racks"></div>
         </div>
-        <div id="fit-stats" class="fit-stats"></div>
+        <div class="fit-right">
+          <div class="fit-ptabs">
+            <button type="button" class="fit-ptab active" data-panel="stats">Stats</button>
+            <button type="button" class="fit-ptab" data-panel="graphs">Graphs</button>
+          </div>
+          <div id="fit-stats" class="fit-stats"></div>
+          <div id="fit-graphs" class="fit-graphs" hidden>
+            <label class="fit-graph-sel">Graph
+              <select id="fit-graph-type">
+                <option value="dps-range">Effective DPS vs distance</option>
+                <option value="cap-time">Capacitor over time</option>
+              </select>
+            </label>
+            <div id="fit-graph-body"></div>
+          </div>
+        </div>
       </div>
 
       <div id="fit-modal" class="fit-modal" hidden>
@@ -1175,6 +1245,7 @@
   <script src="stockpile.js"></script>
   <script src="doctrine-stock.js"></script>
   <script src="module-sorter.js"></script>
+  <script src="production.js"></script>
   <script src="plex-value.js"></script>
   <script src="panels.js"></script>
   <script src="dscan.js"></script>

@@ -521,6 +521,24 @@ def _extract(fit):
     ehp = fit.ehp if isinstance(fit.ehp, dict) else {}
     hp = {'shield': round(sa('shieldCapacity')), 'armor': round(sa('armorHP')), 'hull': round(sa('hp'))}
 
+    # Reps / recharge as EHP/s per layer (max = burst, stable = cap-sustainable).
+    # eos tank dicts are raw HP/s (no damage pattern set), so scale by each layer's
+    # EHP/HP multiplier to match the displayed EHP.
+    def _layer_mult(layer):
+        h = hp.get(layer) or 0
+        e = (ehp or {}).get(layer) or 0
+        return (e / h) if h else 1.0
+
+    def _reps_of(d):
+        d = d or {}
+        return {
+            'shield': round(((d.get('passiveShield', 0) or 0) + (d.get('shieldRepair', 0) or 0)) * _layer_mult('shield'), 1),
+            'armor': round((d.get('armorRepair', 0) or 0) * _layer_mult('armor'), 1),
+            'hull': round((d.get('hullRepair', 0) or 0) * _layer_mult('hull'), 1),
+        }
+    reps_max = _reps_of(_safe(lambda: fit.tank, {}))
+    reps_stable = _reps_of(_safe(lambda: fit.sustainableTank, {}))
+
     cap_capacity = sa('capacitorCapacity')
 
     modules = []
@@ -557,6 +575,8 @@ def _extract(fit):
                 'optimal': ma('maxRange'),
                 'falloff': ma('falloff'),
                 'tracking': ma('trackingSpeed'),
+                # per-weapon DPS (for the DPS-vs-distance graph); 0/None for non-weapons
+                'dps': round(_dmg_total(_safe(lambda: m.getDps(), None)), 2) or None,
             })
         except Exception:
             pass
@@ -624,7 +644,11 @@ def _extract(fit):
             'stable': bool(fp('capStable')),
             'stableFraction': (round(fp('capState'), 1) if fp('capStable') else None),
             'lasts_s': (None if fp('capStable') else round(fp('capState') or 0, 1)),
+            'recharge': round(_safe(lambda: fp('capRecharge'), 0) or 0, 2),
+            'used': round(_safe(lambda: fp('capUsed'), 0) or 0, 2),
+            'delta': round(_safe(lambda: fp('capDelta'), 0) or 0, 2),
         },
+        'reps': {'max': reps_max, 'stable': reps_stable},
         'speed': {
             'max': round(fp('maxSpeed', 0) or 0, 2),
             'alignTime': round(fp('alignTime', 0) or 0, 2),
