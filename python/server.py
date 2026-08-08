@@ -1104,10 +1104,12 @@ def fit_skills():
 
 
 @app.get('/api/fit/items')
-def fit_items(q: str, categories: Optional[str] = None, limit: int = 60, slot: Optional[str] = None):
+def fit_items(q: str, categories: Optional[str] = None, limit: int = 60, slot: Optional[str] = None,
+              max_pg: Optional[float] = None, max_cpu: Optional[float] = None):
     _require_pyfa()
     cats = [c.strip() for c in categories.split(',')] if categories else None
-    return {'items': pyfa_engine.search_items(q, categories=cats, limit=min(200, max(1, limit)), slot=slot)}
+    return {'items': pyfa_engine.search_items(q, categories=cats, limit=min(200, max(1, limit)),
+                                              slot=slot, max_pg=max_pg, max_cpu=max_cpu)}
 
 
 @app.get('/api/fit/item/{type_id}')
