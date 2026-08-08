@@ -114,7 +114,7 @@ from refining import compute_refined_payout, is_donation, is_mineable, is_prisma
 from validate import categorize, process_moon_contract, validate_all, validate_buyback_contract
 from workforce_plan import load_plan, save_plan
 
-PORT = 8766
+PORT = 8765
 REDIRECT_URI = f'http://localhost:{PORT}/callback'
 
 app = FastAPI(title='Naval Defence Alliance Management Tool')
