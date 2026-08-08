@@ -24,6 +24,7 @@
   let lastStats = null;
   let ehpMode = 'ehp';     // DEFENSE table: 'ehp' | 'hp'
   let panel = 'stats';     // right panel: 'stats' | 'graphs'
+  let nextGroup = 1;       // module-grouping id counter
   let shipsCache = null;
   let initialised = false;
   let available = null;
@@ -80,10 +81,21 @@
       const total = (slots[rack.key] || {}).total || 0;
       if (!total) return '';
       const inRack = mods.filter((x) => x.m.slot === rack.slot);
-      let cells = '';
-      for (let i = 0; i < total; i++) {
-        if (i < inRack.length) cells += moduleCell(inRack[i].m, inRack[i].i);
-        else cells += `<div class="fit-slot fit-empty-slot" data-add="${rack.slot}"><span>+ add ${rack.label.toLowerCase()}</span></div>`;
+      // how many of each type are in this rack (to offer grouping when 2+)
+      const typeCount = {};
+      inRack.forEach((x) => { typeCount[x.m.typeID] = (typeCount[x.m.typeID] || 0) + 1; });
+      // collapse grouped modules into one row (group id lives on the fit doc)
+      const groups = []; const seen = new Map();
+      for (const { m, i } of inRack) {
+        const g = fit.modules[i] && fit.modules[i].group;
+        const key = (g != null) ? `g${g}` : `s${i}`;
+        let grp = seen.get(key);
+        if (!grp) { grp = { rep: m, indices: [] }; seen.set(key, grp); groups.push(grp); }
+        grp.indices.push(i);
+      }
+      let cells = groups.map((grp) => groupCell(grp, typeCount)).join('');
+      for (let k = inRack.length; k < total; k++) {
+        cells += `<div class="fit-slot fit-empty-slot" data-add="${rack.slot}"><span>+ add ${rack.label.toLowerCase()}</span></div>`;
       }
       return `<div class="fit-rack"><div class="fit-rack-h">${rack.label} <span class="muted">${inRack.length}/${total}</span></div>${cells}</div>`;
     }).join('');
@@ -128,19 +140,30 @@
       <div class="fit-slot fit-empty-slot" data-adddrone="1"><span>+ add drone</span></div></div>`;
   }
 
-  function moduleCell(m, idx) {
+  function groupCell(grp, typeCount) {
+    const m = grp.rep; const idxs = grp.indices; const first = idxs[0];
+    const members = idxs.join(',');
+    const count = idxs.length;
     const st = STATE_OF[String(m.state)] || 'active';
+    const D = `data-state="${first}" data-members="${members}"`;
     let charge = '';
-    if (m.charge) charge = `<span class="fit-charge" data-charge="${idx}" title="Change ammo/script"><img class="fit-charge-ic" src="${ICON(m.charge.typeID, 32)}" alt="" loading="lazy"/>${escapeHtml(m.charge.name)}</span>`;
-    else if (m.chargeable) charge = `<span class="fit-charge fit-charge-empty" data-charge="${idx}" title="Load ammo/script">+ ammo</span>`;
-    return `<div class="fit-slot fit-mod" data-idx="${idx}">
-      <span class="fit-state fit-state-${st}" data-state="${idx}" title="State: ${st} — click to cycle"></span>
-      <img class="fit-mod-ic" src="${ICON(m.typeID, 32)}" alt="" loading="lazy" data-state="${idx}"/>
+    if (m.charge) charge = `<span class="fit-charge" data-charge="${first}" data-members="${members}" title="Change ammo/script (whole group)"><img class="fit-charge-ic" src="${ICON(m.charge.typeID, 32)}" alt="" loading="lazy"/>${escapeHtml(m.charge.name)}</span>`;
+    else if (m.chargeable) charge = `<span class="fit-charge fit-charge-empty" data-charge="${first}" data-members="${members}" title="Load ammo/script">+ ammo</span>`;
+    const grouped = fit.modules[first] && fit.modules[first].group != null;
+    const canGroup = (typeCount[m.typeID] || 0) >= 2;
+    const groupBtn = canGroup
+      ? `<button class="fit-grp-btn ${grouped ? 'on' : ''}" data-grouptype="${m.typeID}" title="${grouped ? 'Ungroup' : 'Group identical modules (share ammo/state)'}" type="button">⛓</button>` : '';
+    const badge = count > 1 ? `<span class="fit-count" title="${count} grouped">×${count}</span>` : '';
+    return `<div class="fit-slot fit-mod ${grouped ? 'fit-grouped' : ''}" data-idx="${first}" data-members="${members}">
+      <span class="fit-state fit-state-${st}" ${D} title="State: ${st} — click to cycle"></span>
+      <img class="fit-mod-ic" src="${ICON(m.typeID, 32)}" alt="" loading="lazy" ${D}/>
       <div class="fit-mod-main">
         <div class="fit-mod-top">
-          <span class="fit-mod-name" data-state="${idx}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
+          <span class="fit-mod-name" ${D} title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
+          ${badge}
           ${charge}
-          <button class="fit-del" data-del="${idx}" title="Remove" type="button">✕</button>
+          ${groupBtn}
+          <button class="fit-del" data-del="${first}" data-members="${members}" title="${count > 1 ? 'Remove one' : 'Remove'}" type="button">✕</button>
         </div>
         ${moduleDetail(m)}
       </div>
@@ -299,7 +322,28 @@
     recompute();
   }
   function addModule(typeId) { fit.modules.push({ type: typeId }); recompute(); }
-  function removeModule(idx) { fit.modules.splice(idx, 1); recompute(); }
+  const _members = (str) => (str || '').split(',').map(Number).filter((n) => !isNaN(n));
+  function removeMembers(membersStr) {
+    // remove one member (the last index) so ×N decrements
+    const idxs = _members(membersStr).sort((a, b) => a - b);
+    fit.modules.splice(idxs[idxs.length - 1], 1);
+    recompute();
+  }
+  // Group / ungroup all modules of a type so ammo + state act as one.
+  function toggleGroupType(typeID) {
+    typeID = +typeID;
+    const idxs = (lastStats.modules || []).map((m, i) => ({ m, i })).filter((x) => x.m.typeID === typeID).map((x) => x.i);
+    if (!idxs.length) return;
+    const allGrouped = idxs.every((i) => fit.modules[i] && fit.modules[i].group != null);
+    if (allGrouped) {
+      idxs.forEach((i) => { if (fit.modules[i]) delete fit.modules[i].group; });
+    } else {
+      const gid = nextGroup++;
+      const lead = fit.modules[idxs[0]];
+      idxs.forEach((i) => { if (fit.modules[i]) { fit.modules[i].group = gid; fit.modules[i].state = lead.state; fit.modules[i].charge = lead.charge; } });
+    }
+    recompute();
+  }
   function addDrone(typeId) {
     fit.drones = fit.drones || [];
     const ex = fit.drones.find((d) => d.type === typeId);
@@ -329,13 +373,17 @@
     if (c.amount === 0) fit.cargo.splice(i, 1);
     recompute();
   }
-  function cycleState(idx) {
-    const m = fit.modules[idx]; if (!m) return;
-    const cur = m.state || 'active';
-    m.state = STATE_ORDER[(STATE_ORDER.indexOf(cur) + 1) % STATE_ORDER.length];
+  function cycleStateMembers(membersStr) {
+    const idxs = _members(membersStr); if (!idxs.length) return;
+    const cur = (fit.modules[idxs[0]] || {}).state || 'active';
+    const next = STATE_ORDER[(STATE_ORDER.indexOf(cur) + 1) % STATE_ORDER.length];
+    idxs.forEach((i) => { if (fit.modules[i]) fit.modules[i].state = next; });
     recompute();
   }
-  function setCharge(idx, chargeId) { if (fit.modules[idx]) { fit.modules[idx].charge = chargeId; recompute(); } }
+  function setChargeMembers(membersStr, chargeId) {
+    _members(membersStr).forEach((i) => { if (fit.modules[i]) fit.modules[i].charge = chargeId; });
+    recompute();
+  }
 
   // ------------------------------ modal / browsers ------------------------------
   function openModal(title, bodyHtml) {
@@ -652,17 +700,20 @@
     $('#fit-racks').addEventListener('click', (e) => {
       const add = e.target.closest('[data-add]');
       if (add) { const sk = SLOT_KEY[add.dataset.add]; openItemBrowser(`Add ${sk} module`, ['Module', 'Subsystem'], (id) => { addModule(id); closeModal(); }, sk); return; }
+      const grpBtn = e.target.closest('[data-grouptype]');
+      if (grpBtn) { toggleGroupType(grpBtn.dataset.grouptype); return; }
       const del = e.target.closest('[data-del]');
-      if (del) { removeModule(+del.dataset.del); return; }
+      if (del) { removeMembers(del.dataset.members || String(del.dataset.del)); return; }
       const chg = e.target.closest('[data-charge]');
       if (chg) {
         const idx = +chg.dataset.charge;
+        const members = chg.dataset.members || String(idx);
         const mtid = (lastStats && lastStats.modules[idx]) ? lastStats.modules[idx].typeID : null;
-        if (mtid) openChargeBrowser(mtid, (id) => { setCharge(idx, id); closeModal(); });
+        if (mtid) openChargeBrowser(mtid, (id) => { setChargeMembers(members, id); closeModal(); });
         return;
       }
       const stt = e.target.closest('[data-state]');
-      if (stt) { cycleState(+stt.dataset.state); return; }
+      if (stt) { cycleStateMembers(stt.dataset.members || String(stt.dataset.state)); return; }
       const adrone = e.target.closest('[data-adddrone]');
       if (adrone) { openItemBrowser('Add drone', ['Drone'], (id) => { addDrone(id); closeModal(); }); return; }
       const ddel = e.target.closest('[data-ddel]');

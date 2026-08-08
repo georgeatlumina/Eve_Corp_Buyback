@@ -76,6 +76,7 @@ form select { display: block; margin-top: 0.25em; padding: 0.5em; background: #2
 .result h4 a { color: #88c; text-decoration: none; }
 .result h4 a:hover { text-decoration: underline; }
 .result .meta { font-size: 0.85em; color: #aaa; margin-bottom: 0.4em; }
+.result h4 .moon-age { font-size: 0.72em; font-weight: 400; }
 .result .check { padding: 0.15em 0; font-size: 0.9em; }
 .result .check.pass { color: #6c6; }
 .result .check.fail { color: #f88; }
@@ -1583,3 +1584,23 @@ body.popout-calc .pib-calc > summary { display: none; }
 .prod-toggle { background: transparent; color: #7fb3d5; border: 1px solid #3a4a55; border-radius: 4px; padding: 0.05em 0.5em; font-size: 0.78em; cursor: pointer; opacity: 0.55; transition: opacity 0.1s, background 0.1s; }
 .prod-table tr:hover .prod-toggle { opacity: 1; }
 .prod-toggle:hover { background: #2a3a45; opacity: 1; }
+/* Fitting — module grouping */
+.fit-count { font-size: 0.82em; color: #6fd0a0; font-weight: 700; flex: 0 0 auto; }
+.fit-grp-btn { background: none; border: 1px solid #35505c; color: #7f93a0; border-radius: 3px; cursor: pointer; font-size: 0.8em; padding: 0 0.25em; flex: 0 0 auto; line-height: 1.4; }
+.fit-grp-btn:hover { color: #cfe6da; border-color: #4a8; }
+.fit-grp-btn.on { color: #6fd0a0; border-color: #2f6b4d; background: #16241d; }
+.fit-slot.fit-grouped { border-left: 2px solid #2f6b4d; }
+
+/* Production tree */
+.prod-tree-pane { margin-top: 1em; }
+#prod-tree { overflow-x: auto; }
+.prod-tree-root, .prod-tree-root ul { list-style: none; margin: 0; padding: 0; }
+.prod-tree-root ul { margin-left: 1.1em; border-left: 1px solid #333; padding-left: 0.6em; }
+.prod-tree-root li { padding: 0.08em 0; font-size: 0.86em; }
+.prod-tree-root summary { cursor: pointer; list-style-position: outside; }
+.prod-tree-root summary::-webkit-details-marker { color: #6a8; }
+.prod-tree-root .prod-tree-leaf { padding-left: 1.0em; }
+.prod-tree-qty { color: #7fb0c8; font-variant-numeric: tabular-nums; }
+.prod-tree-root .prod-act { display: inline-block; min-width: 3.8em; font-size: 0.78em; }
+.prod-act-buy { color: #d0a24a; }
+.prod-act-raw { color: #8a9a8f; }
