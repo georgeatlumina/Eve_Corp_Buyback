@@ -4599,6 +4599,12 @@ function renderAcqFinderResults(el, result) {
  * Section 1 (inventory-completable) renders immediately.
  * Sections 2–4 render after the UEXO market loads.
  */
+function acqProgressSet(bar, fill, step, indeterminate) {
+  bar.querySelector('.progress-fill').style.width = fill + '%';
+  bar.querySelector('.progress-step').textContent = step;
+  bar.querySelector('.progress-bar').classList.toggle('indeterminate', !!indeterminate);
+}
+
 async function acqRunHullAnalysis(root, statusEl) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
@@ -4606,11 +4612,15 @@ async function acqRunHullAnalysis(root, statusEl) {
     return;
   }
 
+  const progressBar = root.querySelector('#acq-analysis-progress');
   const s1 = root.querySelector('#acq-section-inventory');
   const s2 = root.querySelector('#acq-section-market');
   const s3 = root.querySelector('#acq-section-shopping');
   const s4 = root.querySelector('#acq-section-outofreach');
   [s1, s2, s3, s4].forEach((s) => { s.hidden = true; s.innerHTML = ''; });
+
+  progressBar.hidden = false;
+  acqProgressSet(progressBar, 0, 'Analysing inventory…', true);
 
   // --- Section 1: inventory pass (immediate) ---
   const fullResult = planAcquisitions({
@@ -4638,6 +4648,7 @@ async function acqRunHullAnalysis(root, statusEl) {
     }
   }
 
+  acqProgressSet(progressBar, 0, 'Loading UEXO market…', true);
   statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. ⏳ Loading UEXO market…`;
 
   let market = aaState.market || null;
@@ -4650,6 +4661,8 @@ async function acqRunHullAnalysis(root, statusEl) {
     statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. `
       + `Market unavailable — ${aaState.marketError || 'no order book'}.`;
   }
+
+  acqProgressSet(progressBar, 60, 'Computing shopping gaps…', false);
 
   const ageMin = market
     ? Math.max(0, Math.round((Date.now() / 1000 - (market.fetched_at || 0)) / 60))
@@ -4714,10 +4727,12 @@ async function acqRunHullAnalysis(root, statusEl) {
   renderAcqSection4(s4, outOfReach);
   s4.hidden = outOfReach.length === 0;
 
+  acqProgressSet(progressBar, 100, '', false);
   const mktMsg = market
     ? ` + ${marketBuilds.length} with market (book ${ageMin}m old).`
     : '.';
   statusEl.textContent = `${fullResult.builds.length} build(s) from inventory${mktMsg}`;
+  setTimeout(() => { progressBar.hidden = true; }, 400);
 }
 
 function renderAcqSection1(el, result) {
@@ -4887,16 +4902,21 @@ function renderAcqSection4(el, outOfReach) {
     </details>`;
 }
 
-function acqRunFinder(mode, resultsEl, statusEl) {
+async function acqRunFinder(mode, resultsEl, statusEl, progressBar) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
     statusEl.textContent = inputs.error;
     resultsEl.innerHTML = '';
     return;
   }
+  progressBar.hidden = false;
+  acqProgressSet(progressBar, 0, 'Analysing fits…', false);
+  await new Promise((r) => setTimeout(r, 0));
   const result = planAcquisitions({ pool: inputs.pool, targets: inputs.targets, mode });
-  statusEl.textContent = `${result.builds.length} build(s) found.`;
   renderAcqFinderResults(resultsEl, result);
+  statusEl.textContent = `${result.builds.length} build(s) found.`;
+  acqProgressSet(progressBar, 100, '', false);
+  setTimeout(() => { progressBar.hidden = true; }, 300);
 }
 
 // Names come from whatever the page already resolved; the type id is the fallback.
@@ -5051,6 +5071,10 @@ function renderAcquisitionsTab() {
       <span id="acq-find-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
     <div id="acq-find-results" style="margin-top:0.75rem">
+      <div class="progress-area" id="acq-analysis-progress" hidden>
+        <div class="progress-bar indeterminate"><div class="progress-fill"></div></div>
+        <div class="progress-step muted"></div>
+      </div>
       <div id="acq-section-inventory" hidden></div>
       <div id="acq-section-market" hidden></div>
       <div id="acq-section-shopping" hidden></div>
@@ -5091,6 +5115,7 @@ function renderAcquisitionsTab() {
 
   const findStatusEl = root.querySelector('#acq-find-status');
   const findResultsEl = root.querySelector('#acq-find-results');
+  const analysisProgressBar = root.querySelector('#acq-analysis-progress');
   acqUpdateFinderAvailability(root);
   root.querySelector('#acq-find-hulls').addEventListener('click', async () => {
     const btn = root.querySelector('#acq-find-hulls');
@@ -5099,7 +5124,7 @@ function renderAcquisitionsTab() {
     finally { btn.disabled = false; }
   });
   root.querySelector('#acq-find-nohull').addEventListener('click',
-    () => acqRunFinder(ACQ_MODES.FITS_NO_HULL, findResultsEl, findStatusEl));
+    () => acqRunFinder(ACQ_MODES.FITS_NO_HULL, findResultsEl, findStatusEl, analysisProgressBar));
 
   addBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add'));
   replaceBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'replace'));
