@@ -4488,6 +4488,274 @@ function renderAcqFinderResults(el, result) {
     </table>${note}`;
 }
 
+/**
+ * Progressive hull completion analysis.
+ *
+ * Section 1 (inventory-completable) renders immediately.
+ * Sections 2–4 render after the UEXO market loads.
+ */
+async function acqRunHullAnalysis(root, statusEl) {
+  const inputs = acqFinderInputs();
+  if (inputs.error) {
+    statusEl.textContent = inputs.error;
+    return;
+  }
+
+  const s1 = root.querySelector('#acq-section-inventory');
+  const s2 = root.querySelector('#acq-section-market');
+  const s3 = root.querySelector('#acq-section-shopping');
+  const s4 = root.querySelector('#acq-section-outofreach');
+  [s1, s2, s3, s4].forEach((s) => { s.hidden = true; s.innerHTML = ''; });
+
+  // --- Section 1: inventory pass (immediate) ---
+  const fullResult = planAcquisitions({
+    pool: inputs.pool, targets: inputs.targets, mode: ACQ_MODES.FULL,
+  });
+  renderAcqSection1(s1, fullResult);
+  s1.hidden = false;
+
+  const satisfiedByInventory = new Set(
+    fullResult.builds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
+  );
+
+  statusEl.textContent = fullResult.builds.length + ' build(s) from inventory. Loading UEXO market…';
+
+  let market = aaState.market || null;
+  if (!market) {
+    await loadMarket(false);
+    market = aaState.market || null;
+  }
+
+  if (aaState.marketError || !market?.by_type) {
+    statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. `
+      + `Market unavailable — ${aaState.marketError || 'no order book'}.`;
+  }
+
+  const ageMin = market
+    ? Math.max(0, Math.round((Date.now() / 1000 - (market.fetched_at || 0)) / 60))
+    : null;
+
+  // --- Section 2: market pass (independent pool copy) ---
+  const marketResult = planAcquisitions({
+    pool: inputs.pool, targets: inputs.targets, mode: ACQ_MODES.MARKET, market,
+  });
+  const marketBuilds = marketResult.builds.filter(
+    (b) => !satisfiedByInventory.has(`${b.shipTypeId}||${b.fitName || ''}`)
+  );
+
+  renderAcqSection2(s2, marketBuilds, ageMin, market);
+  s2.hidden = false;
+
+  const satisfiedByMarket = new Set(
+    marketBuilds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
+  );
+  const satisfiedAll = new Set([...satisfiedByInventory, ...satisfiedByMarket]);
+
+  // --- Sections 3 & 4: shopping candidates and out of reach ---
+  const minCoverage = appConfig.acq_shopping_min_coverage ?? 0.5;
+  const maxGapIsk = appConfig.acq_shopping_max_isk_gap ?? 500_000_000;
+
+  const candidates = [];
+  const outOfReach = [];
+
+  for (const target of inputs.targets) {
+    if ((target.needed || 0) <= 0) continue;
+    if (target.unevaluatable) continue;
+    const key = `${target.shipTypeId}||${target.fitName || ''}`;
+    if (satisfiedAll.has(key)) continue;
+
+    const gap = computeShoppingGap(target, inputs.pool, market);
+    if (gap.coverage >= minCoverage && gap.gapIsk <= maxGapIsk) {
+      candidates.push({ target, gap });
+    } else {
+      let reason = '';
+      if (gap.coverage < minCoverage && gap.gapIsk > maxGapIsk) {
+        reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold, gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
+      } else if (gap.coverage < minCoverage) {
+        reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold`;
+      } else {
+        reason = `gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
+      }
+      outOfReach.push({ target, gap, reason });
+    }
+  }
+
+  renderAcqSection3(s3, candidates, market);
+  s3.hidden = candidates.length === 0;
+  renderAcqSection4(s4, outOfReach);
+  s4.hidden = outOfReach.length === 0;
+
+  const mktMsg = market
+    ? ` + ${marketBuilds.length} with market (book ${ageMin}m old).`
+    : '.';
+  statusEl.textContent = `${fullResult.builds.length} build(s) from inventory${mktMsg}`;
+}
+
+function renderAcqSection1(el, result) {
+  const counts = new Map();
+  for (const b of result.builds) {
+    const key = `${b.shipName}||${b.fitName || ''}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const rows = [...counts.entries()].map(([key, n]) => {
+    const [ship, fit] = key.split('||');
+    return `<tr style="border-bottom:1px solid #1e2533">
+        <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
+        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
+      </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="border:1px solid #16a34a;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="background:#14532d;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#4ade80;font-size:0.9rem">✓ Completable from inventory</strong>
+        <span style="color:#4ade80;font-size:0.8rem">${result.builds.length} build(s)</span>
+      </div>
+      <div style="padding:0.5rem 0.75rem">
+        ${result.builds.length === 0
+          ? '<p style="font-size:0.85rem;color:#8899aa;margin:0">None — inventory alone cannot complete any quota ships.</p>'
+          : `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+              <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e">
+                <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
+                <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
+                <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>`
+        }
+      </div>
+    </div>`;
+}
+
+function renderAcqSection2(el, builds, ageMin, market) {
+  const counts = new Map();
+  for (const b of builds) {
+    const key = `${b.shipName}||${b.fitName || ''}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const rows = [...counts.entries()].map(([key, n]) => {
+    const [ship, fit] = key.split('||');
+    return `<tr style="border-bottom:1px solid #1e2533">
+        <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
+        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
+      </tr>`;
+  }).join('');
+
+  const ageLabel = ageMin != null ? ` · market ${ageMin}m old` : '';
+  el.innerHTML = `
+    <div style="border:1px solid #2563eb;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="background:#1e3a5f;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#60a5fa;font-size:0.9rem">⊕ Completable with UEXO market</strong>
+        <span style="color:#60a5fa;font-size:0.8rem">${builds.length} build(s)${ageLabel}</span>
+      </div>
+      <div style="padding:0.5rem 0.75rem">
+        ${builds.length === 0
+          ? '<p style="font-size:0.85rem;color:#8899aa;margin:0">None — no additional builds completable via the UEXO market.</p>'
+          : `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+              <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e">
+                <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
+                <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
+                <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>`
+        }
+      </div>
+    </div>`;
+}
+
+function renderAcqSection3(el, candidates, market) {
+  if (!candidates.length) { el.innerHTML = ''; return; }
+  const cards = candidates.map(({ target, gap }) => {
+    const itemRows = gap.items.map((it) => {
+      const name = escapeHtml(acqTypeName(it.type_id));
+      const priceStr = it.price ? Math.round(it.price).toLocaleString() : '—';
+      return `<tr style="border-bottom:1px solid #1e2533;font-size:0.8rem">
+          <td style="padding:0.25rem 0.4rem">${name}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right">${it.need}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right">${it.have}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right;color:#f87171">${it.short}</td>
+          <td style="padding:0.25rem 0.5rem;text-align:right">${priceStr}</td>
+        </tr>`;
+    }).join('');
+
+    const gapALines = gap.items.map((it) => `${acqTypeName(it.type_id)} x${it.short}`);
+    const gapBLines = gap.items
+      .filter((it) => !it.onMarket)
+      .map((it) => `${acqTypeName(it.type_id)} x${it.short}`);
+
+    const coveragePct = Math.round(gap.coverage * 100);
+    const gapIskStr = fmtIskShort(gap.gapIsk);
+    const shipLabel = escapeHtml(`${target.shipName} — ${target.fitName || 'unknown fit'}`);
+    const btnId = `acq-copy-gap-${target.shipTypeId}`;
+    const btnBId = `acq-copy-gapb-${target.shipTypeId}`;
+
+    return `
+      <div style="margin-bottom:0.75rem;padding:0.6rem 0.75rem;background:#1a1208;border:1px solid #92400e;border-radius:5px">
+        <div style="font-size:0.85rem;margin-bottom:0.4rem">
+          <strong>${shipLabel}</strong>
+          <span style="color:#fbbf24;margin-left:0.5rem">${coveragePct}% covered</span>
+          <span style="color:#8899aa;margin-left:0.5rem">gap ~${gapIskStr}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e;font-size:0.78rem">
+            <th style="padding:0.25rem 0.4rem;text-align:left">Item</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Need</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Have</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Short</th>
+            <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
+          </tr></thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
+          <button id="${btnId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapALines.join('\n'))}">Copy gap (inventory only)</button>
+          <button id="${btnBId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapBLines.join('\n'))}">Copy gap (inventory + market)</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="border:1px solid #d97706;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="background:#451a03;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#fbbf24;font-size:0.9rem">🛒 Shopping list candidates</strong>
+        <span style="color:#fbbf24;font-size:0.8rem">${candidates.length} hull(s)</span>
+      </div>
+      <div style="padding:0.6rem 0.75rem">${cards}</div>
+    </div>`;
+
+  for (const { target } of candidates) {
+    for (const id of [`acq-copy-gap-${target.shipTypeId}`, `acq-copy-gapb-${target.shipTypeId}`]) {
+      const btn = el.querySelector(`#${id}`);
+      if (!btn) continue;
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.lines);
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = btn.id.includes('gapb') ? 'Copy gap (inventory + market)' : 'Copy gap (inventory only)'; }, 1500);
+        } catch { btn.textContent = 'Copy failed'; }
+      });
+    }
+  }
+}
+
+function renderAcqSection4(el, outOfReach) {
+  if (!outOfReach.length) { el.innerHTML = ''; return; }
+  const lines = outOfReach.map(({ target, reason }) =>
+    `<div style="padding:0.2rem 0;font-size:0.82rem;color:#6b7280">
+      ${escapeHtml(target.shipName)}${target.fitName ? ` — ${escapeHtml(target.fitName)}` : ''}: ${escapeHtml(reason)}
+    </div>`
+  ).join('');
+  el.innerHTML = `
+    <details style="border:1px solid #374151;border-radius:6px;overflow:hidden;margin-bottom:0.75rem">
+      <summary style="background:#1f2937;padding:0.5rem 0.75rem;cursor:pointer;color:#6b7280;font-size:0.85rem;list-style:none">
+        ▶ Out of reach — ${outOfReach.length} hull(s) (below threshold)
+      </summary>
+      <div style="padding:0.5rem 0.75rem">${lines}</div>
+    </details>`;
+}
+
 function acqRunFinder(mode, resultsEl, statusEl) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
