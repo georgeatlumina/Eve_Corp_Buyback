@@ -4,6 +4,29 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.3.0 — native zKillboard
+
+The zKillboard tab is now a **native killboard** instead of an embedded web view of
+zkillboard.com. Search a pilot / corporation / alliance / system and see its recent kills and
+losses rendered in-app — pulled live from zKillboard's public API and enriched with public ESI
+killmails.
+
+- **Type-ahead search:** zKillboard autocomplete suggestions (pilots / corps / alliances /
+  systems) appear as you type (3+ letters), navigable by keyboard or mouse. Picking a
+  suggestion loads its board by exact id — no ambiguity from same-named entities, and decorated
+  names like `Jita (The Forge)` resolve cleanly.
+- **Native killmail list:** ship renders, victim & final-blow portraits, security-coloured
+  systems, ISK values, solo / NPC / awox flags, attacker counts and relative timestamps. Click
+  a row to open the full killmail on zkillboard.com.
+- **Kills / losses / both** filter.
+- Killmails are cached on disk (they're immutable), so revisited boards load instantly; a page
+  of killmails is fetched from ESI in parallel with a single bulk name-resolve call.
+
+The old embedded web-view chrome (Back/Forward/Home, quick-links) is gone — those were whole
+zKillboard pages rather than killmail lists.
+
+---
+
 ## v3.2.1 — fixes
 
 - **Shopping list → Janice:** the Reaction Calculator and Production Planner shopping-list

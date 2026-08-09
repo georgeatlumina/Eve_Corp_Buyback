@@ -1,9 +1,17 @@
-# v3.2.1 — fixes
+# v3.3.0 — native zKillboard
 
-- **Shopping list → Janice:** the Reaction Calculator and Production Planner shopping-list
-  quantities no longer render with thousands-separator commas (e.g. `170,000`), which caused
-  errors when the list was pasted into Janice. Quantities now copy as plain digits; the
-  comma-formatted value is kept as a hover tooltip for readability.
+The **zKillboard** tab is now a native killboard instead of an embedded web view. Search a
+pilot, corporation, alliance or system and see its recent kills and losses rendered inside
+the app — pulled live from zKillboard and enriched with public ESI killmails.
+
+- **Type-ahead search:** start typing (3+ letters) and pick from suggestions — pilots, corps,
+  alliances and systems — with keyboard or mouse. Picking a result loads its board instantly.
+- **Native killmail list:** ship renders, victim & final-blow portraits, security-coloured
+  systems, ISK values, solo / NPC / awox flags and relative times. Click any row to open the
+  full killmail on zkillboard.com.
+- **Filters:** kills, losses, or both.
+
+Killmails are cached locally (they never change), so boards you revisit load instantly.
 
 ---
 
