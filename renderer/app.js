@@ -4355,6 +4355,8 @@ async function copyShoppingList() {
 let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsPasteText = '';  // session-only: survives tab switches, not app restart
+// Persists the last Analyse Hulls result across tab navigation.
+let acqHullAnalysisResult = null; // { s1, s2, s3, s4, statusText } — innerHTML snapshots
 
 // How many bare hulls of a given type are in the Acquisitions inventory right
 // now. Shared by the Contracts dashboard's expand-panel row (called once per
@@ -4644,6 +4646,14 @@ async function acqRunHullAnalysis(root, statusEl) {
     ? ` + ${marketBuilds.length} with market (book ${ageMin}m old).`
     : '.';
   statusEl.textContent = `${fullResult.builds.length} build(s) from inventory${mktMsg}`;
+  // Persist results so they survive tab navigation.
+  acqHullAnalysisResult = {
+    s1: s1.innerHTML, s1hidden: s1.hidden,
+    s2: s2.innerHTML, s2hidden: s2.hidden,
+    s3: s3.innerHTML, s3hidden: s3.hidden,
+    s4: s4.innerHTML, s4hidden: s4.hidden,
+    statusText: statusEl.textContent,
+  };
   setTimeout(() => { progressBar.hidden = true; }, 400);
 }
 
@@ -5029,6 +5039,31 @@ function renderAcquisitionsTab() {
   const findResultsEl = root.querySelector('#acq-find-results');
   const analysisProgressBar = root.querySelector('#acq-analysis-progress');
   acqUpdateFinderAvailability(root);
+
+  // Restore last Analyse Hulls result if it exists.
+  if (acqHullAnalysisResult) {
+    const r = acqHullAnalysisResult;
+    const s1 = root.querySelector('#acq-section-inventory');
+    const s2 = root.querySelector('#acq-section-market');
+    const s3 = root.querySelector('#acq-section-shopping');
+    const s4 = root.querySelector('#acq-section-outofreach');
+    s1.innerHTML = r.s1; s1.hidden = r.s1hidden;
+    s2.innerHTML = r.s2; s2.hidden = r.s2hidden;
+    s3.innerHTML = r.s3; s3.hidden = r.s3hidden;
+    s4.innerHTML = r.s4; s4.hidden = r.s4hidden;
+    findStatusEl.textContent = r.statusText;
+    // Re-attach copy button listeners lost when innerHTML was restored.
+    for (const btn of root.querySelectorAll('[id^="acq-copy-gap"]')) {
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.lines);
+          const orig = btn.textContent;
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch { btn.textContent = 'Copy failed'; }
+      });
+    }
+  }
   root.querySelector('#acq-find-hulls').addEventListener('click', async () => {
     const btn = root.querySelector('#acq-find-hulls');
     btn.disabled = true;
