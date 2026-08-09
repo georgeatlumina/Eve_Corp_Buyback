@@ -4,6 +4,15 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.2.1 — fixes
+
+- **Shopping list → Janice:** the Reaction Calculator and Production Planner shopping-list
+  quantities no longer render with thousands-separator commas (e.g. `170,000`), which caused
+  errors when the list was pasted into Janice. Quantities now copy as plain digits; the
+  comma-formatted value is kept as a hover tooltip for readability.
+
+---
+
 ## What's new in v3.2.0 — zKillboard tab & Reaction Calculator
 
 ### zKillboard tab (new) — General group
