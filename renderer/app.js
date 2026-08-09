@@ -3903,7 +3903,7 @@ function renderContractsTotalValue(list) {
   const total = priced.reduce((sum, c) => sum + Number(c.price), 0);
   const unpriced = list.length - priced.length;
   const unpricedText = unpriced ? ` · ${unpriced} unpriced` : '';
-  totalEl.textContent = `Total value: ${fmtMillions(total)} ISK${unpricedText}`;
+  totalEl.textContent = `${list.length} contract${list.length !== 1 ? 's' : ''} · Total value: ${fmtMillions(total)} ISK${unpricedText}`;
 }
 
 function renderUnpricedToggle(priceEl, unpriced) {
