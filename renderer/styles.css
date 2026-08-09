@@ -1649,3 +1649,66 @@ body.popout-calc .pib-calc > summary { display: none; }
 .fav-open:hover { text-decoration: underline; }
 .good-text { color: #6fd0a0; }
 .bad-text { color: #e59a9a; }
+
+/* ===== Native zKillboard ===== */
+.zkill-bar { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; margin: 1em 0 0.6em; }
+.zkill-search-wrap { position: relative; flex: 1 1 320px; min-width: 220px; }
+.zkill-input { width: 100%; padding: 0.55em 0.7em; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 5px; font-size: 0.95em; }
+.zkill-input:focus { outline: none; border-color: #4a8; }
+
+/* Type-ahead dropdown */
+.zkill-suggest { position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 50; margin: 0; padding: 0.25em; list-style: none; background: #1c1c1c; border: 1px solid #3a3a3a; border-radius: 6px; box-shadow: 0 10px 28px rgba(0,0,0,0.55); max-height: 320px; overflow-y: auto; }
+.zk-sugg { display: flex; align-items: center; gap: 0.55em; padding: 0.4em 0.55em; border-radius: 4px; cursor: pointer; }
+.zk-sugg.active { background: #2c3a34; }
+.zk-sugg-icon { width: 24px; height: 24px; border-radius: 4px; background: #111; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: #6fd0a0; }
+.zk-sugg-sys { font-size: 0.9em; }
+.zk-sugg-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zk-sugg-kind { flex: 0 0 auto; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: #8fc; background: #143026; padding: 0.12em 0.45em; border-radius: 999px; }
+.zkill-select { padding: 0.55em 0.6em; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 5px; font-size: 0.9em; }
+.zkill-bar button.primary { padding: 0.55em 1.2em; }
+
+.zkill-entity { display: flex; align-items: center; gap: 0.6em; margin: 0.4em 0; padding: 0.5em 0.8em; background: #202020; border: 1px solid #333; border-left: 3px solid #4a8; border-radius: 5px; }
+.zkill-entity-kind { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.06em; color: #8fc; background: #143026; padding: 0.18em 0.5em; border-radius: 999px; }
+.zkill-entity-name { font-weight: 600; font-size: 1.05em; }
+.zkill-entity-ext { margin-left: auto; background: #2a2a2a; color: #9cd; border: 1px solid #3a4a55; padding: 0.3em 0.7em; font-size: 0.8em; font-weight: 500; border-radius: 5px; cursor: pointer; }
+.zkill-entity-ext:hover { background: #333; }
+
+.zkill-status { min-height: 1.2em; margin: 0.3em 0; font-size: 0.88em; color: #aaa; }
+.zkill-status.zkill-ok { color: #6fd0a0; }
+.zkill-status.zkill-warn { color: #d9c27a; }
+.zkill-status.zkill-error { color: #e59a9a; }
+
+.zkill-tablewrap { overflow-x: auto; margin-top: 0.4em; }
+.zkill-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+.zkill-table thead th { text-align: left; padding: 0.4em 0.7em; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: #888; border-bottom: 1px solid #333; white-space: nowrap; }
+.zkill-table td { padding: 0.45em 0.7em; border-bottom: 1px solid #262626; vertical-align: middle; }
+.zk-row { cursor: pointer; }
+.zk-row:hover { background: #242424; }
+.zkill-empty { text-align: center; padding: 1.4em 0; }
+
+.zk-ship { display: flex; align-items: center; gap: 0.5em; }
+.zk-ship-img { width: 40px; height: 40px; border-radius: 4px; background: #111; flex: 0 0 auto; }
+.zk-ship-name { font-weight: 500; }
+.zk-c-ship { width: 1%; white-space: nowrap; }
+
+.zk-person { display: flex; align-items: center; gap: 0.45em; }
+.zk-face { width: 26px; height: 26px; border-radius: 50%; background: #111; flex: 0 0 auto; }
+.zk-person-txt { min-width: 0; }
+.zk-person-name { font-weight: 500; white-space: nowrap; }
+.zk-person-sub { font-size: 0.8em; }
+
+.zk-c-sys { white-space: nowrap; }
+.zk-sec { display: inline-block; min-width: 1.9em; margin-right: 0.35em; font-weight: 600; font-size: 0.85em; }
+.sec-hi { color: #6fd0a0; }
+.sec-low { color: #e0b060; }
+.sec-null { color: #e07070; }
+.sec-unknown { color: #888; }
+.zk-sysname { color: #cfe6da; }
+
+.zk-c-val { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.zk-c-time { white-space: nowrap; }
+.zk-c-flags { white-space: nowrap; }
+.zk-flag { display: inline-block; margin-right: 0.25em; padding: 0.1em 0.4em; font-size: 0.7em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; border-radius: 3px; }
+.zk-flag-solo { color: #8fc; background: #143026; }
+.zk-flag-npc { color: #9cd; background: #16283a; }
+.zk-flag-awox { color: #e59a9a; background: #3a1a1a; }

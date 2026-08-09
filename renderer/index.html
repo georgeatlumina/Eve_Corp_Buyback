@@ -773,32 +773,47 @@
       <p class="webtab-foot muted small">Live view of <a href="https://evemaps.dotlan.net" data-ext-link>evemaps.dotlan.net</a> — a third-party EVE maps site by Wollari. Log in there for Favorites &amp; jump beacons; your session is kept between visits.</p>
     </section>
 
-    <section id="tab-zkill" class="tab webtab">
-      <div class="webtab-bar">
-        <div class="webtab-navbtns">
-          <button id="zkill-back" class="webtab-btn" type="button" title="Back" disabled>‹</button>
-          <button id="zkill-fwd" class="webtab-btn" type="button" title="Forward" disabled>›</button>
-          <button id="zkill-reload" class="webtab-btn" type="button" title="Reload">↻</button>
-          <button id="zkill-home" class="webtab-btn" type="button" title="Home">⌂</button>
+    <section id="tab-zkill" class="tab">
+      <h2>zKillboard</h2>
+      <p class="muted">Search a pilot, corporation, alliance or system to see its recent kills and losses — pulled live from <a href="https://zkillboard.com" data-ext-link>zKillboard</a> and rendered natively. Click any row to open the full killmail on zKillboard.</p>
+      <form id="zkill-form" class="zkill-bar" autocomplete="off">
+        <div class="zkill-search-wrap">
+          <input id="zkill-q" type="text" class="zkill-input" placeholder="Pilot / corporation / alliance / system name…" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="zkill-suggest" />
+          <ul id="zkill-suggest" class="zkill-suggest" role="listbox" hidden></ul>
         </div>
-        <div class="webtab-links">
-          <button class="webtab-link" data-path="/" type="button">Recent</button>
-          <button class="webtab-link" data-path="/campaigns/" type="button">Campaigns</button>
-          <button class="webtab-link" data-path="/sovereignty/" type="button">Sovereignty</button>
-          <button class="webtab-link" data-path="/wars/" type="button">Wars</button>
-          <button class="webtab-link" data-path="/trophies/" type="button">Trophies</button>
-          <button class="webtab-link" data-path="/fits/" type="button">Inferred&nbsp;Fits</button>
-        </div>
-        <form id="zkill-search-form" class="webtab-search">
-          <input id="zkill-search" type="text" placeholder="Search pilot / corp / alliance / ship / system…" spellcheck="false" autocomplete="off" />
-        </form>
-        <span id="zkill-url" class="webtab-url muted"></span>
-        <button id="zkill-external" class="webtab-btn" type="button" title="Open the current page in your external browser">⇱</button>
+        <select id="zkill-kind" class="zkill-select" title="What kind of entity to look up">
+          <option value="auto">Auto-detect</option>
+          <option value="character">Pilot</option>
+          <option value="corporation">Corporation</option>
+          <option value="alliance">Alliance</option>
+          <option value="system">System</option>
+        </select>
+        <select id="zkill-filter" class="zkill-select" title="Show kills, losses, or both">
+          <option value="all">Kills &amp; losses</option>
+          <option value="kills">Kills only</option>
+          <option value="losses">Losses only</option>
+        </select>
+        <button id="zkill-search-btn" type="submit" class="primary">Search</button>
+      </form>
+      <div id="zkill-entity" class="zkill-entity" hidden></div>
+      <div id="zkill-status" class="zkill-status"></div>
+      <div class="zkill-tablewrap">
+        <table class="zkill-table">
+          <thead>
+            <tr>
+              <th>Ship</th>
+              <th>Victim</th>
+              <th>System</th>
+              <th>Final blow</th>
+              <th class="zk-c-val">Value</th>
+              <th></th>
+              <th>When</th>
+            </tr>
+          </thead>
+          <tbody id="zkill-rows"></tbody>
+        </table>
       </div>
-      <div class="webtab-viewwrap">
-        <webview id="zkill-view" class="webtab-view" src="about:blank" partition="persist:zkill"></webview>
-      </div>
-      <p class="webtab-foot muted small">Live view of <a href="https://zkillboard.com" data-ext-link>zkillboard.com</a> — the third-party EVE killboard by Squizz Caphinator. Your session is kept between visits; off-site links open in your browser.</p>
+      <p class="webtab-foot muted small">Data from <a href="https://zkillboard.com" data-ext-link>zkillboard.com</a> — the third-party EVE killboard by Squizz Caphinator — enriched with public ESI killmails. Start typing (3+ letters) for suggestions.</p>
     </section>
 
     <section id="tab-pi-builder" class="tab">

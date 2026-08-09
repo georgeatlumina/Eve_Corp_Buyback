@@ -1642,6 +1642,54 @@ def srp_classify_stream(req: SrpClassifyRequest):
     return StreamingResponse(gen(), media_type='application/x-ndjson')
 
 
+@app.get('/api/zkill/suggest')
+def zkill_suggest(q: str = ''):
+    """Type-ahead search suggestions from zKillboard's autocomplete endpoint
+    (pilots / corps / alliances / systems only)."""
+    from zkill import fetch_suggestions
+    term = (q or '').strip()
+    if len(term) < 3:
+        return {'suggestions': []}
+    try:
+        suggestions = fetch_suggestions(term, get_user_agent())
+    except Exception:
+        # Type-ahead is best-effort; never surface an error into the search box.
+        suggestions = []
+    return {'suggestions': suggestions}
+
+
+class ZkillBoardRequest(BaseModel):
+    query: str = ''
+    kind: str = 'auto'          # auto | character | corporation | alliance | system
+    filter: str = 'all'         # all | kills | losses
+    limit: int = 40
+    page: int = 1
+    entity_id: Optional[int] = None  # set when a suggestion was picked (skips name resolution)
+
+
+@app.post('/api/zkill/board')
+def zkill_board(req: ZkillBoardRequest):
+    """Native zKillboard: resolve a search term to an EVE entity and return its
+    enriched kill/loss list (see zkill.build_board)."""
+    from zkill import build_board
+    q = (req.query or '').strip()
+    if not q and not req.entity_id:
+        raise HTTPException(400, 'Enter a pilot, corporation, alliance or system name to search.')
+    try:
+        board = build_board(
+            q, kind=req.kind or 'auto', board_filter=req.filter or 'all',
+            limit=req.limit, page=req.page, user_agent=get_user_agent(),
+            entity_id=req.entity_id,
+        )
+    except ValueError as e:
+        if str(e) == 'no-entity':
+            raise HTTPException(404, f'No pilot, corporation, alliance or system found matching {q!r}.')
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f'zKillboard lookup failed: {e}')
+    return board
+
+
 class QuotaSyncRequest(BaseModel):
     url: Optional[str] = None  # falls back to cfg['alliance_quota_url']
 
