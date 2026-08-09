@@ -204,7 +204,7 @@
       return `
       <tr>
         <td>${escapeHtml(r.name)}</td>
-        <td class="num">${(r.qty || 0).toLocaleString('en-US')}</td>
+        <td class="num" title="${(r.qty || 0).toLocaleString('en-US')}">${r.qty || 0}</td>
         ${priced ? `<td class="num">${isk(r.line_cost)}</td>` : ''}
         <td class="prod-action">${action}</td>
       </tr>`;

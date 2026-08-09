@@ -205,7 +205,7 @@
       return `
       <tr${r.invention ? ' class="prod-raw-inv"' : ''}>
         <td>${escapeHtml(r.name)}${r.invention ? ' <span class="prod-inv-badge">inv</span>' : ''}</td>
-        <td class="num">${(r.qty || 0).toLocaleString('en-US')}</td>
+        <td class="num" title="${(r.qty || 0).toLocaleString('en-US')}">${r.qty || 0}</td>
         ${priced ? `<td class="num">${isk(r.line_cost)}</td>` : ''}
         <td class="prod-action">${action}</td>
       </tr>`;
