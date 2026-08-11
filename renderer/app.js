@@ -2,6 +2,25 @@ const API = window.api.base;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// Appends to <userData>/sidecar.log via main, so state that only lives in the
+// renderer (progress, in-flight async work) can be inspected without having
+// to watch the live window. Never throws — logging must not break the caller.
+function appLog(msg) {
+  const line = `[renderer] ${msg}`;
+  console.log(line);
+  try { window.api?.log?.(line); } catch (_) {}
+}
+
+// A step that throws after updating a progress bar but before clearing it
+// (e.g. inside acqRunHullAnalysis) otherwise leaves the bar frozen with no
+// visible error. Surface every uncaught error/rejection to the log file.
+window.addEventListener('error', (e) => {
+  appLog(`uncaught error: ${e.message} @ ${e.filename}:${e.lineno}`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  appLog(`unhandled rejection: ${e.reason?.stack || e.reason}`);
+});
+
 function updateAppHeaderHeight() {
   const h = document.querySelector('header')?.getBoundingClientRect().height || 0;
   document.documentElement.style.setProperty('--app-header-h', `${h}px`);
@@ -4455,8 +4474,17 @@ async function copyShoppingList() {
 let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsPasteText = '';  // session-only: survives tab switches, not app restart
+let acquisitionsUpdatedAt = null;  // ISO8601 from the backend's last save, or null if never saved
 // Persists the last Analyse Hulls result across tab navigation.
 let acqHullAnalysisResult = null; // { s1, s2, s3, s4, statusText } — innerHTML snapshots
+
+// Bumped on every acqRunHullAnalysis call. renderAcquisitionsTab() rebuilds
+// #acquisitions-root's innerHTML on every tab switch, so a run that started
+// before a switch-away-and-back (or a second click) holds DOM refs to nodes
+// that are no longer on screen. The run compares its own id against this
+// after its one await point and abandons quietly if it's been superseded,
+// instead of finishing invisibly against detached nodes.
+let acqHullAnalysisRunId = 0;
 
 // How many bare hulls of a given type are in the Acquisitions inventory right
 // now. Shared by the Contracts dashboard's expand-panel row (called once per
@@ -4474,16 +4502,25 @@ async function acquisitionsLoad() {
     const data = await fetch(`${API}/api/acquisitions`).then((r) => r.json());
     acquisitionsHulls = data.hulls || [];
     acquisitionsItems = data.items || [];
+    acquisitionsUpdatedAt = data.updated_at || null;
   } catch (_) {}
+}
+
+// "Last updated" label for the Acquisitions Inventory panel — reflects
+// acquisitionsUpdatedAt, which acquisitionsLoad()/acquisitionsSave() keep
+// in sync with the backend's persisted timestamp.
+function acqUpdatedAtLabel() {
+  return acquisitionsUpdatedAt ? `Last updated ${fmtAge(acquisitionsUpdatedAt)}` : 'Last updated: never';
 }
 
 async function acquisitionsSave() {
   try {
-    await fetch(`${API}/api/acquisitions`, {
+    const data = await fetch(`${API}/api/acquisitions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hulls: acquisitionsHulls, items: acquisitionsItems }),
-    });
+    }).then((r) => r.json());
+    acquisitionsUpdatedAt = data.updated_at || acquisitionsUpdatedAt;
   } catch (_) {}
 }
 
@@ -4613,12 +4650,14 @@ async function acqRunHullAnalysis(root, statusEl) {
     statusEl.textContent = inputs.error;
     return;
   }
+  const runId = ++acqHullAnalysisRunId;
+  appLog(`analyse-hulls: start, ${inputs.targets.length} target(s)`);
 
-  const progressBar = root.querySelector('#acq-analysis-progress');
-  const s1 = root.querySelector('#acq-section-inventory');
-  const s2 = root.querySelector('#acq-section-market');
-  const s3 = root.querySelector('#acq-section-shopping');
-  const s4 = root.querySelector('#acq-section-outofreach');
+  let progressBar = root.querySelector('#acq-analysis-progress');
+  let s1 = root.querySelector('#acq-section-inventory');
+  let s2 = root.querySelector('#acq-section-market');
+  let s3 = root.querySelector('#acq-section-shopping');
+  let s4 = root.querySelector('#acq-section-outofreach');
   [s1, s2, s3, s4].forEach((s) => { s.hidden = true; s.innerHTML = ''; });
 
   progressBar.hidden = false;
@@ -4630,6 +4669,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   });
   renderAcqSection1(s1, fullResult);
   s1.hidden = false;
+  appLog(`analyse-hulls: section 1 done, ${fullResult.builds.length} build(s) from inventory`);
 
   const satisfiedByInventory = new Set(
     fullResult.builds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
@@ -4655,8 +4695,11 @@ async function acqRunHullAnalysis(root, statusEl) {
 
   let market = aaState.market || null;
   if (!market) {
+    appLog('analyse-hulls: market not cached, loading UEXO…');
+    const marketStart = performance.now();
     // Poll marketProgress to show real page-by-page fill while stream loads.
     const pollId = setInterval(() => {
+      if (runId !== acqHullAnalysisRunId) { clearInterval(pollId); return; }
       const p = aaState.marketProgress;
       if (!p) return;
       if (p.maxPages) {
@@ -4669,7 +4712,37 @@ async function acqRunHullAnalysis(root, statusEl) {
     await loadMarket(false);
     clearInterval(pollId);
     market = aaState.market || null;
+    appLog(`analyse-hulls: UEXO market load finished in ${Math.round(performance.now() - marketStart)}ms, `
+      + `error=${aaState.marketError || 'none'}, types=${market?.by_type ? Object.keys(market.by_type).length : 0}`);
+  } else {
+    appLog(`analyse-hulls: reusing cached market, ${Object.keys(market.by_type || {}).length} type(s)`);
   }
+
+  // The only await above this point is loadMarket(); a click on a re-rendered
+  // Analyse Hulls button (after a tab switch mid-run, or a plain double-click)
+  // bumps acqHullAnalysisRunId before this point is reached. Everything below
+  // is synchronous, so one check here covers the rest of the function.
+  if (runId !== acqHullAnalysisRunId) {
+    appLog('analyse-hulls: superseded by a newer run, abandoning');
+    return;
+  }
+
+  // Nobody re-ran the analysis, but the tab may still have been switched away
+  // and back while we awaited — renderAcquisitionsTab() rebuilds #acquisitions-root's
+  // children on every visit, orphaning the nodes captured above. root itself
+  // is never replaced, so re-query through it to land on whatever is live now.
+  progressBar = root.querySelector('#acq-analysis-progress');
+  s1 = root.querySelector('#acq-section-inventory');
+  s2 = root.querySelector('#acq-section-market');
+  s3 = root.querySelector('#acq-section-shopping');
+  s4 = root.querySelector('#acq-section-outofreach');
+  statusEl = root.querySelector('#acq-find-status') || statusEl;
+  // Section 1 was already rendered into the (now possibly orphaned) old s1
+  // above; re-render it into whichever node is live now. Sections 2-4 are
+  // rendered fresh below regardless, so they don't need the same treatment.
+  progressBar.hidden = false;
+  renderAcqSection1(s1, fullResult);
+  s1.hidden = false;
 
   if (aaState.marketError || !market?.by_type) {
     statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. `
@@ -4692,6 +4765,7 @@ async function acqRunHullAnalysis(root, statusEl) {
 
   renderAcqSection2(s2, marketBuilds, ageMin, market);
   s2.hidden = false;
+  appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
 
   const satisfiedByMarket = new Set(
     marketBuilds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
@@ -4705,36 +4779,52 @@ async function acqRunHullAnalysis(root, statusEl) {
   const candidates = [];
   const outOfReach = [];
 
+  appLog(`analyse-hulls: shopping-gap pass starting, ${inputs.targets.length} target(s)`);
+  const gapStart = performance.now();
+  let gapIndex = 0;
   for (const target of inputs.targets) {
-    if ((target.needed || 0) <= 0) continue;
-    if (target.unevaluatable) {
-      outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no fit registered — cannot evaluate' });
-      continue;
+    gapIndex += 1;
+    if (gapIndex % 25 === 0) {
+      appLog(`analyse-hulls: shopping-gap ${gapIndex}/${inputs.targets.length} `
+        + `(${Math.round(performance.now() - gapStart)}ms elapsed)`);
     }
-    const key = `${target.shipTypeId}||${target.fitName || ''}`;
-    if (satisfiedAll.has(key)) continue;
-
-    const hullQty = depletedPool.get(String(target.shipTypeId)) || 0;
-    if (hullQty < 1) {
-      outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no hull in stock' });
-      continue;
-    }
-
-    const gap = computeShoppingGap(target, depletedPool, market);
-    if (gap.coverage >= minCoverage && gap.gapIsk <= maxGapIsk) {
-      candidates.push({ target, gap });
-    } else {
-      let reason = '';
-      if (gap.coverage < minCoverage && gap.gapIsk > maxGapIsk) {
-        reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold, gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
-      } else if (gap.coverage < minCoverage) {
-        reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold`;
-      } else {
-        reason = `gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
+    try {
+      if ((target.needed || 0) <= 0) continue;
+      if (target.unevaluatable) {
+        outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no fit registered — cannot evaluate' });
+        continue;
       }
-      outOfReach.push({ target, gap, reason });
+      const key = `${target.shipTypeId}||${target.fitName || ''}`;
+      if (satisfiedAll.has(key)) continue;
+
+      const hullQty = depletedPool.get(String(target.shipTypeId)) || 0;
+      if (hullQty < 1) {
+        outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no hull in stock' });
+        continue;
+      }
+
+      const gap = computeShoppingGap(target, depletedPool, market);
+      if (gap.coverage >= minCoverage && gap.gapIsk <= maxGapIsk) {
+        candidates.push({ target, gap });
+      } else {
+        let reason = '';
+        if (gap.coverage < minCoverage && gap.gapIsk > maxGapIsk) {
+          reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold, gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
+        } else if (gap.coverage < minCoverage) {
+          reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold`;
+        } else {
+          reason = `gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
+        }
+        outOfReach.push({ target, gap, reason });
+      }
+    } catch (err) {
+      appLog(`analyse-hulls: shopping-gap FAILED at ${gapIndex}/${inputs.targets.length} `
+        + `shipTypeId=${target?.shipTypeId} fit=${target?.fitName}: ${err?.stack || err}`);
+      throw err;
     }
   }
+  appLog(`analyse-hulls: shopping-gap pass done in ${Math.round(performance.now() - gapStart)}ms, `
+    + `candidates=${candidates.length} outOfReach=${outOfReach.length}`);
 
   renderAcqSection3(s3, candidates, market);
   s3.hidden = candidates.length === 0;
@@ -4746,6 +4836,7 @@ async function acqRunHullAnalysis(root, statusEl) {
     ? ` + ${marketBuilds.length} with market (book ${ageMin}m old).`
     : '.';
   statusEl.textContent = `${fullResult.builds.length} build(s) from inventory${mktMsg}`;
+  appLog('analyse-hulls: complete');
   // Persist results so they survive tab navigation.
   acqHullAnalysisResult = {
     s1: s1.innerHTML, s1hidden: s1.hidden,
@@ -4949,7 +5040,7 @@ function acqTypeName(typeId) {
   if (row?.name) return row.name;
   // Fall back to fit item names from the readiness scan (covers missing modules
   // that have zero inventory and therefore aren't in the acquisitions lists).
-  for (const fit of (readinessState.scan?.fits || [])) {
+  for (const fit of Object.values(readinessState.scan?.fits || {})) {
     const item = (fit.items || []).find((it) => String(it.typeId) === key);
     if (item?.name) return item.name;
   }
@@ -5051,6 +5142,8 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, mode = 'r
       ignoredSection.hidden = true;
     }
     await acquisitionsSave();
+    const updatedEl = root.querySelector('#acq-updated-at');
+    if (updatedEl) updatedEl.textContent = acqUpdatedAtLabel();
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
   } finally {
@@ -5065,9 +5158,13 @@ function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
   acquisitionsItems = [];
   renderAcquisitionsResults(hullsEl, itemsEl);
   statusEl.textContent = '';
-  const ignoredSection = textarea.closest('#acquisitions-root')?.querySelector('#acq-ignored-section');
+  const root = textarea.closest('#acquisitions-root');
+  const ignoredSection = root?.querySelector('#acq-ignored-section');
   if (ignoredSection) ignoredSection.hidden = true;
-  acquisitionsSave();
+  acquisitionsSave().then(() => {
+    const updatedEl = root?.querySelector('#acq-updated-at');
+    if (updatedEl) updatedEl.textContent = acqUpdatedAtLabel();
+  });
 }
 
 function renderAcquisitionsTab() {
@@ -5075,6 +5172,7 @@ function renderAcquisitionsTab() {
   if (!root) return;
   root.innerHTML = `
     <h2>Acquisitions Inventory <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <div id="acq-updated-at" class="muted" style="font-size:0.8rem;margin-top:-0.5rem"></div>
     <p class="muted">Paste inventory (hulls and modules together) in EVE clipboard format
     — Name, tab, quantity, one line per item. Hulls and modules are split automatically.
     <strong>Add to inventory</strong> sums the paste into what's already stored; <strong>Replace inventory</strong> discards the current inventory first.</p>
@@ -5085,6 +5183,10 @@ function renderAcquisitionsTab() {
       <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
+    </div>
+    <div class="progress-area" id="acq-progress" hidden>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <div class="progress-step muted">starting…</div>
     </div>
     <div id="acq-find-warning" class="muted" style="font-size:0.8rem;color:#e8a838;margin-top:0.6rem" hidden></div>
     <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
@@ -5102,10 +5204,6 @@ function renderAcquisitionsTab() {
       <div id="acq-section-shopping" hidden></div>
       <div id="acq-section-outofreach" hidden></div>
     </div>
-    <div class="progress-area" id="acq-progress" hidden>
-      <div class="progress-bar"><div class="progress-fill"></div></div>
-      <div class="progress-step muted">starting…</div>
-    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1.5rem">
       <div>
         <h3 style="margin:0 0 0.5rem">Hulls</h3>
@@ -5122,6 +5220,8 @@ function renderAcquisitionsTab() {
         <div id="acq-ignored-list" style="margin-top:0.5rem;font-size:0.8rem;color:#8899aa;columns:2;column-gap:2rem"></div>
       </details>
     </div>`;
+
+  root.querySelector('#acq-updated-at').textContent = acqUpdatedAtLabel();
 
   const textarea = root.querySelector('#acq-paste');
   textarea.value = acquisitionsPasteText;
