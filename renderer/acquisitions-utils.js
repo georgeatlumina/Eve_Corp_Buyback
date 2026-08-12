@@ -308,10 +308,11 @@ function computeShoppingGap(target, pool, market) {
     held += have;
     const entry = byType[tid] || byType[Number(tid)] || {};
     const price = entry.min_price || 0;
-    const onMarket = !!entry && (entry.total_volume || 0) >= short;
+    const qty = entry.total_volume || 0;
+    const onMarket = !!entry && qty >= short;
     if (short > 0) {
       gapIsk += price * short;
-      items.push({ type_id: tid, need, have, short, price, onMarket });
+      items.push({ type_id: tid, need, have, short, price, qty, onMarket });
     }
   }
 

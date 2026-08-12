@@ -539,4 +539,14 @@ describe('computeShoppingGap', () => {
     expect(item200.onMarket).toBe(true);
     expect(item201.onMarket).toBe(false);
   });
+
+  test('qty carries the market entry\'s total_volume, 0 when absent', () => {
+    const pool = new Map();
+    const market = { by_type: { '200': { min_price: 100, total_volume: 42 } } };
+    const result = computeShoppingGap(target, pool, market);
+    const item200 = result.items.find(i => i.type_id === '200');
+    const item201 = result.items.find(i => i.type_id === '201');
+    expect(item200.qty).toBe(42);
+    expect(item201.qty).toBe(0);
+  });
 });

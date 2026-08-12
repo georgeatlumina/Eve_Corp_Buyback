@@ -4929,11 +4929,13 @@ function renderAcqSection3(el, candidates, market) {
     const itemRows = gap.items.map((it) => {
       const name = escapeHtml(acqTypeName(it.type_id));
       const priceStr = it.price ? Math.round(it.price).toLocaleString() : '—';
+      const qtyStr = it.qty.toLocaleString();
       return `<tr style="border-bottom:1px solid #1e2533;font-size:0.8rem">
           <td style="padding:0.25rem 0.4rem">${name}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.need}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.have}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right;color:#f87171">${it.short}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right">${qtyStr}</td>
           <td style="padding:0.25rem 0.5rem;text-align:right">${priceStr}</td>
         </tr>`;
     }).join('');
@@ -4963,6 +4965,7 @@ function renderAcqSection3(el, candidates, market) {
             <th style="padding:0.25rem 0.4rem;text-align:right">Need</th>
             <th style="padding:0.25rem 0.4rem;text-align:right">Have</th>
             <th style="padding:0.25rem 0.4rem;text-align:right">Short</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">UEXO qty</th>
             <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
           </tr></thead>
           <tbody>${itemRows}</tbody>
