@@ -47,6 +47,7 @@ from auth import (
 )
 from config import load_config, save_config
 from esi import (
+    redact_secrets,
     fetch_alliance_info,
     fetch_character_info,
     fetch_all_ship_types,
@@ -76,6 +77,7 @@ from esi import (
     fetch_sovereignty_map,
     fetch_sovereignty_structures,
     fetch_station_info,
+    fetch_structure_info,
     fetch_structure_orders,
     fetch_structure_orders_paged,
     fetch_system_info,
@@ -1568,9 +1570,96 @@ def get_wallets():
         token = get_valid_access_token(client_id, secret_key, get_user_agent())
     except Exception as e:
         raise HTTPException(401, str(e))
-    wallets = fetch_corp_wallets(cfg['corp_id'], token, get_user_agent())
+    try:
+        wallets = fetch_corp_wallets(cfg['corp_id'], token, get_user_agent())
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 502
+        if status == 403:
+            # Corp wallet reads need the Accountant / Junior Accountant role AND
+            # the wallet scope — most members have neither, so surface a clear
+            # reason instead of a bare 500.
+            raise HTTPException(403, 'This character can’t read the corp wallet. It needs the '
+                                     'Accountant or Junior Accountant corp role, plus the '
+                                     'esi-wallet.read_corporation_wallets.v1 scope (re-auth after '
+                                     'enabling it in the EVE developer portal).')
+        body = ''
+        try:
+            body = (e.response.text or '')[:200] if e.response is not None else ''
+        except Exception:
+            body = ''
+        raise HTTPException(502, f'ESI wallet fetch failed ({status}). {body}'.strip())
+    except Exception as e:
+        raise HTTPException(502, f'ESI wallet fetch failed: {e}')
     total = sum(w.get('balance', 0) for w in wallets)
     return {'wallets': wallets, 'total': total}
+
+
+def _friendly_contracts_error(e) -> str:
+    """Safe, user-facing message for a failed corp-contracts ESI fetch. Redacts
+    the access token that ``requests`` embeds in the URL of its exception text,
+    and gives an actionable reason for the common 403."""
+    status = getattr(getattr(e, 'response', None), 'status_code', None)
+    if status == 403:
+        return ('Corp contracts access denied (403). The signed-in character needs the '
+                'esi-contracts.read_corporation_contracts.v1 scope and a corp role permitting '
+                'contract reads — re-auth after enabling the scope in the EVE developer portal.')
+    return f'ESI fetch failed: {redact_secrets(e)}'
+
+
+# Contract location ids >= this are player structures (citadels/refineries),
+# resolvable only via the authed structure endpoint; below it are NPC stations.
+_STRUCTURE_ID_FLOOR = 1_000_000_000_000
+_location_name_cache: dict[int, str] = {}
+
+
+class LocationNamesRequest(BaseModel):
+    ids: list[int] = []
+
+
+@app.post('/api/location-names')
+def resolve_location_names(req: LocationNamesRequest):
+    """Resolve contract location ids -> names for the ore/moon buyback UI.
+
+    NPC stations (< 1e12) use the public station endpoint; player structures
+    (>= 1e12) use the authed structure endpoint (needs esi-universe.read_
+    structures.v1 + docking access). Best-effort: an id we can't resolve comes
+    back as null so the UI falls back to showing the raw id. Successful
+    resolutions are cached for the process lifetime."""
+    ua = get_user_agent()
+    ids = []
+    for raw in (req.ids or []):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    ids = list(dict.fromkeys(ids))  # de-dup, preserve order
+
+    token = None
+    if any(i >= _STRUCTURE_ID_FLOOR for i in ids if i not in _location_name_cache):
+        try:
+            client_id, secret_key = get_app_credentials()
+            token = get_valid_access_token(client_id, secret_key, ua)
+        except Exception:
+            token = None
+
+    out = {}
+    for loc in ids:
+        if loc in _location_name_cache:
+            out[str(loc)] = _location_name_cache[loc]
+            continue
+        name = None
+        try:
+            if loc >= _STRUCTURE_ID_FLOOR:
+                if token:
+                    name = (fetch_structure_info(loc, token, ua) or {}).get('name')
+            else:
+                name = (fetch_station_info(loc, ua) or {}).get('name')
+        except Exception:
+            name = None  # 403/no-access/etc — fall back to the id in the UI
+        if name:
+            _location_name_cache[loc] = name
+        out[str(loc)] = name
+    return {'names': out}
 
 
 @app.get('/api/universe/ships')
@@ -2200,7 +2289,7 @@ def _validate_stream(cfg, req):
         try:
             contracts = fetch_corp_contracts(cfg['corp_id'], token, get_user_agent())
         except Exception as e:
-            yield _emit('error', message=f'ESI fetch failed: {e}')
+            yield _emit('error', message=_friendly_contracts_error(e))
             return
 
     yield _emit('progress', step='Categorizing contracts…')
@@ -5407,7 +5496,7 @@ def _processed_search_stream(cfg, q):
     try:
         all_contracts = fetch_corp_contracts(corp_id, token, ua)
     except Exception as e:
-        yield _emit('error', message=f'ESI fetch failed: {e}')
+        yield _emit('error', message=_friendly_contracts_error(e))
         return
 
     finished = [

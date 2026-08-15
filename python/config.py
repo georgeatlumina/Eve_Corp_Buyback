@@ -49,6 +49,11 @@ DEFAULTS = {
         # fitting slots (auth.FIT_SCOPES) for extra characters.
         'esi-fittings.read_fittings.v1',
         'esi-fittings.write_fittings.v1',
+        # Resolve moon/ore-buyback contract locations (player structures) to
+        # names. Only ESI endpoint that returns citadel names; needs docking
+        # access too. Enable it in the EVE developer portal before release, or
+        # structure locations just fall back to their numeric id.
+        'esi-universe.read_structures.v1',
         # NB: the PI colony scope (esi-planets.manage_planets.v1) is NOT here —
         # it's requested only by the dedicated PI slots (auth.PI_SCOPES) so PI
         # alts can be authorized without re-scoping the main characters.

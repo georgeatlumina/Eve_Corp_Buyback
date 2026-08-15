@@ -353,6 +353,19 @@
             <button class="filter-btn" data-filter="reject">Reject</button>
             <button class="filter-btn" data-filter="errors">Errors</button>
           </div>
+          <div class="moon-loc-controls">
+            <label>Sort
+              <select id="moon-sort">
+                <option value="oldest">Oldest first</option>
+                <option value="newest">Newest first</option>
+                <option value="location">Location (A–Z)</option>
+              </select>
+            </label>
+            <label>Location
+              <select id="moon-location-filter"><option value="all">All locations</option></select>
+            </label>
+            <label class="moon-group-toggle"><input type="checkbox" id="moon-group-location" /> Group by location</label>
+          </div>
           <div id="moon-results"></div>
         </div>
         <aside class="moon-sidebar" id="moon-calc-sidebar">

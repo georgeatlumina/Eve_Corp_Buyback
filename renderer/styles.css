@@ -104,6 +104,12 @@ form select { display: block; margin-top: 0.25em; padding: 0.5em; background: #2
 .wallet-tile .label { color: #aaa; font-size: 0.8em; }
 .wallet-tile .amount { color: #eee; font-weight: 600; margin-top: 0.1em; }
 .filter-bar { display: flex; gap: 0.4em; margin: 0.5em 0 1em; }
+/* Ore/moon buyback location controls */
+.moon-loc-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 1em; margin: 0 0 1em; padding: 0.5em 0.7em; background: #232323; border: 1px solid #333; border-radius: 5px; font-size: 0.9em; }
+.moon-loc-controls label { display: inline-flex; align-items: center; gap: 0.4em; color: #bbb; }
+.moon-loc-controls select { background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.3em 0.5em; font-size: 0.9em; }
+.moon-loc-controls .moon-group-toggle input { width: auto; }
+.moon-group-head { margin: 1.2em 0 0.5em; padding-bottom: 0.3em; border-bottom: 1px solid #3a3a3a; font-size: 1.05em; color: #cfe6da; }
 .filter-btn { background: #2a2a2a; color: #aaa; border: 1px solid #444; padding: 0.4em 1em; border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: 500; }
 .filter-btn:hover { background: #333; color: #eee; }
 .filter-btn.active { background: #4a8; color: #111; border-color: #4a8; font-weight: 600; }

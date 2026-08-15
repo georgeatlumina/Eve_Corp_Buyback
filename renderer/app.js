@@ -48,6 +48,35 @@ const MOON_DIVISION = 6;
 
 const lastResults = { buyback: [], moon: [] };
 const filterState = { buyback: 'all', moon: 'all' };
+// Ore/moon buyback location view: sort ('oldest' default | 'newest' |
+// 'location'), location filter ('all' | a location id), and group-by-location.
+const moonView = { sort: 'oldest', location: 'all', groupByLocation: false };
+// start_location_id (as string) -> resolved name (or null if unresolvable).
+const moonLocationNames = {};
+
+// Human label for a contract location id: the ESI-resolved name if we have it,
+// otherwise the raw id.
+function locationLabel(id) {
+  if (id == null || id === '') return '?';
+  return moonLocationNames[String(id)] || String(id);
+}
+
+// Resolve any not-yet-known moon-contract locations to names via the sidecar
+// (ESI). Best-effort — failures leave the id showing.
+async function fetchMoonLocationNames() {
+  const ids = [...new Set(
+    lastResults.moon.map((r) => r.start_location_id).filter((x) => x != null && x !== '')
+  )].filter((id) => !(String(id) in moonLocationNames));
+  if (!ids.length) return;
+  try {
+    const res = await fetch(`${API}/api/location-names`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (res.ok) Object.assign(moonLocationNames, (await res.json()).names || {});
+  } catch { /* ignore — labels fall back to ids */ }
+}
 let mailPresets = [
   { label: '', subject: '', body: '' },
   { label: '', subject: '', body: '' },
@@ -150,6 +179,11 @@ $$('.filter-bar').forEach((bar) => {
     });
   });
 });
+
+// Ore/moon buyback location controls: sort, location filter, group-by-location.
+$('#moon-sort')?.addEventListener('change', (e) => { moonView.sort = e.target.value; renderMoonTab(); });
+$('#moon-location-filter')?.addEventListener('change', (e) => { moonView.location = e.target.value; renderMoonTab(); });
+$('#moon-group-location')?.addEventListener('change', (e) => { moonView.groupByLocation = e.target.checked; renderMoonTab(); });
 
 // Tab switching
 function activateTab(name) {
@@ -613,16 +647,77 @@ for (const name of ['market_history_pat_read', 'market_history_pat_write']) {
   });
 }
 
+// Sort a copy of the moon list per moonView.sort. Oldest-first is the default
+// and the fallback tiebreaker for the location sort.
+function sortMoonList(list) {
+  const byOldest = (a, b) => (a.date_issued || '').localeCompare(b.date_issued || '');
+  const arr = list.slice();
+  if (moonView.sort === 'newest') {
+    arr.sort((a, b) => (b.date_issued || '').localeCompare(a.date_issued || ''));
+  } else if (moonView.sort === 'location') {
+    arr.sort((a, b) =>
+      locationLabel(a.start_location_id).localeCompare(locationLabel(b.start_location_id))
+      || byOldest(a, b));
+  } else {
+    arr.sort(byOldest); // oldest first (default)
+  }
+  return arr;
+}
+
+// Fill the location-filter dropdown from the locations present in the results,
+// labeled by name, keeping the current selection when still valid.
+function updateMoonLocationFilterOptions() {
+  const sel = $('#moon-location-filter');
+  if (!sel) return;
+  const ids = [...new Set(
+    lastResults.moon.map((r) => String(r.start_location_id ?? '')).filter((x) => x)
+  )];
+  const opts = ['<option value="all">All locations</option>'];
+  ids.map((id) => ({ id, label: locationLabel(id) }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .forEach(({ id, label }) => opts.push(`<option value="${escapeAttr(id)}">${escapeHtml(label)}</option>`));
+  sel.innerHTML = opts.join('');
+  sel.value = (moonView.location === 'all' || ids.includes(moonView.location)) ? moonView.location : 'all';
+  moonView.location = sel.value;
+}
+
 function renderMoonTab() {
   renderPayoutTotal('moon');
-  const list = applyFilter(lastResults.moon, filterState.moon);
+  updateMoonLocationFilterOptions();
   const root = $('#moon-results');
   root.innerHTML = '';
+
+  let list = applyFilter(lastResults.moon, filterState.moon);
+  if (moonView.location !== 'all') {
+    list = list.filter((r) => String(r.start_location_id ?? '') === moonView.location);
+  }
+  list = sortMoonList(list);
+
   if (!list.length) {
-    root.innerHTML = `<p class="muted">No moon contracts ${filterState.moon === 'all' ? 'found' : `in "${filterState.moon}" filter`}.</p>`;
+    const noun = filterState.moon === 'all' && moonView.location === 'all' ? 'found' : 'match the current filters';
+    root.innerHTML = `<p class="muted">No moon contracts ${noun}.</p>`;
     return;
   }
-  for (const r of list) root.appendChild(buildMoonRow(r));
+
+  if (moonView.groupByLocation) {
+    const groups = new Map();  // location id -> rows (already globally sorted)
+    for (const r of list) {
+      const key = String(r.start_location_id ?? '');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    }
+    const orderedKeys = [...groups.keys()].sort((a, b) => locationLabel(a).localeCompare(locationLabel(b)));
+    for (const key of orderedKeys) {
+      const rows = groups.get(key);
+      const head = document.createElement('h3');
+      head.className = 'moon-group-head';
+      head.innerHTML = `📍 ${escapeHtml(locationLabel(key))} <span class="muted">(${rows.length})</span>`;
+      root.appendChild(head);
+      for (const r of rows) root.appendChild(buildMoonRow(r));
+    }
+  } else {
+    for (const r of list) root.appendChild(buildMoonRow(r));
+  }
 }
 
 // "issued N days ago" for a contract's ISO date_issued. Whole days, floored;
@@ -780,7 +875,7 @@ function buildMoonRow(r) {
     ${flagBanners}
     <div class="meta">Issuer: ${escapeHtml(r.issuer_name || '')} (${r.issuer_id ?? '?'})</div>
     <div class="meta">Title: ${escapeHtml(r.title || '(empty)')}</div>
-    <div class="meta">Location: ${r.start_location_id ?? '?'}</div>
+    <div class="meta">Location: ${escapeHtml(locationLabel(r.start_location_id))}${r.start_location_id != null && moonLocationNames[String(r.start_location_id)] ? ` <span class="muted">(${r.start_location_id})</span>` : ''}</div>
     ${janiceBlock}${refinedBlock}
     ${Object.entries(checks).map(([k, v]) =>
       `<div class="check ${v.pass ? 'pass' : 'fail'}">
@@ -1062,6 +1157,8 @@ function handleStreamEvent(ev) {
       const dropped = ev.moon_dropped || 0;
       const suffix = dropped ? ` (${dropped} hidden — non-mining items)` : '';
       $('#moon-status').textContent = `Moon contracts: ${shown}${suffix}`;
+      // Resolve location names (ESI), then re-render so names/sort/group apply.
+      fetchMoonLocationNames().then(renderMoonTab);
       break;
     }
     case 'error':
@@ -1135,8 +1232,11 @@ async function refreshWallets() {
   try {
     const res = await fetch(`${API}/api/wallets`);
     if (!res.ok) {
-      const msg = `wallets unavailable: ${await res.text()}`;
-      for (const { sel } of targets) $(sel).innerHTML = `<span class="muted">${msg}</span>`;
+      const raw = await res.text().catch(() => '');
+      let detail = raw;
+      try { detail = JSON.parse(raw).detail || raw; } catch { /* not JSON */ }
+      const msg = detail || `HTTP ${res.status}`;
+      for (const { sel } of targets) $(sel).innerHTML = `<span class="muted">Wallets unavailable — ${escapeHtml(msg)}</span>`;
       return;
     }
     data = await res.json();

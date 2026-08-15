@@ -14,6 +14,13 @@ def _redact_url(url: str) -> str:
     return re.sub(r'([?&])token=[^&]*', r'\1token=***', str(url))
 
 
+def redact_secrets(text) -> str:
+    """Strip any ``token=<JWT>`` query param from an arbitrary string (e.g. a
+    requests exception message, which embeds the full URL incl. the access
+    token). Use before surfacing an ESI error to the UI or logs."""
+    return re.sub(r'([?&])token=[^&\s]*', r'\1token=***', str(text))
+
+
 def _log_response(resp, *args, **kwargs):
     elapsed = resp.elapsed.total_seconds() if resp.elapsed else -1
     url = _redact_url(resp.url)
@@ -590,6 +597,22 @@ def fetch_station_info(station_id, user_agent):
         f'{ESI_BASE}/universe/stations/{int(station_id)}/',
         headers={'Accept': 'application/json', 'User-Agent': user_agent},
         params={'datasource': 'tranquility'},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_structure_info(structure_id, access_token, user_agent):
+    """Authed player-structure lookup (name, owner_id, solar_system_id, type_id).
+
+    Requires the ``esi-universe.read_structures.v1`` scope AND docking access to
+    the structure for the token's character; otherwise ESI returns 403. Used to
+    resolve moon/ore-buyback contract locations (citadels/refineries) to names.
+    """
+    resp = _session.get(
+        f'{ESI_BASE}/universe/structures/{int(structure_id)}/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
     )
     resp.raise_for_status()
     return resp.json()
