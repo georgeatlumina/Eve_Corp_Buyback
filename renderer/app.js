@@ -4644,6 +4644,50 @@ function acqProgressSet(bar, fill, step, indeterminate) {
   bar.querySelector('.progress-bar').classList.toggle('indeterminate', !!indeterminate);
 }
 
+// True if `runId` is still the current acqRunHullAnalysis run — false if a
+// newer run has superseded it (a re-click after the caller's last await).
+// Call this after every await in acqRunHullAnalysis; a stale run must not
+// touch the DOM or overwrite acqHullAnalysisResult with outdated data.
+function acqCheckRunLive(runId, where) {
+  if (runId === acqHullAnalysisRunId) return true;
+  appLog(`analyse-hulls: superseded by a newer run, abandoning (${where})`);
+  return false;
+}
+
+// renderAcquisitionsTab() rebuilds #acquisitions-root's children on every tab
+// visit, orphaning any node references captured before an await. root itself
+// is never replaced, so re-query through it to land on whatever is live now,
+// and re-render section 1 (already computed, just needs to reach the current
+// nodes) — sections 2-4 are rendered fresh by their callers regardless.
+function acqReacquireLiveNodes(root, fullResult) {
+  const progressBar = root.querySelector('#acq-analysis-progress');
+  const s1 = root.querySelector('#acq-section-inventory');
+  const s2 = root.querySelector('#acq-section-market');
+  const s3 = root.querySelector('#acq-section-shopping');
+  const s4 = root.querySelector('#acq-section-outofreach');
+  const statusEl = root.querySelector('#acq-find-status');
+  progressBar.hidden = false;
+  renderAcqSection1(s1, fullResult);
+  s1.hidden = false;
+  return { progressBar, s1, s2, s3, s4, statusEl };
+}
+
+// Fetches Jita sell prices for every type_id missing across `builds`, for the
+// UEXO-vs-Jita cost comparison in section 2. Best-effort: a type whose fetch
+// fails or has no Jita sell order is simply left out of the returned map.
+async function acqFetchJitaPrices(builds) {
+  const uniqueIds = [...new Set(builds.flatMap((b) => (b.missing || []).map((m) => m.type_id)))];
+  if (!uniqueIds.length) return new Map();
+  const results = await Promise.all(
+    uniqueIds.map((tid) =>
+      fetch(`${API}/api/market/jita-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+    )
+  );
+  const priceMap = new Map();
+  results.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
+  return priceMap;
+}
+
 async function acqRunHullAnalysis(root, statusEl) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
@@ -4718,31 +4762,11 @@ async function acqRunHullAnalysis(root, statusEl) {
     appLog(`analyse-hulls: reusing cached market, ${Object.keys(market.by_type || {}).length} type(s)`);
   }
 
-  // The only await above this point is loadMarket(); a click on a re-rendered
-  // Analyse Hulls button (after a tab switch mid-run, or a plain double-click)
-  // bumps acqHullAnalysisRunId before this point is reached. Everything below
-  // is synchronous, so one check here covers the rest of the function.
-  if (runId !== acqHullAnalysisRunId) {
-    appLog('analyse-hulls: superseded by a newer run, abandoning');
-    return;
-  }
-
-  // Nobody re-ran the analysis, but the tab may still have been switched away
-  // and back while we awaited — renderAcquisitionsTab() rebuilds #acquisitions-root's
-  // children on every visit, orphaning the nodes captured above. root itself
-  // is never replaced, so re-query through it to land on whatever is live now.
-  progressBar = root.querySelector('#acq-analysis-progress');
-  s1 = root.querySelector('#acq-section-inventory');
-  s2 = root.querySelector('#acq-section-market');
-  s3 = root.querySelector('#acq-section-shopping');
-  s4 = root.querySelector('#acq-section-outofreach');
-  statusEl = root.querySelector('#acq-find-status') || statusEl;
-  // Section 1 was already rendered into the (now possibly orphaned) old s1
-  // above; re-render it into whichever node is live now. Sections 2-4 are
-  // rendered fresh below regardless, so they don't need the same treatment.
-  progressBar.hidden = false;
-  renderAcqSection1(s1, fullResult);
-  s1.hidden = false;
+  // A click on a re-rendered Analyse Hulls button (after a tab switch mid-run,
+  // or a plain double-click) bumps acqHullAnalysisRunId before this point is
+  // reached. Call after every await in this function — see acqCheckRunLive.
+  if (!acqCheckRunLive(runId, 'after market load')) return;
+  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult));
 
   if (aaState.marketError || !market?.by_type) {
     statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. `
@@ -4763,7 +4787,12 @@ async function acqRunHullAnalysis(root, statusEl) {
     (b) => !satisfiedByInventory.has(`${b.shipTypeId}||${b.fitName || ''}`)
   );
 
-  renderAcqSection2(s2, marketBuilds, ageMin, market);
+  acqProgressSet(progressBar, 70, 'Pricing missing items against Jita…', false);
+  const jitaPrices = await acqFetchJitaPrices(marketBuilds);
+  if (!acqCheckRunLive(runId, 'after Jita pricing')) return;
+  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult));
+
+  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices);
   s2.hidden = false;
   appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
 
@@ -4885,18 +4914,38 @@ function renderAcqSection1(el, result) {
     </div>`;
 }
 
-function renderAcqSection2(el, builds, ageMin, market) {
-  const counts = new Map();
+function renderAcqSection2(el, builds, ageMin, market, jitaPrices) {
+  const byType = market?.by_type || {};
+  const groups = new Map();
   for (const b of builds) {
     const key = `${b.shipName}||${b.fitName || ''}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const g = groups.get(key) || { n: 0, uexoCost: 0, jitaCost: 0, jitaComplete: true };
+    g.n += 1;
+    for (const m of b.missing || []) {
+      const entry = byType[m.type_id] || byType[Number(m.type_id)] || {};
+      g.uexoCost += (entry.min_price || 0) * m.qty;
+      const jp = jitaPrices?.get(m.type_id) ?? jitaPrices?.get(Number(m.type_id));
+      if (jp != null) g.jitaCost += jp * m.qty;
+      else g.jitaComplete = false;
+    }
+    groups.set(key, g);
   }
-  const rows = [...counts.entries()].map(([key, n]) => {
+  const rows = [...groups.entries()].map(([key, g]) => {
     const [ship, fit] = key.split('||');
+    const uexoStr = fmtIskShort(g.uexoCost);
+    const jitaStr = g.jitaComplete ? fmtIskShort(g.jitaCost) : '—';
+    let deltaHtml = '';
+    if (g.jitaComplete && g.jitaCost > 0) {
+      const deltaPct = Math.round(((g.uexoCost - g.jitaCost) / g.jitaCost) * 100);
+      const sign = deltaPct > 0 ? '+' : '';
+      const color = deltaPct <= 0 ? '#4ade80' : '#f87171';
+      deltaHtml = ` <span style="color:${color}">(${sign}${deltaPct}%)</span>`;
+    }
     return `<tr style="border-bottom:1px solid #1e2533">
         <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
         <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
-        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${g.n}</td>
+        <td style="padding:0.3rem 0.5rem;text-align:right">${uexoStr} vs ${jitaStr}${deltaHtml}</td>
       </tr>`;
   }).join('');
 
@@ -4915,6 +4964,7 @@ function renderAcqSection2(el, builds, ageMin, market) {
                 <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
                 <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
                 <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">UEXO vs Jita (missing items)</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table>`
