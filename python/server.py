@@ -4625,7 +4625,8 @@ def _filter_sold_contracts(contracts: list[dict], corp_id: int, structure_id: in
             continue
         if int(c.get('issuer_corporation_id') or 0) != corp_id:
             continue
-        if (c.get('date_completed') or '') < cutoff:
+        effective_date = c.get('date_completed') or c.get('date_accepted') or ''
+        if effective_date < cutoff:
             continue
         cid = int(c.get('contract_id') or 0)
         if cid and cid not in seen:
@@ -5329,12 +5330,17 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
             yield _emit('progress', step=f'{slot}: contract fetch failed — {e}')
             continue
 
-        for c in _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
+        sold_batch = _filter_sold_contracts(corp_contracts, corp_id, structure_id, cutoff_30d)
+        for c in sold_batch:
             cid = int(c.get('contract_id') or 0)
             if cid not in sold_found:
                 sold_found[cid] = {'contract': c, 'char_id': char_id, 'corp_id': corp_id, 'token': token}
         per_corp_done.add(corp_id)
-        yield _emit('progress', step=f'{slot}: {len(sold_found)} sold contract(s) so far')
+        yield _emit(
+            'progress',
+            step=f'{slot}: corp {corp_id} — {len(corp_contracts)} total contracts, '
+                 f'{len(sold_batch)} sold in window, {len(sold_found)} unique sold so far',
+        )
 
     _sold_contracts_cache[alliance] = sold_found
 
