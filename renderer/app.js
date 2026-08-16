@@ -64,6 +64,7 @@ const DIVISION_LABELS = {
 };
 const BUYBACK_DIVISION = 3;
 const MOON_DIVISION = 6;
+const JITA_CONTRACT_MULTIPLIER = 1.2;
 
 const lastResults = { buyback: [], moon: [] };
 const filterState = { buyback: 'all', moon: 'all' };
@@ -4012,7 +4013,7 @@ async function prefetchHullPrices(quotas) {
       const res = await fetch(`${API}/api/market/jita-sell?type_id=${typeId}`);
       const data = await res.json();
       if (data.min_sell != null && bar.dataset.price === '') {
-        bar.dataset.price = data.min_sell * 1.2;
+        bar.dataset.price = data.min_sell * JITA_CONTRACT_MULTIPLIER;
         if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
       }
     } catch (_) {}
@@ -4135,7 +4136,7 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
     <div class="quota-expand-panel">
       <div class="quota-expand-row">
-        <span class="quota-expand-label">Contract price (120% Jita sell)</span>
+        <span class="quota-expand-label">Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell)</span>
         <span class="quota-amarr-price muted">—</span>
         <button type="button" class="quota-price-refresh" title="Refresh price" hidden>↻</button>
       </div>
@@ -4211,10 +4212,10 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
           if (p != null) total += p * item.qty;
           else unpriced.push({ name: item.name, qty: item.qty });
         }
-        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · from contracts)';
+        if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · from contracts)`;
         if (total > 0) {
-          div.dataset.price = total * 1.2;
-          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
+          div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
+          priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
@@ -4296,10 +4297,10 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
           else unpriced.push({ name: item.name, qty: item.qty });
         }
 
-        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · full fit)';
+        if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · full fit)`;
         if (total > 0) {
-          div.dataset.price = total * 1.2;
-          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
+          div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
+          priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
           priceEl.classList.remove('muted');
           if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
         } else {
@@ -4312,7 +4313,7 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
         const shipLabel = q.ship_name || q.name || 'this ship';
         if (_fitIndexByType.size === 0) {
           // No Auth fit data at all — not logged in or Auth unreachable.
-          if (labelEl) labelEl.textContent = 'Alliance Auth not connected · 120% Jita sell (hull only)';
+          if (labelEl) labelEl.textContent = `Alliance Auth not connected · ${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell (hull only)`;
         } else if (fitFoundOnAuth) {
           // A fit matched but exposes no buy list to price against.
           const fitName = fitDetail?.name;
@@ -4339,8 +4340,8 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
         }
         if (data.min_sell != null) {
           if (data.source === 'esi') markEsi();
-          div.dataset.price = data.min_sell * 1.2;
-          priceEl.textContent = `${fmtM(data.min_sell * 1.2)}  (base: ${fmt(data.min_sell)})`;
+          div.dataset.price = data.min_sell * JITA_CONTRACT_MULTIPLIER;
+          priceEl.textContent = `${fmtM(data.min_sell * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
         } else {
           priceEl.textContent = 'no sell orders in Jita';
