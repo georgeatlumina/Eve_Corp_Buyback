@@ -4196,30 +4196,25 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
 
       if (contractPricingItems?.length) {
         priceEl.textContent = 'pricing…';
-        const uniqueIds = [...new Set(contractPricingItems.map((i) => i.typeId))];
-        const priceResults = await Promise.all(
-          uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
-          )
-        );
-        const priceMap = new Map();
-        priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
-        if (priceResults.find((p) => p?.source)?.source === 'esi') markEsi();
-        let total = 0;
-        const unpriced = [];
-        for (const item of contractPricingItems) {
-          const p = priceMap.get(item.typeId);
-          if (p != null) total += p * item.qty;
-          else unpriced.push({ name: item.name, qty: item.qty });
-        }
-        if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · from contracts)`;
-        if (total > 0) {
-          div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
-          priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
-          priceEl.classList.remove('muted');
-          if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
-        } else {
-          priceEl.textContent = 'no Jita prices found for contract items';
+        const paste = contractPricingItems.map((i) => `${i.name} x${i.qty}`).join('\n');
+        try {
+          const apprRes = await fetch(`${API}/api/appraise`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paste_text: paste, persist: false }),
+          });
+          const apprData = apprRes.ok ? await apprRes.json() : null;
+          const total = apprData?.janice?.prices_immediate?.sell_total ?? apprData?.janice?.prices_effective?.sell_total ?? 0;
+          if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · from contracts)`;
+          if (total > 0) {
+            div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
+            priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
+            priceEl.classList.remove('muted');
+          } else {
+            priceEl.textContent = 'no Janice prices found for contract items';
+          }
+        } catch (e) {
+          priceEl.textContent = `Janice error: ${e}`;
         }
         return;
       }
@@ -4278,33 +4273,25 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
       if (fitDetail?.items?.length) {
         // Price everything in the buy-all list: hull, modules, ammo, scripts, nanite paste
         const pricingItems = fitDetail.items.map((i) => ({ typeId: i.typeId || null, name: i.name, qty: i.qty }));
-
-        const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
-        const priceResults = await Promise.all(
-          uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
-          )
-        );
-        const priceMap = new Map();
-        priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
-        if (priceResults.find((p) => p?.source)?.source === 'esi') markEsi();
-
-        let total = 0;
-        const unpriced = [];
-        for (const item of pricingItems) {
-          const p = item.typeId ? priceMap.get(item.typeId) : null;
-          if (p != null) total += p * item.qty;
-          else unpriced.push({ name: item.name, qty: item.qty });
-        }
-
-        if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · full fit)`;
-        if (total > 0) {
-          div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
-          priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
-          priceEl.classList.remove('muted');
-          if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
-        } else {
-          priceEl.textContent = 'no Jita prices found for fit items';
+        const paste = pricingItems.filter((i) => i.name).map((i) => `${i.name} x${i.qty}`).join('\n');
+        try {
+          const apprRes = await fetch(`${API}/api/appraise`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paste_text: paste, persist: false }),
+          });
+          const apprData = apprRes.ok ? await apprRes.json() : null;
+          const total = apprData?.janice?.prices_immediate?.sell_total ?? apprData?.janice?.prices_effective?.sell_total ?? 0;
+          if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · full fit)`;
+          if (total > 0) {
+            div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
+            priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
+            priceEl.classList.remove('muted');
+          } else {
+            priceEl.textContent = 'no Janice prices found for fit items';
+          }
+        } catch (e) {
+          priceEl.textContent = `Janice error: ${e}`;
         }
       } else {
         priceEl.textContent = 'loading…';
