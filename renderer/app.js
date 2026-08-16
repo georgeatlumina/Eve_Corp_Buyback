@@ -4595,7 +4595,7 @@ function acqUpdateFinderAvailability(root) {
   }
 }
 
-function renderAcqFinderResults(el, result) {
+function renderAcqFinderResults(el, result, mode) {
   const { builds, blocked } = result;
   if (!builds.length && !blocked.length) {
     el.innerHTML = '<p class="muted" style="font-size:0.875rem">No quota gaps to evaluate.</p>';
@@ -4619,7 +4619,14 @@ function renderAcqFinderResults(el, result) {
   const note = unevaluatable.length
     ? `<p class="muted" style="font-size:0.8rem;margin-top:0.4rem">${unevaluatable.length} fit(s) could not be evaluated — a module in Auth has no resolved type.</p>`
     : '';
+  const modeNote = mode === ACQ_MODES.FITS_NO_HULL
+    ? `<p style="font-size:0.8rem;color:#94a3b8;margin:0 0 0.5rem 0">
+        These fits have <strong style="color:#e2e8f0">every module in inventory</strong> but
+        <strong style="color:#f87171">no hull in stock</strong>. Buy a hull and they're ready to build.
+       </p>`
+    : '';
   el.innerHTML = `
+    ${modeNote}
     <table style="width:100%;border-collapse:collapse;font-size:0.875rem;margin-top:0.5rem">
       <thead>
         <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
@@ -4855,7 +4862,18 @@ async function acqRunHullAnalysis(root, statusEl) {
   appLog(`analyse-hulls: shopping-gap pass done in ${Math.round(performance.now() - gapStart)}ms, `
     + `candidates=${candidates.length} outOfReach=${outOfReach.length}`);
 
-  renderAcqSection3(s3, candidates, market);
+  const jitaPriceMap = new Map();
+  if (candidates.length) {
+    const uniqueTypeIds = [...new Set(candidates.flatMap(({ gap }) => gap.items.map((it) => it.type_id)))];
+    const jitaResults = await Promise.all(
+      uniqueTypeIds.map((tid) =>
+        fetch(`${API}/api/market/jita-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+      )
+    );
+    jitaResults.forEach((p, i) => { if (p?.min_sell != null) jitaPriceMap.set(uniqueTypeIds[i], p.min_sell); });
+  }
+
+  renderAcqSection3(s3, candidates, market, jitaPriceMap);
   s3.hidden = candidates.length === 0;
   renderAcqSection4(s4, outOfReach);
   s4.hidden = outOfReach.length === 0;
@@ -4973,13 +4991,25 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices) {
     </div>`;
 }
 
-function renderAcqSection3(el, candidates, market) {
+function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
   if (!candidates.length) { el.innerHTML = ''; return; }
   const cards = candidates.map(({ target, gap }) => {
     const itemRows = gap.items.map((it) => {
       const name = escapeHtml(acqTypeName(it.type_id));
-      const priceStr = it.price ? Math.round(it.price).toLocaleString() : '—';
+      const uexoPrice = it.price || 0;
+      const priceStr = uexoPrice ? Math.round(uexoPrice).toLocaleString() : '—';
       const qtyStr = it.qty.toLocaleString();
+      const jita = jitaPriceMap.get(it.type_id);
+      let jitaDeltaStr = '—';
+      if (uexoPrice && jita != null) {
+        const delta = uexoPrice - jita;
+        const pct = Math.round((delta / jita) * 100);
+        const sign = delta >= 0 ? '+' : '';
+        const color = delta <= 0 ? '#4ade80' : '#f87171';
+        jitaDeltaStr = `<span style="color:${color}">${sign}${pct}%</span>`;
+      } else if (jita != null) {
+        jitaDeltaStr = `<span style="color:#8899aa">${Math.round(jita).toLocaleString()}</span>`;
+      }
       return `<tr style="border-bottom:1px solid #1e2533;font-size:0.8rem">
           <td style="padding:0.25rem 0.4rem">${name}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.need}</td>
@@ -4987,6 +5017,7 @@ function renderAcqSection3(el, candidates, market) {
           <td style="padding:0.25rem 0.4rem;text-align:right;color:#f87171">${it.short}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${qtyStr}</td>
           <td style="padding:0.25rem 0.5rem;text-align:right">${priceStr}</td>
+          <td style="padding:0.25rem 0.5rem;text-align:right">${jitaDeltaStr}</td>
         </tr>`;
     }).join('');
 
@@ -5017,6 +5048,7 @@ function renderAcqSection3(el, candidates, market) {
             <th style="padding:0.25rem 0.4rem;text-align:right">Short</th>
             <th style="padding:0.25rem 0.4rem;text-align:right">UEXO qty</th>
             <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
+            <th style="padding:0.25rem 0.5rem;text-align:right">vs Jita</th>
           </tr></thead>
           <tbody>${itemRows}</tbody>
         </table>
@@ -5079,7 +5111,7 @@ async function acqRunFinder(mode, resultsEl, statusEl, progressBar) {
   acqProgressSet(progressBar, 0, 'Analysing fits…', false);
   await new Promise((r) => setTimeout(r, 0));
   const result = planAcquisitions({ pool: inputs.pool, targets: inputs.targets, mode });
-  renderAcqFinderResults(resultsEl, result);
+  renderAcqFinderResults(resultsEl, result, mode);
   statusEl.textContent = `${result.builds.length} build(s) found.`;
   acqProgressSet(progressBar, 100, '', false);
   setTimeout(() => { progressBar.hidden = true; }, 300);
@@ -5234,6 +5266,7 @@ function renderAcquisitionsTab() {
     <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
       <button id="acq-add" class="btn">Add to inventory</button>
       <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
+      <button id="acq-copy-inventory" class="btn" title="Copy full inventory as Janice-format text">Copy inventory</button>
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
@@ -5329,6 +5362,14 @@ function renderAcquisitionsTab() {
   addBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add'));
   replaceBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'replace'));
   clearBtn.addEventListener('click', () => acquisitionsClear(textarea, hullsEl, itemsEl, statusEl));
+  root.querySelector('#acq-copy-inventory').addEventListener('click', () => {
+    const text = formatJaniceExport(acquisitionsHulls, acquisitionsItems);
+    if (!text) { statusEl.textContent = 'Inventory is empty.'; return; }
+    navigator.clipboard.writeText(text).then(() => {
+      statusEl.textContent = 'Copied to clipboard.';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    });
+  });
   // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
