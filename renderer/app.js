@@ -3654,6 +3654,7 @@ $('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
 $('#btn-contracts-export-discord')?.addEventListener('click', exportForDiscord);
 $('#btn-contracts-export-csv')?.addEventListener('click', exportGapCsv);
 $('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
+$('#btn-contracts-copy-sold')?.addEventListener('click', copySoldDiscord);
 
 // Show a status message when the user clicks/hovers a disabled scan button.
 const _SCAN_BUSY_MSG = 'A scan is already running — please wait for it to finish.';
@@ -4431,6 +4432,38 @@ function exportGapCsv() {
   }
   const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n') + '\n';
   downloadBlob('quota-gap.csv', 'text/csv', csv);
+}
+
+async function copySoldDiscord() {
+  const root = $('#contracts-quota-dashboard');
+  const bars = root ? [...root.querySelectorAll('.quota-bar[data-sold]')] : [];
+  const rows = bars
+    .map((bar) => ({
+      ship: bar.dataset.shipName || '',
+      fit: bar.querySelector('.quota-bar-head .muted')?.textContent?.split('·')[0]?.trim() || '',
+      sold: bar.dataset.sold !== '' && bar.dataset.sold != null ? Number(bar.dataset.sold) : null,
+    }))
+    .filter((r) => r.sold !== null)
+    .sort((a, b) => b.sold - a.sold);
+
+  if (!rows.length) {
+    $('#contracts-status').textContent = 'No sold data — run "Sold 30 days" first.';
+    return;
+  }
+
+  const shipW = Math.max(4, ...rows.map((r) => r.ship.length));
+  const fitW  = Math.max(3, ...rows.map((r) => r.fit.length));
+  const header = `${'Hull'.padEnd(shipW)}  ${'Fit'.padEnd(fitW)}  Sold (30d)`;
+  const sep    = `${'-'.repeat(shipW)}  ${'-'.repeat(fitW)}  ----------`;
+  const lines  = rows.map((r) => `${r.ship.padEnd(shipW)}  ${r.fit.padEnd(fitW)}  ${String(r.sold).padStart(10)}`);
+  const text   = '```\n' + [header, sep, ...lines].join('\n') + '\n```';
+
+  try {
+    await navigator.clipboard.writeText(text);
+    $('#contracts-status').textContent = `Copied ${rows.length} row(s) to clipboard.`;
+  } catch (_) {
+    $('#contracts-status').textContent = 'Clipboard copy failed.';
+  }
 }
 
 async function copyShoppingList() {
@@ -5261,6 +5294,9 @@ function renderAcquisitionsTab() {
     <p class="muted">Paste inventory (hulls and modules together) in EVE clipboard format
     — Name, tab, quantity, one line per item. Hulls and modules are split automatically.
     <strong>Add to inventory</strong> sums the paste into what's already stored; <strong>Replace inventory</strong> discards the current inventory first.</p>
+    <p class="muted"><strong>Copy inventory</strong> copies the stored inventory to your clipboard in Janice format.
+    <strong>Analyse Hulls</strong> checks which doctrine fits can be completed from inventory (or with UEXO market help), and shows a shopping list for fits that are close.
+    <strong>Analyse Fits</strong> finds fits where every module is in stock but the hull is missing — buy a hull and they're ready to build.</p>
     <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
       placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
     <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
