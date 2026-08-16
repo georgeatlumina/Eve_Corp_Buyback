@@ -3852,6 +3852,37 @@ async function runSold30dScan() {
             }
           }
         }
+        const suspicious = evt.payload?.suspicious_contracts || [];
+        const suspEl = $('#contracts-suspicious');
+        if (suspEl) {
+          if (!suspicious.length) {
+            suspEl.innerHTML = '';
+          } else {
+            const rows = suspicious
+              .sort((a, b) => (b.date_accepted || '').localeCompare(a.date_accepted || ''))
+              .map((c) => {
+                const when = c.date_accepted ? new Date(c.date_accepted).toLocaleString() : '—';
+                const price = c.price ? c.price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0';
+                return `<tr>
+                  <td>${escapeHtml(String(c.contract_id))}</td>
+                  <td>${escapeHtml(c.title || '—')}</td>
+                  <td class="muted">${when}</td>
+                  <td class="muted" style="text-align:right">${price} ISK</td>
+                </tr>`;
+              }).join('');
+            suspEl.innerHTML = `<details style="margin-top:1.5rem">
+              <summary class="muted" style="cursor:pointer;font-size:0.85em">
+                ⚠ ${suspicious.length} finished contract(s) with no <code>date_completed</code> — not counted in sold total
+              </summary>
+              <table style="width:100%;border-collapse:collapse;font-size:0.82em;margin-top:0.5rem">
+                <thead><tr style="text-align:left;border-bottom:1px solid #333">
+                  <th>Contract ID</th><th>Title</th><th>Accepted</th><th style="text-align:right">Price</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </details>`;
+          }
+        }
         step.textContent = 'done';
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);

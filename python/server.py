@@ -4625,8 +4625,33 @@ def _filter_sold_contracts(contracts: list[dict], corp_id: int, structure_id: in
             continue
         if int(c.get('issuer_corporation_id') or 0) != corp_id:
             continue
-        effective_date = c.get('date_completed') or c.get('date_accepted') or ''
-        if effective_date < cutoff:
+        if (c.get('date_completed') or '') < cutoff:
+            continue
+        cid = int(c.get('contract_id') or 0)
+        if cid and cid not in seen:
+            seen.add(cid)
+            result.append(c)
+    return result
+
+
+def _find_suspicious_contracts(contracts: list[dict], corp_id: int, structure_id: int, cutoff: str) -> list[dict]:
+    """Return finished item-exchange contracts at home issued by corp_id in the window
+    that have no date_completed — these are real sales ESI hasn't stamped yet."""
+    seen: set[int] = set()
+    result: list[dict] = []
+    for c in contracts:
+        if c.get('type') != 'item_exchange':
+            continue
+        if (c.get('status') or '').lower() != 'finished':
+            continue
+        if int(c.get('start_location_id') or 0) != structure_id:
+            continue
+        if int(c.get('issuer_corporation_id') or 0) != corp_id:
+            continue
+        if c.get('date_completed'):
+            continue
+        date_accepted = c.get('date_accepted') or ''
+        if date_accepted < cutoff:
             continue
         cid = int(c.get('contract_id') or 0)
         if cid and cid not in seen:
@@ -5290,6 +5315,8 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
     client_id, secret_key = get_app_credentials()
     cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     sold_found: dict[int, dict] = {}
+    suspicious_found: list[dict] = []
+    suspicious_seen: set[int] = set()
     per_corp_done: set[int] = set()
 
     for slot in slots:
@@ -5335,17 +5362,29 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
             cid = int(c.get('contract_id') or 0)
             if cid not in sold_found:
                 sold_found[cid] = {'contract': c, 'char_id': char_id, 'corp_id': corp_id, 'token': token}
+        for c in _find_suspicious_contracts(corp_contracts, corp_id, structure_id, cutoff_30d):
+            cid = int(c.get('contract_id') or 0)
+            if cid and cid not in suspicious_seen:
+                suspicious_seen.add(cid)
+                suspicious_found.append({
+                    'contract_id': cid,
+                    'title': c.get('title') or '',
+                    'issuer_id': int(c.get('issuer_id') or 0),
+                    'date_accepted': c.get('date_accepted') or '',
+                    'price': float(c.get('price') or 0),
+                    'corp_id': corp_id,
+                })
         per_corp_done.add(corp_id)
         yield _emit(
             'progress',
             step=f'{slot}: corp {corp_id} — {len(corp_contracts)} total contracts, '
-                 f'{len(sold_batch)} sold in window, {len(sold_found)} unique sold so far',
+                 f'{len(sold_batch)} sold in window, {len(suspicious_found)} suspicious, {len(sold_found)} unique sold so far',
         )
 
     _sold_contracts_cache[alliance] = sold_found
 
     if not sold_found:
-        yield _emit('done', payload={'quotas': [{**q, 'sold_30d': 0} for q in quotas]})
+        yield _emit('done', payload={'quotas': [{**q, 'sold_30d': 0} for q in quotas], 'suspicious_contracts': suspicious_found})
         return
 
     def _fetch_items(cid_rec):
@@ -5396,7 +5435,7 @@ def _sold_30d_scan_stream(alliance: str = 'all'):
             sold_30d += _matches_quota(q, items_named, rec['contract'])
         quotas_out.append({**q, 'sold_30d': sold_30d})
 
-    yield _emit('done', payload={'quotas': quotas_out})
+    yield _emit('done', payload={'quotas': quotas_out, 'suspicious_contracts': suspicious_found})
 
 
 @app.get('/api/contracts/sold-30d/scan')
