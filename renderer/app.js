@@ -4024,6 +4024,55 @@ function sortQuotaDashboard() {
 
 $('#contracts-sort')?.addEventListener('change', sortQuotaDashboard);
 
+// Returns 'T2', 'T3', or null. Name-based — covers all EVE T2/T3 hulls.
+const _T3_SHIPS = new Set([
+  'confessor','hecate','jackdaw','svipul',                          // T3 destroyers
+  'legion','loki','proteus','tengu',                                // T3 strategic cruisers
+  'drekavac','kikimora','nergal','vedmak',                          // Triglavian (T2/T3)
+]);
+const _T2_SHIPS = new Set([
+  // assault frigates
+  'retribution','vengeance','hawk','harpy','enyo','ishkur','wolf','jaguar',
+  // interceptors
+  'crusader','malediction','stiletto','ares','taranis','crow','raptor',
+  // covert ops
+  'anathema','helios','buzzard','cheetah',
+  // electronic attack
+  'sentinel','keres','kitsune','hyena',
+  // logistics frigates
+  'deacon','inquisitor','thalia','scalpel',
+  // interdictors
+  'heretic','flycatcher','eris','sabre',
+  // heavy assault cruisers
+  'sacrilege','zealot','muninn','vagabond','ishtar','deimos','cerberus','eagle',
+  // recon
+  'pilgrim','curse','arazu','lachesis','rapier','huginn','falcon','rook',
+  // logistics cruisers
+  'guardian','oneiros','scimitar','basilisk',
+  // command ships
+  'damnation','absolution','eos','astarte','sleipnir','claymore',
+  // heavy interdictors
+  'devoter','phobos','broadsword','onyx',
+  // strategic cruisers (T3C)
+  'legion','loki','proteus','tengu',
+  // black ops
+  'redeemer','sin','panther','widow',
+  // marauders
+  'paladin','kronos','golem','vargur',
+  // jump freighters — skip, not relevant
+  // command destroyers
+  'bifrost','magus','stork','pontifex',
+  // tactical destroyers (T3D)
+  'confessor','hecate','jackdaw','svipul',
+]);
+
+function shipTechTier(shipName) {
+  const n = (shipName || '').toLowerCase();
+  if (_T3_SHIPS.has(n)) return 'T3';
+  if (_T2_SHIPS.has(n)) return 'T2';
+  return null;
+}
+
 function renderQuotaBar(q, priority = 0, hullCount = 0) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
@@ -4039,9 +4088,15 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
   div.dataset.missing = missing;
   div.dataset.missingPct = required > 0 ? (available / required) * 100 : 0;
   div.dataset.price = '';
+  const tier = shipTechTier(q.ship_name || q.name);
+  const tierBadge = tier === 'T3'
+    ? `<span style="font-size:0.7rem;font-weight:700;color:#a78bfa;border:1px solid #a78bfa;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T3</span>`
+    : tier === 'T2'
+    ? `<span style="font-size:0.7rem;font-weight:700;color:#38bdf8;border:1px solid #38bdf8;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T2</span>`
+    : '';
   div.innerHTML = `
     <div class="quota-bar-head">
-      <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
+      <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>${tierBadge}
       <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
       <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
       <span class="quota-expand-caret" style="margin-left:auto">▸</span>
