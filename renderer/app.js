@@ -4815,6 +4815,44 @@ async function acqFetchJitaPrices(builds) {
   return priceMap;
 }
 
+async function acqFetchJaniceFitPrices(targets) {
+  const unique = targets.filter((t) => !t.unevaluatable && t.shipTypeId);
+  const deduped = new Map();
+  for (const t of unique) {
+    const key = `${t.shipTypeId}||${t.fitName || ''}`;
+    if (!deduped.has(key)) deduped.set(key, t);
+  }
+  if (!deduped.size) return new Map();
+
+  const results = await Promise.all(
+    [...deduped.entries()].map(async ([key, t]) => {
+      const lines = [`${t.shipName} x1`];
+      for (const [tid, qty] of t.units) {
+        lines.push(`${acqTypeName(tid)} x${qty}`);
+      }
+      try {
+        const res = await fetch(`${API}/api/appraise`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paste_text: lines.join('\n'), persist: false }),
+        });
+        if (!res.ok) return [key, null];
+        const data = await res.json();
+        const sell = data?.janice?.prices_immediate?.sell_total ?? data?.janice?.prices_effective?.sell_total ?? null;
+        return [key, sell];
+      } catch (_) {
+        return [key, null];
+      }
+    })
+  );
+
+  const priceMap = new Map();
+  for (const [key, price] of results) {
+    if (price != null) priceMap.set(key, price);
+  }
+  return priceMap;
+}
+
 async function acqRunHullAnalysis(root, statusEl) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
@@ -4838,7 +4876,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   const fullResult = planAcquisitions({
     pool: inputs.pool, targets: inputs.targets, mode: ACQ_MODES.FULL,
   });
-  renderAcqSection1(s1, fullResult);
+  renderAcqSection1(s1, fullResult, new Map());
   s1.hidden = false;
   appLog(`analyse-hulls: section 1 done, ${fullResult.builds.length} build(s) from inventory`);
 
@@ -4914,12 +4952,16 @@ async function acqRunHullAnalysis(root, statusEl) {
     (b) => !satisfiedByInventory.has(`${b.shipTypeId}||${b.fitName || ''}`)
   );
 
-  acqProgressSet(progressBar, 70, 'Pricing missing items against Jita…', false);
-  const jitaPrices = await acqFetchJitaPrices(marketBuilds);
+  acqProgressSet(progressBar, 70, 'Pricing fits via Janice…', false);
+  const [jitaPrices, janiceFitPrices] = await Promise.all([
+    acqFetchJitaPrices(marketBuilds),
+    acqFetchJaniceFitPrices(inputs.targets),
+  ]);
   if (!acqCheckRunLive(runId, 'after Jita pricing')) return;
   ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult));
 
-  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices);
+  renderAcqSection1(s1, fullResult, janiceFitPrices);
+  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices, janiceFitPrices);
   s2.hidden = false;
   appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
 
@@ -5015,18 +5057,25 @@ async function acqRunHullAnalysis(root, statusEl) {
   setTimeout(() => { progressBar.hidden = true; }, 400);
 }
 
-function renderAcqSection1(el, result) {
+function renderAcqSection1(el, result, janiceFitPrices = new Map()) {
   const counts = new Map();
   for (const b of result.builds) {
-    const key = `${b.shipName}||${b.fitName || ''}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const key = `${b.shipTypeId}||${b.fitName || ''}`;
+    const entry = counts.get(key) || { n: 0, shipName: b.shipName, fitName: b.fitName || '' };
+    entry.n += 1;
+    counts.set(key, entry);
   }
-  const rows = [...counts.entries()].map(([key, n]) => {
-    const [ship, fit] = key.split('||');
+  const pct = Math.round(JITA_CONTRACT_MULTIPLIER * 100);
+  const rows = [...counts.entries()].map(([key, e]) => {
+    const fitPrice = janiceFitPrices.get(key);
+    const contractPrice = fitPrice != null
+      ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
+      : `<span style="color:#4b5563">—</span>`;
     return `<tr style="border-bottom:1px solid #1e2533">
-        <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
-        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
-        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
+        <td style="padding:0.3rem 0.5rem">${escapeHtml(e.shipName)}</td>
+        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(e.fitName)}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${e.n}</td>
+        <td style="padding:0.3rem 0.5rem;text-align:right;font-size:0.82rem" title="Janice Jita sell × ${pct}%">${contractPrice}</td>
       </tr>`;
   }).join('');
 
@@ -5044,6 +5093,7 @@ function renderAcqSection1(el, result) {
                 <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
                 <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
                 <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">${pct}% Jita sell / fit</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table>`
@@ -5052,12 +5102,12 @@ function renderAcqSection1(el, result) {
     </div>`;
 }
 
-function renderAcqSection2(el, builds, ageMin, market, jitaPrices) {
+function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPrices = new Map()) {
   const byType = market?.by_type || {};
   const groups = new Map();
   for (const b of builds) {
     const key = `${b.shipName}||${b.fitName || ''}`;
-    const g = groups.get(key) || { n: 0, uexoCost: 0, jitaCost: 0, jitaComplete: true };
+    const g = groups.get(key) || { n: 0, uexoCost: 0, jitaCost: 0, jitaComplete: true, shipTypeId: b.shipTypeId, fitName: b.fitName || '' };
     g.n += 1;
     for (const m of b.missing || []) {
       const entry = byType[m.type_id] || byType[Number(m.type_id)] || {};
@@ -5068,6 +5118,7 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices) {
     }
     groups.set(key, g);
   }
+  const pct = Math.round(JITA_CONTRACT_MULTIPLIER * 100);
   const rows = [...groups.entries()].map(([key, g]) => {
     const [ship, fit] = key.split('||');
     const uexoStr = fmtIskShort(g.uexoCost);
@@ -5079,11 +5130,17 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices) {
       const color = deltaPct <= 0 ? '#4ade80' : '#f87171';
       deltaHtml = ` <span style="color:${color}">(${sign}${deltaPct}%)</span>`;
     }
+    const fitPriceKey = `${g.shipTypeId}||${g.fitName}`;
+    const fitPrice = janiceFitPrices.get(fitPriceKey);
+    const contractPrice = fitPrice != null
+      ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
+      : `<span style="color:#4b5563">—</span>`;
     return `<tr style="border-bottom:1px solid #1e2533">
         <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
         <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
         <td style="padding:0.3rem 0.75rem;text-align:right">${g.n}</td>
         <td style="padding:0.3rem 0.5rem;text-align:right">${uexoStr} vs ${jitaStr}${deltaHtml}</td>
+        <td style="padding:0.3rem 0.5rem;text-align:right;font-size:0.82rem" title="Janice Jita sell × ${pct}%">${contractPrice}</td>
       </tr>`;
   }).join('');
 
@@ -5103,6 +5160,7 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices) {
                 <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
                 <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
                 <th style="padding:0.3rem 0.5rem;text-align:right">UEXO vs Jita (missing items)</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">${pct}% Jita sell / fit</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table>`
