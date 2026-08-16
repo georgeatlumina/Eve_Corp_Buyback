@@ -67,10 +67,16 @@
     const state = (available + hangar) >= required ? 'ok' : (available + hangar) > 0 ? 'partial' : quotaState(q);
     const shipName = q.ship_name || q.name || `type ${q.ship_type_id}`;
     const hangarStr = hangar > 0 ? ` · <span style="color:#60a5fa">${hangar} in hangar</span>` : '';
+    const tier = typeof shipTechTier === 'function' ? shipTechTier(shipName) : null;
+    const tierBadge = tier === 'T3'
+      ? `<span style="font-size:0.7rem;font-weight:700;color:#a78bfa;border:1px solid #a78bfa;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T3</span>`
+      : tier === 'T2'
+      ? `<span style="font-size:0.7rem;font-weight:700;color:#38bdf8;border:1px solid #38bdf8;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T2</span>`
+      : '';
     return `
       <div class="quota-bar quota-${state} ds-bar">
         <div class="quota-bar-head">
-          <strong>${escapeHtml(shipName)}</strong>
+          <strong>${escapeHtml(shipName)}</strong>${tierBadge}
           <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
           <span class="quota-counts">${available} / ${required} on contract${hangarStr}${missing ? ` · missing ${missing}` : ''}</span>
         </div>
