@@ -49,6 +49,9 @@ DEFAULTS = {
         # fitting slots (auth.FIT_SCOPES) for extra characters.
         'esi-fittings.read_fittings.v1',
         'esi-fittings.write_fittings.v1',
+        # Corp inventory load on the Acquisitions tab: read all corp assets at
+        # the home structure. Requires the Director role on the authed character.
+        'esi-assets.read_corporation_assets.v1',
         # Resolve moon/ore-buyback contract locations (player structures) to
         # names. Only ESI endpoint that returns citadel names; needs docking
         # access too. Enable it in the EVE developer portal before release, or

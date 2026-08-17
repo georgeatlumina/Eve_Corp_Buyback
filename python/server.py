@@ -55,6 +55,7 @@ from esi import (
     fetch_character_contracts,
     fetch_constellation_info,
     fetch_contract_items,
+    fetch_corp_assets,
     fetch_corp_contracts,
     fetch_corp_structures,
     fetch_corp_wallets,
@@ -5270,6 +5271,114 @@ def get_acquisitions():
 def post_acquisitions(req: AcquisitionsSaveRequest):
     """Persist the hull and item inventory to disk."""
     return save_acquisitions(req.hulls, req.items)
+
+
+# ESI location_flag → friendly hangar division name shown in the EVE client.
+# Corp hangar divisions are named "Division 1"…"Division 7" in EVE; ESI uses
+# HangarAll for the first division and CorpSAG2…CorpSAG7 for the rest.
+_CORP_HANGAR_FLAGS = {
+    'HangarAll': 'Hangar Division 1',
+    'CorpSAG1':  'Hangar Division 1',
+    'CorpSAG2':  'Hangar Division 2',
+    'CorpSAG3':  'Hangar Division 3',
+    'CorpSAG4':  'Hangar Division 4',
+    'CorpSAG5':  'Hangar Division 5',
+    'CorpSAG6':  'Hangar Division 6',
+    'CorpSAG7':  'Hangar Division 7',
+}
+
+
+@app.get('/api/corp/assets')
+def get_corp_assets():
+    """Return corp hangar contents at the configured home structure.
+
+    Requires `esi-assets.read_corporation_assets.v1` on a Director-role slot.
+    Groups items by hangar division, resolves type names from local type_meta
+    (falling back to ESI fetch_type_info for unknowns), and returns category_id
+    so the caller can split hulls (category 6) from modules.
+
+    Response: {ok: true, hangars: [{flag, name, item_count, items: [...]}]}
+    Error:    {ok: false, reason: str}
+    """
+    SCOPE = 'esi-assets.read_corporation_assets.v1'
+    token, corp_id, reason = _scope_token(SCOPE)
+    if reason:
+        return {'ok': False, 'reason': reason}
+
+    cfg = load_config()
+    structure_id = int(cfg.get('home_structure_id') or 0)
+    if not structure_id:
+        return {'ok': False, 'reason': 'no_home_structure'}
+
+    ua = get_user_agent()
+    try:
+        all_assets = fetch_corp_assets(corp_id, token, ua)
+    except Exception as e:
+        return {'ok': False, 'reason': 'fetch_failed', 'detail': str(e)}
+
+    # Filter to items directly in a corp hangar at the home structure.
+    hangar_items = [
+        a for a in all_assets
+        if int(a.get('location_id') or 0) == structure_id
+        and a.get('location_flag') in _CORP_HANGAR_FLAGS
+    ]
+
+    # Resolve type names + category_id from local type_meta first.
+    import os as _os
+    from config import AUTH_DIR as _AUTH_DIR
+    type_meta_path = _os.path.join(_AUTH_DIR, 'type_meta.json')
+    local_meta = {}
+    try:
+        with open(type_meta_path) as f:
+            raw = __import__('json').load(f)
+        local_meta = {int(k): v for k, v in raw.items()}
+    except Exception:
+        pass
+
+    # Collect type_ids we don't have locally so we can batch-enrich them.
+    unknown_ids = list({int(a['type_id']) for a in hangar_items
+                        if int(a['type_id']) not in local_meta})
+    enriched = {}
+    if unknown_ids:
+        try:
+            enriched = enrich_types(unknown_ids, ua)
+        except Exception:
+            pass
+
+    def _resolve(type_id):
+        tid = int(type_id)
+        if tid in local_meta:
+            m = local_meta[tid]
+            return m.get('name', str(tid)), m.get('category_id')
+        if tid in enriched:
+            m = enriched[tid]
+            return m.get('name', str(tid)), m.get('category_id')
+        return str(tid), None
+
+    # Group by hangar division.
+    from collections import defaultdict
+    by_flag = defaultdict(list)
+    for a in hangar_items:
+        flag = a.get('location_flag', 'HangarAll')
+        name, category_id = _resolve(a['type_id'])
+        by_flag[flag].append({
+            'type_id': int(a['type_id']),
+            'name': name,
+            'quantity': int(a.get('quantity') or 1),
+            'category_id': category_id,
+        })
+
+    hangars = []
+    for flag in sorted(by_flag.keys()):
+        items = by_flag[flag]
+        hangars.append({
+            'flag': flag,
+            'name': _CORP_HANGAR_FLAGS.get(flag, flag),
+            'item_count': sum(i['quantity'] for i in items),
+            'items': items,
+        })
+
+    return {'ok': True, 'hangars': hangars}
 
 
 @app.get('/api/contracts/scan')

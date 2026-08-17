@@ -5417,6 +5417,87 @@ function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
   });
 }
 
+const REASON_MESSAGES = {
+  missing_scope: 'Re-auth a Director character on the Auth tab — needs the esi-assets.read_corporation_assets.v1 scope.',
+  no_corp_id: 'Set your corp ID in Config first.',
+  no_home_structure: 'Set your home structure ID in Config first.',
+  no_credentials: 'Auth credentials missing — check Config.',
+  fetch_failed: 'ESI fetch failed. Check the sidecar log.',
+};
+
+async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
+  const btn = root.querySelector('#acq-corp-load');
+  const breakdownEl = root.querySelector('#acq-corp-breakdown');
+  btn.disabled = true;
+  statusEl.textContent = 'Loading corp inventory…';
+  breakdownEl.hidden = true;
+  breakdownEl.innerHTML = '';
+
+  let data;
+  try {
+    const res = await fetch(`${API}/api/corp/assets`);
+    data = await res.json();
+  } catch (e) {
+    statusEl.textContent = 'Failed to reach sidecar.';
+    btn.disabled = false;
+    return;
+  }
+
+  if (!data.ok) {
+    statusEl.textContent = REASON_MESSAGES[data.reason] || `Error: ${data.reason}`;
+    btn.disabled = false;
+    return;
+  }
+
+  statusEl.textContent = '';
+  const hangars = data.hangars || [];
+  const totalItems = hangars.reduce((s, h) => s + h.item_count, 0);
+
+  // Build hangar summary lines
+  const hangarLines = hangars.map((h) => `${h.name} · ${h.item_count.toLocaleString()} items`).join(' &nbsp;|&nbsp; ');
+
+  // Flatten all items from all hangars
+  const allItems = hangars.flatMap((h) => h.items);
+
+  breakdownEl.innerHTML = `
+    <div style="color:#8899aa;margin-bottom:0.4rem">${totalItems.toLocaleString()} items across ${hangars.length} hangar division${hangars.length !== 1 ? 's' : ''} &nbsp;—&nbsp; ${hangarLines}</div>
+    <div style="display:flex;gap:0.5rem">
+      <button id="acq-corp-add" class="btn">Add to inventory</button>
+      <button id="acq-corp-replace" class="btn">Replace inventory</button>
+    </div>`;
+  breakdownEl.hidden = false;
+
+  const applyCorpItems = async (mode) => {
+    const hulls = allItems.filter((i) => i.category_id === 6);
+    const items = allItems.filter((i) => i.category_id !== 6);
+    if (mode === 'replace') {
+      acquisitionsHulls = hulls;
+      acquisitionsItems = items;
+    } else {
+      // Merge: sum quantities for existing type_ids
+      for (const incoming of hulls) {
+        const existing = acquisitionsHulls.find((h) => h.type_id === incoming.type_id);
+        if (existing) existing.quantity += incoming.quantity;
+        else acquisitionsHulls.push({ ...incoming });
+      }
+      for (const incoming of items) {
+        const existing = acquisitionsItems.find((i) => i.type_id === incoming.type_id);
+        if (existing) existing.quantity += incoming.quantity;
+        else acquisitionsItems.push({ ...incoming });
+      }
+    }
+    await acquisitionsSave();
+    renderAcquisitionsResults(hullsEl, itemsEl);
+    statusEl.textContent = mode === 'replace' ? 'Replaced inventory with corp inventory.' : 'Added corp inventory to existing inventory.';
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    breakdownEl.hidden = true;
+  };
+
+  breakdownEl.querySelector('#acq-corp-add').addEventListener('click', () => applyCorpItems('add'));
+  breakdownEl.querySelector('#acq-corp-replace').addEventListener('click', () => applyCorpItems('replace'));
+  btn.disabled = false;
+}
+
 function renderAcquisitionsTab() {
   const root = $('#acquisitions-root');
   if (!root) return;
@@ -5431,13 +5512,15 @@ function renderAcquisitionsTab() {
     <strong>Analyse Fits</strong> finds fits where every module is in stock but the hull is missing — buy a hull and they're ready to build.</p>
     <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
       placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
-    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
+    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
       <button id="acq-add" class="btn">Add to inventory</button>
       <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
       <button id="acq-copy-inventory" class="btn" title="Copy full inventory as Janice-format text">Copy inventory</button>
+      <button id="acq-corp-load" class="btn secondary" title="Load corp hangar contents via ESI (requires Director re-auth with corp assets scope)">Corp inventory (needs director access)</button>
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
+    <div id="acq-corp-breakdown" hidden style="margin-top:0.5rem;border:1px solid #2e3a4e;border-radius:6px;padding:0.6rem 0.75rem;background:#0d1a2e;font-size:0.82rem"></div>
     <div class="progress-area" id="acq-progress" hidden>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="progress-step muted">starting…</div>
@@ -5538,6 +5621,7 @@ function renderAcquisitionsTab() {
       setTimeout(() => { statusEl.textContent = ''; }, 2000);
     });
   });
+  root.querySelector('#acq-corp-load').addEventListener('click', () => acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl));
   // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
