@@ -1,13 +1,16 @@
-# v3.4.2 — clearer backend-unreachable errors
+# v3.4.3 — updates always replace the sidecar
 
-- If the app can't reach its local backend (the sidecar), it now shows a **clear banner naming the
-  port** instead of failing silently — reads used to fall back to defaults quietly, so the first
-  visible symptom was a cryptic **"failed to fetch"** on config import. Config import now gives an
-  actionable message too.
-- The sidecar logs its **bound port** (and callback URL) at startup, and the app logs the port it
-  health-checks — so a renderer↔sidecar port mismatch is obvious from `sidecar.log`.
+Fixes a Windows update problem where a **running `sidecar.exe` was file-locked**, so an installer
+(fresh or auto-update) could keep the **old sidecar** next to the new app — a renderer↔sidecar port
+mismatch that showed the "can't reach the local backend" banner. Manually closing the stale
+`sidecar.exe` before reinstalling was the workaround; this release does it for you.
 
-Reliability and diagnostics only — no feature changes.
+- The app now **fully kills the sidecar process tree** on quit and **before launching a downloaded
+  update installer**, so the locked file is freed and always replaced.
+- The Windows installer/uninstaller also **stops any running sidecar** during install — covering even
+  a force-killed-app orphan.
+- The updater already downloads and runs the **full** platform installer (no differential), so big
+  version jumps (e.g. v2.x → latest) replace every file.
 
 ---
 
