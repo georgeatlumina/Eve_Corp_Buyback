@@ -1,17 +1,27 @@
-# v3.3.0 — native zKillboard
+# v3.4.0 — Buyback locations, reliability & port move
 
-The **zKillboard** tab is now a native killboard instead of an embedded web view. Search a
-pilot, corporation, alliance or system and see its recent kills and losses rendered inside
-the app — pulled live from zKillboard and enriched with public ESI killmails.
+## Ore buyback — location names & controls
+- Contract **locations are now resolved to names** (stations via public ESI; player structures via
+  the authenticated structure endpoint) instead of raw location IDs.
+- New controls on the Ore Buyback tab: **Sort** (oldest [default] / newest / location), **filter by
+  location**, and **group by location** (oldest-first within each group).
 
-- **Type-ahead search:** start typing (3+ letters) and pick from suggestions — pilots, corps,
-  alliances and systems — with keyboard or mouse. Picking a result loads its board instantly.
-- **Native killmail list:** ship renders, victim & final-blow portraits, security-coloured
-  systems, ISK values, solo / NPC / awox flags and relative times. Click any row to open the
-  full killmail on zkillboard.com.
-- **Filters:** kills, losses, or both.
+## Reliability
+- Wallet and corp-contract loads no longer fail with a raw 500 on ESI errors — a **403 now gives a
+  clear "needs Accountant role + wallet scope" message**, and other failures a safe reason.
 
-Killmails are cached locally (they never change), so boards you revisit load instantly.
+## Security
+- The access token that ESI embeds in error URLs is now **redacted** from the UI and logs (a
+  corp-contracts scan could previously surface the full token).
+
+## Under the hood
+- The local sidecar (the API **and** the ESI login callback) **moved from port 8765 to 8766**.
+
+## Upgrade notes
+- **Re-authenticate your characters** to grant the new structure-names permission
+  (`esi-universe.read_structures.v1`), or structure names fall back to IDs.
+- Running your own EVE application: set its callback URL to **`http://localhost:8766/callback`** and
+  enable the **`esi-universe.read_structures.v1`** scope in the developer portal, or logins will fail.
 
 ---
 
