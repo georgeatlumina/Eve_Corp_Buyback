@@ -1,27 +1,10 @@
-# v3.4.0 — Buyback locations, reliability & port move
+# v3.4.1 — sidecar port move to 8766
 
-## Ore buyback — location names & controls
-- Contract **locations are now resolved to names** (stations via public ESI; player structures via
-  the authenticated structure endpoint) instead of raw location IDs.
-- New controls on the Ore Buyback tab: **Sort** (oldest [default] / newest / location), **filter by
-  location**, and **group by location** (oldest-first within each group).
-
-## Reliability
-- Wallet and corp-contract loads no longer fail with a raw 500 on ESI errors — a **403 now gives a
-  clear "needs Accountant role + wallet scope" message**, and other failures a safe reason.
-
-## Security
-- The access token that ESI embeds in error URLs is now **redacted** from the UI and logs (a
-  corp-contracts scan could previously surface the full token).
-
-## Under the hood
 - The local sidecar (the API **and** the ESI login callback) **moved from port 8765 to 8766**.
 
-## Upgrade notes
-- **Re-authenticate your characters** to grant the new structure-names permission
-  (`esi-universe.read_structures.v1`), or structure names fall back to IDs.
-- Running your own EVE application: set its callback URL to **`http://localhost:8766/callback`** and
-  enable the **`esi-universe.read_structures.v1`** scope in the developer portal, or logins will fail.
+## Upgrade note
+- If you run your own EVE application, set its callback URL to **`http://localhost:8766/callback`**
+  in the developer portal, or logins will fail with a `redirect_uri` mismatch.
 
 ---
 
