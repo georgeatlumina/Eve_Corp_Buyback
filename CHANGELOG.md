@@ -4,6 +4,19 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.4.2 — clearer backend-unreachable errors
+
+- If the app can't reach its local backend (the sidecar), it now shows a **clear banner naming the
+  port** instead of failing silently — reads used to fall back to defaults quietly, so the first
+  visible symptom was a cryptic **"failed to fetch"** on config import. Config import now gives an
+  actionable message too.
+- The sidecar logs its **bound port** (and callback URL) at startup, and the app logs the port it
+  health-checks — so a renderer↔sidecar port mismatch is obvious from `sidecar.log`.
+
+_(No functional change to features — this is reliability/diagnostics only.)_
+
+---
+
 ## v3.4.1 — sidecar port move to 8766
 
 - The local sidecar (the API **and** the ESI login callback) **moved from port 8765 to 8766**.

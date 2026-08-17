@@ -1,10 +1,13 @@
-# v3.4.1 — sidecar port move to 8766
+# v3.4.2 — clearer backend-unreachable errors
 
-- The local sidecar (the API **and** the ESI login callback) **moved from port 8765 to 8766**.
+- If the app can't reach its local backend (the sidecar), it now shows a **clear banner naming the
+  port** instead of failing silently — reads used to fall back to defaults quietly, so the first
+  visible symptom was a cryptic **"failed to fetch"** on config import. Config import now gives an
+  actionable message too.
+- The sidecar logs its **bound port** (and callback URL) at startup, and the app logs the port it
+  health-checks — so a renderer↔sidecar port mismatch is obvious from `sidecar.log`.
 
-## Upgrade note
-- If you run your own EVE application, set its callback URL to **`http://localhost:8766/callback`**
-  in the developer portal, or logins will fail with a `redirect_uri` mismatch.
+Reliability and diagnostics only — no feature changes.
 
 ---
 
