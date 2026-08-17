@@ -5567,16 +5567,43 @@ def get_corp_assets():
     Error:    {ok: false, reason: str}
     """
     SCOPE = 'esi-assets.read_corporation_assets.v1'
-    token, corp_id, reason = _scope_token(SCOPE)
-    if reason:
-        return {'ok': False, 'reason': reason}
-
     cfg = load_config()
     structure_id = int(cfg.get('home_structure_id') or 0)
     if not structure_id:
         return {'ok': False, 'reason': 'no_home_structure'}
 
+    # Find a slot with the required scope and derive corp_id from the character
+    # rather than from config — the director character may be in a different corp
+    # than the one set in Config (e.g. a director alt in the main alliance corp).
     ua = get_user_agent()
+    token = None
+    corp_id = None
+    try:
+        client_id, secret_key = get_app_credentials()
+    except Exception:
+        return {'ok': False, 'reason': 'no_credentials'}
+    for slot in list_authenticated_slots():
+        try:
+            t = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            payload = decode_jwt_payload(t)
+        except Exception:
+            continue
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        if SCOPE not in scope_list:
+            continue
+        char_id = payload.get('sub', '').split(':')[-1]
+        try:
+            char_info = fetch_character_info(char_id, ua)
+            corp_id = int(char_info.get('corporation_id') or 0)
+        except Exception:
+            continue
+        if corp_id:
+            token = t
+            break
+    if not token or not corp_id:
+        return {'ok': False, 'reason': 'missing_scope'}
+
     try:
         all_assets = fetch_corp_assets(corp_id, token, ua)
     except Exception as e:
