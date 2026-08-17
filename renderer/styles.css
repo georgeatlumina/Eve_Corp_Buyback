@@ -746,6 +746,13 @@ table.readiness-table tr.disabled-row td { color: #777; }
 .link-panel-view { flex: 1 1 auto; width: 100%; border: 0; background: #fff; }
 body.link-panel-open main { margin-right: 46vw; }
 
+/* Backend-unreachable banner — shown when the renderer can't reach the sidecar. */
+.backend-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; display: flex; align-items: center; gap: 0.9em; justify-content: center; flex-wrap: wrap; background: #7a1f1f; color: #ffecec; padding: 0.6em 1em; font-size: 0.9em; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); }
+.backend-banner[hidden] { display: none; }
+.backend-banner code { background: rgba(0, 0, 0, 0.3); padding: 0 0.35em; border-radius: 3px; }
+.backend-banner button { background: #ffecec; color: #7a1f1f; border: 0; border-radius: 4px; padding: 0.3em 0.85em; font-weight: 600; cursor: pointer; }
+.backend-banner button:hover { background: #fff; }
+
 /* ===== Embedded-site tabs (Dotlan Maps, zKillboard) — full-bleed <webview> ===== */
 .webtab.active { display: flex; flex-direction: column; gap: 0.5em; }
 body.webtab-active main { max-width: none; padding: 0.8em; }

@@ -172,7 +172,7 @@ async function waitForSidecar(onTick) {
       // out after 30s while the sidecar was listening the whole time.
       const res = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/health`);
       if (res.ok) {
-        logSidecar(`health OK after ~${i * 0.5}s`);
+        logSidecar(`health OK on 127.0.0.1:${PYTHON_PORT} after ~${i * 0.5}s`);
         return;
       }
     } catch (_) {}

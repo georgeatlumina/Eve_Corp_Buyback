@@ -6082,4 +6082,7 @@ if __name__ == '__main__':
         git_info()
     except Exception as e:  # noqa: BLE001
         logger.warning('build tag unavailable: %s', e)
+    # Log the bound port explicitly (in addition to uvicorn's own line) so a
+    # renderer<->sidecar port mismatch is obvious from sidecar.log alone.
+    logger.info('sidecar binding http://127.0.0.1:%s (callback %s)', PORT, REDIRECT_URI)
     uvicorn.run(app, host='127.0.0.1', port=PORT, log_level='info')
