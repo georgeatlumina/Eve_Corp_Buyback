@@ -112,7 +112,7 @@ Electron shell hosts a single `BrowserWindow` loading static HTML/CSS/JS in
 [renderer/](renderer/). On startup [electron/main.js](electron/main.js) spawns
 a Python sidecar — in dev, `python3 python/server.py`; in production, a
 PyInstaller-built `sidecar` binary bundled under `Resources/python-sidecar/`.
-The sidecar is a FastAPI app on `localhost:8765`. The renderer talks to it
+The sidecar is a FastAPI app on `localhost:8766`. The renderer talks to it
 directly with `fetch()`; Electron only mediates a few side-channels (calculator
 popout, Alliance Auth session). All EVE network IO happens server-side in
 Python: ESI (auth, contracts, wallets, mail, structure markets) and Janice
@@ -124,7 +124,7 @@ Fuzzwork is no longer used (its CSV dumps were removed upstream).
 ┌──────────────────┐    fetch()     ┌─────────────────────┐
 │ renderer (HTML / │ ─────────────► │ FastAPI sidecar     │
 │ vanilla JS)      │  localhost     │ (python/server.py)  │
-└────────┬─────────┘     :8765      └──────────┬──────────┘
+└────────┬─────────┘     :8766      └──────────┬──────────┘
          │ IPC (preload.js)                    │ HTTPS
          ▼                                     ▼
 ┌──────────────────┐               ┌──────────────────────┐
@@ -639,7 +639,7 @@ localStorage** (`readinessState`), not on disk.
   immediate interactive check with friendly "you're up to date" feedback.
 - **Orphan-sidecar sweep on launch (v1.1.3).** When the Electron main
   process is force-killed (Task Manager / crash), its spawned Python child
-  can survive and keep port 8765 bound. A fresh install then fails to
+  can survive and keep port 8766 bound. A fresh install then fails to
   rebind, exits, and the orphan keeps serving 404s on every newly-added
   route. `killOrphanSidecars()` runs `taskkill /F /T /IM sidecar.exe` on
   Windows or `pkill -x sidecar` on macOS/Linux before every spawn — the
@@ -679,5 +679,5 @@ localStorage** (`readinessState`), not on disk.
 - Start app: `npm start` (spawns sidecar via `python3 python/server.py`)
 - Build mac DMG: `npm run build:mac`
 - Build Windows installer: `npm run build:win`
-- Sidecar directly: `python3 python/server.py` then hit `http://localhost:8765/api/health`
+- Sidecar directly: `python3 python/server.py` then hit `http://localhost:8766/api/health`
 - Logs: `<userData>/sidecar.log`

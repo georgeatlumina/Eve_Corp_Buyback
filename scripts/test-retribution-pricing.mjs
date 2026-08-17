@@ -61,7 +61,7 @@ async function run() {
   console.log(`\nRetribution fits in AA: ${retFits.fits.length}`);
   retFits.fits.forEach(f => console.log(`  id=${f.id} "${f.name}"`));
 
-  const API = 'http://localhost:8765';
+  const API = 'http://localhost:8766';
 
   for (const fit of retFits.fits) {
     console.log(`\n${'='.repeat(60)}`);

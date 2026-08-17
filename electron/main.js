@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const pkg = require('../package.json');
 
-const PYTHON_PORT = 8765;
+const PYTHON_PORT = 8766;
 const UPDATE_REPO = 'georgeatlumina/Eve_Corp_Buyback';
 const APP_META = { version: pkg.version || '', author: pkg.author || '' };
 
@@ -28,7 +28,7 @@ ipcMain.handle('open-link-window', (_event, url) => {
 });
 // Pop a single tab out into its own window. Loads the same index.html with a
 // ?popout=<tab> query; the renderer hides the app chrome and shows just that
-// tab. Same preload, so it talks to the shared sidecar on 127.0.0.1:8765.
+// tab. Same preload, so it talks to the shared sidecar on 127.0.0.1:8766.
 ipcMain.handle('pop-out-tab', (_event, tab) => {
   if (!/^[a-z0-9-]+$/.test(tab || '')) return;
   const win = new BrowserWindow({
@@ -80,7 +80,7 @@ function logSidecar(line) {
 
 function killOrphanSidecars() {
   // Defensive: a previous app instance that crashed (or was force-quit via Task
-  // Manager) can leave its python child running and still bound to port 8765.
+  // Manager) can leave its python child running and still bound to port 8766.
   // The fresh sidecar then fails with WSAEADDRINUSE / EADDRINUSE and exits,
   // while the orphan keeps serving traffic from older code (e.g. missing
   // /api/pinned, /api/contracts/scan). Sweep any leftovers before we spawn.

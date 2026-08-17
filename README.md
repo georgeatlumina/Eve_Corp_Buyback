@@ -724,7 +724,7 @@ corrupted. Check the file — invalid JSON is treated as "no pins".
 ### `Pin failed: HTTP 404` on Windows after installing a new version
 
 An older app instance (or a force-quit one) left its sidecar.exe running,
-holding port 8765. The new install's sidecar can't bind, exits, and the
+holding port 8766. The new install's sidecar can't bind, exits, and the
 orphan keeps serving 404s on new routes. **Fixed in v1.1.3+** — every
 launch now runs `taskkill /F /IM sidecar.exe` before spawning. If you're
 on a pre-1.1.3 install, end the orphan in Task Manager (Details tab) and

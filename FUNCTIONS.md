@@ -397,7 +397,7 @@ Module-level: `AUTH_DIR` (from `EVE_BUYBACK_DATA_DIR` env or `.eve_auth/` next t
 
 - `ensureLogPath()` — lazy-init `<userData>/sidecar.log`.
 - `logSidecar(line)` — timestamped append + mirror to stdout.
-- `killOrphanSidecars()` — runs `taskkill /F /T /IM sidecar.exe` on Windows or `pkill -x sidecar` on macOS/Linux **before** every spawn. Defends against a previous app instance leaving its child sidecar holding port 8765 — a fresh launch would otherwise fail with `WSAEADDRINUSE` and the orphan would keep serving stale routes.
+- `killOrphanSidecars()` — runs `taskkill /F /T /IM sidecar.exe` on Windows or `pkill -x sidecar` on macOS/Linux **before** every spawn. Defends against a previous app instance leaving its child sidecar holding port 8766 — a fresh launch would otherwise fail with `WSAEADDRINUSE` and the orphan would keep serving stale routes.
 - `startPythonSidecar()` — spawn the dev `python3 server.py` or the packaged `sidecar` binary after orphan sweep. Pipes stdout/stderr into the log.
 - `waitForSidecar(onTick)` — poll `/api/health` for 30 s; calls `onTick(i, max)` per poll for the splash progress bar.
 

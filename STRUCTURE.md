@@ -82,7 +82,7 @@ sidecar on tab open.
 
 ## `python/` — FastAPI sidecar
 
-Bound to `localhost:8765`. Started as `python3 python/server.py` in dev or
+Bound to `localhost:8766`. Started as `python3 python/server.py` in dev or
 as a PyInstaller binary in packaged builds. All external HTTP (ESI, Janice,
 GitHub Contents API) goes through here.
 
@@ -169,7 +169,7 @@ Generated artifacts — both gitignored.
 
 ## Boundaries that matter
 
-- **Renderer → sidecar:** direct `fetch('http://localhost:8765/...')`. No
+- **Renderer → sidecar:** direct `fetch('http://localhost:8766/...')`. No
   IPC. Means the renderer can be opened in any browser (e.g. for debugging)
   if the sidecar is running.
 - **Renderer → main process:** only via `window.api` (defined in
