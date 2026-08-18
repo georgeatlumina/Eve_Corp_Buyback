@@ -4,6 +4,35 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.4.3 — updates always replace the sidecar
+
+Fixes a Windows update problem where a **running `sidecar.exe` was file-locked**, so an installer
+(fresh or auto-update) could keep the **old sidecar** next to the new app — a renderer↔sidecar port
+mismatch that showed the "can't reach the local backend" banner. (Confirmed: manually closing the
+stale `sidecar.exe` before reinstalling fixed it — this release automates that.)
+
+- The app now **fully kills the sidecar process tree** on quit and **before launching a downloaded
+  update installer**, so the locked file is freed and always replaced.
+- The Windows installer/uninstaller also **stops any running sidecar** during install — covering even
+  a force-killed-app orphan.
+- The updater already downloads and runs the **full** platform installer (no differential), so big
+  version jumps (e.g. v2.x → latest) replace every file.
+
+---
+
+## v3.4.2 — clearer backend-unreachable errors
+
+- If the app can't reach its local backend (the sidecar), it now shows a **clear banner naming the
+  port** instead of failing silently — reads used to fall back to defaults quietly, so the first
+  visible symptom was a cryptic **"failed to fetch"** on config import. Config import now gives an
+  actionable message too.
+- The sidecar logs its **bound port** (and callback URL) at startup, and the app logs the port it
+  health-checks — so a renderer↔sidecar port mismatch is obvious from `sidecar.log`.
+
+_(No functional change to features — this is reliability/diagnostics only.)_
+
+---
+
 ## v3.4.1 — sidecar port move to 8766
 
 - The local sidecar (the API **and** the ESI login callback) **moved from port 8765 to 8766**.

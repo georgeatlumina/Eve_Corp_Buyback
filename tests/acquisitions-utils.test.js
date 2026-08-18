@@ -539,7 +539,6 @@ describe('computeShoppingGap', () => {
     expect(item200.onMarket).toBe(true);
     expect(item201.onMarket).toBe(false);
   });
-
   test('qty carries the market entry\'s total_volume, 0 when absent', () => {
     const pool = new Map();
     const market = { by_type: { '200': { min_price: 100, total_volume: 42 } } };

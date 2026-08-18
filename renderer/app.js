@@ -28,6 +28,60 @@ function updateAppHeaderHeight() {
 updateAppHeaderHeight();
 window.addEventListener('resize', updateAppHeaderHeight);
 
+// ---- Backend reachability (the sidecar on 127.0.0.1:<port>) ----------------
+// A network-level fetch failure throws a TypeError ("Failed to fetch"), which is
+// indistinguishable to users from a real error. These helpers detect an
+// unreachable sidecar and surface an actionable message + a persistent banner —
+// so a renderer<->sidecar port mismatch or a dead sidecar can't masquerade as
+// "the app loaded fine but won't save" (reads fail silently and fall back to
+// defaults, so only the first write — e.g. config import — used to show anything).
+const BACKEND_UNREACHABLE_MSG =
+  `Can't reach the local backend at ${API}.\n\n`
+  + `The sidecar isn't responding, so nothing will load or save. Restart the app; `
+  + `if it keeps failing, another program may be using that port — see sidecar.log.`;
+
+// fetch() rejects with a TypeError only when the request never completed
+// (connection refused, bad/undefined URL) — i.e. the backend is unreachable.
+// HTTP error statuses do NOT throw, so this cleanly separates the two.
+function isNetworkError(e) { return e instanceof TypeError; }
+
+async function backendReachable() {
+  try {
+    const r = await fetch(`${API}/api/health`, { cache: 'no-store' });
+    return r.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function showBackendBanner(show) {
+  let el = document.getElementById('backend-banner');
+  if (show) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'backend-banner';
+      el.className = 'backend-banner';
+      el.innerHTML = `<span>⚠ Can't reach the local backend at <code>${API}</code> — data won't load or save. `
+        + `Restart the app; if it persists, another program may be using that port (see sidecar.log).</span>`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Retry';
+      btn.addEventListener('click', checkBackend);
+      el.appendChild(btn);
+      document.body.appendChild(el);
+    }
+    el.hidden = false;
+  } else if (el) {
+    el.hidden = true;
+  }
+}
+
+async function checkBackend() {
+  const ok = await backendReachable();
+  showBackendBanner(!ok);
+  return ok;
+}
+
 (async () => {
   if (!window.api?.getMeta) return;
   try {
@@ -445,10 +499,11 @@ async function loadConfig() {
   let cfg = null;
   try {
     const res = await fetch(`${API}/api/config`);
-    if (res.ok) cfg = await res.json();
+    if (res.ok) { cfg = await res.json(); showBackendBanner(false); }
     else console.error('[loadConfig] /api/config failed:', res.status, await res.text());
   } catch (e) {
     console.error('[loadConfig] /api/config error:', e);
+    if (isNetworkError(e)) showBackendBanner(true); // sidecar unreachable — make it visible
   }
 
   let markets = [];
@@ -1552,6 +1607,7 @@ document.addEventListener('click', async (e) => {
   openMailModal(contract, kind, idx);
 });
 
+checkBackend(); // surface an unreachable sidecar up front, not just on first write
 loadConfig().then(maybeAutoSyncQuotas);
 refreshStockpileAccess();
 refreshIndyAccess();
@@ -3399,7 +3455,12 @@ $('#config-import-file')?.addEventListener('change', async (ev) => {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   } catch (e) {
-    alert(`Import failed: ${e}`);
+    if (isNetworkError(e)) {
+      showBackendBanner(true);
+      alert(`Import failed — ${BACKEND_UNREACHABLE_MSG}`);
+    } else {
+      alert(`Import failed: ${e}`);
+    }
     return;
   }
   // Re-pull from the sidecar so the form repopulates with the saved values
@@ -4840,6 +4901,7 @@ async function acqFetchJaniceFitPrices(targets) {
   return priceMap;
 }
 
+
 async function acqRunHullAnalysis(root, statusEl) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
@@ -5214,6 +5276,47 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
             <th style="padding:0.25rem 0.4rem;text-align:right">UEXO qty</th>
             <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
             <th style="padding:0.25rem 0.5rem;text-align:right">vs Jita</th>
+          </tr></thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
+          <button id="${btnId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapALines.join('\n'))}">Copy gap (inventory only)</button>
+          <button id="${btnBId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapBLines.join('\n'))}">Copy gap (inventory + market)</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="border:1px solid #d97706;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="background:#451a03;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#fbbf24;font-size:0.9rem">🛒 Shopping list candidates</strong>
+        <span style="color:#fbbf24;font-size:0.8rem">${candidates.length} hull(s)</span>
+      </div>
+      <div style="padding:0.6rem 0.75rem">${cards}</div>
+    </div>`;
+
+  for (const { target } of candidates) {
+    const fitSlug = (target.fitName || 'nofit').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    for (const id of [`acq-copy-gap-${target.shipTypeId}-${fitSlug}`, `acq-copy-gapb-${target.shipTypeId}-${fitSlug}`]) {
+      const btn = el.querySelector(`#${id}`);
+      if (!btn) continue;
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.lines);
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = btn.id.includes('gapb') ? 'Copy gap (inventory + market)' : 'Copy gap (inventory only)'; }, 1500);
+        } catch { btn.textContent = 'Copy failed'; }
+      });
+    }
+  }
+}
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e;font-size:0.78rem">
+            <th style="padding:0.25rem 0.4rem;text-align:left">Item</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Need</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Have</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Short</th>
+            <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
           </tr></thead>
           <tbody>${itemRows}</tbody>
         </table>

@@ -1,10 +1,16 @@
-# v3.4.1 — sidecar port move to 8766
+# v3.4.3 — updates always replace the sidecar
 
-- The local sidecar (the API **and** the ESI login callback) **moved from port 8765 to 8766**.
+Fixes a Windows update problem where a **running `sidecar.exe` was file-locked**, so an installer
+(fresh or auto-update) could keep the **old sidecar** next to the new app — a renderer↔sidecar port
+mismatch that showed the "can't reach the local backend" banner. Manually closing the stale
+`sidecar.exe` before reinstalling was the workaround; this release does it for you.
 
-## Upgrade note
-- If you run your own EVE application, set its callback URL to **`http://localhost:8766/callback`**
-  in the developer portal, or logins will fail with a `redirect_uri` mismatch.
+- The app now **fully kills the sidecar process tree** on quit and **before launching a downloaded
+  update installer**, so the locked file is freed and always replaced.
+- The Windows installer/uninstaller also **stops any running sidecar** during install — covering even
+  a force-killed-app orphan.
+- The updater already downloads and runs the **full** platform installer (no differential), so big
+  version jumps (e.g. v2.x → latest) replace every file.
 
 ---
 

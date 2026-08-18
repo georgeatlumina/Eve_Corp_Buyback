@@ -177,7 +177,7 @@ async function waitForSidecar(onTick) {
       // out after 30s while the sidecar was listening the whole time.
       const res = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/health`);
       if (res.ok) {
-        logSidecar(`health OK after ~${i * 0.5}s`);
+        logSidecar(`health OK on 127.0.0.1:${PYTHON_PORT} after ~${i * 0.5}s`);
         return;
       }
     } catch (_) {}
@@ -539,6 +539,11 @@ async function checkForUpdate({ interactive = false } = {}) {
     cancelId: 2,
   });
   if (after.response === 0) {
+    // The sidecar is a separate process; if it's still alive the Windows
+    // installer can't overwrite the locked sidecar.exe and the update silently
+    // keeps the OLD sidecar (e.g. on the previous port). Kill the whole tree
+    // first so the installer replaces every file, including the sidecar.
+    killOrphanSidecars();
     await shell.openPath(destPath);
     setTimeout(() => app.quit(), 500);
   } else if (after.response === 1) {
@@ -644,10 +649,12 @@ function compareSemver(a, b) {
 }
 
 app.on('window-all-closed', () => {
-  if (pythonProcess) pythonProcess.kill();
+  // Full-tree kill (not just the bootloader): a lingering sidecar child would
+  // keep port 8766 bound and hold sidecar.exe locked against a fresh installer.
+  killOrphanSidecars();
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
-  if (pythonProcess) pythonProcess.kill();
+  killOrphanSidecars();
 });
