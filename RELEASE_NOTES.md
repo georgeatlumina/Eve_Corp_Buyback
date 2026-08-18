@@ -1,16 +1,28 @@
-# v3.4.3 — updates always replace the sidecar
+# v3.5.0 — My Assets tab, reactions availability & auto-detect
 
-Fixes a Windows update problem where a **running `sidecar.exe` was file-locked**, so an installer
-(fresh or auto-update) could keep the **old sidecar** next to the new app — a renderer↔sidecar port
-mismatch that showed the "can't reach the local backend" banner. Manually closing the stale
-`sidecar.exe` before reinstalling was the workaround; this release does it for you.
+## My Assets tab (new) — General group
+See, search and filter every character's assets from ESI. A **toon dropdown** (mains **and** PI
+toons), an **All connected toons** checkbox to aggregate everyone, **item search**, **location
+filter**, and **group by location**. Item locations resolve to real **station / structure names**.
 
-- The app now **fully kills the sidecar process tree** on quit and **before launching a downloaded
-  update installer**, so the locked file is freed and always replaced.
-- The Windows installer/uninstaller also **stops any running sidecar** during install — covering even
-  a force-killed-app orphan.
-- The updater already downloads and runs the **full** platform installer (no differential), so big
-  version jumps (e.g. v2.x → latest) replace every file.
+## Reactions — assets-aware
+- **🔍 Auto-detect stock** — fills the on-hand stock box with everything in the reaction chain you
+  already own (across all connected toons), then re-analyzes.
+- **Chain availability** panel: **group by Stage / Location / both / flat**, and toggle a
+  **Timeline** view where each stage (raw inputs → product) shows **available vs missing** at a
+  glance.
+- **Per-stage "Copy missing"** shopping-list buttons, alongside the whole-chain list.
+
+## Ore Buyback
+- Structure locations now resolve using **every authenticated character** that can read structures
+  (not just one), with a hint prompting a re-auth when none can — so far fewer locations fall back
+  to raw IDs.
+
+## ⚠️ Upgrade note — re-auth required
+These features use two ESI scopes — **`esi-assets.read_assets.v1`** (new) and
+**`esi-universe.read_structures.v1`**. Enable both in your **EVE developer application**, then
+**re-authenticate your characters** on the Auth tab to grant them. Until then, assets / structure
+names won't load, and the app tells you which toons still need a re-auth.
 
 ---
 
