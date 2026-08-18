@@ -618,6 +618,74 @@ def fetch_structure_info(structure_id, access_token, user_agent):
     return resp.json()
 
 
+def fetch_character_assets(character_id, access_token, user_agent):
+    """Every asset the character owns, across all pages. Needs esi-assets.read_
+    assets.v1. Each record carries item_id, type_id, quantity, location_id,
+    location_flag, location_type ('station'|'solar_system'|'item'|'other'),
+    is_singleton (+ is_blueprint_copy when set)."""
+    url = f'{ESI_BASE}/characters/{int(character_id)}/assets/'
+    out = []
+    page = 1
+    while True:
+        resp = _session.get(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'token': access_token, 'page': page},
+        )
+        if resp.status_code >= 500:
+            break
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        out.extend(batch)
+        max_page = int(resp.headers.get('x-pages', page))
+        if page >= max_page:
+            break
+        page += 1
+    return out
+
+
+def fetch_asset_names(character_id, item_ids, access_token, user_agent):
+    """Resolve owned item_ids -> custom/assembled names (named containers, ships)
+    in batches of 1000. Returns {item_id: name}; blank/'None' names are skipped."""
+    names = {}
+    ids = [int(i) for i in dict.fromkeys(item_ids)]
+    for i in range(0, len(ids), 1000):
+        resp = _session.post(
+            f'{ESI_BASE}/characters/{int(character_id)}/assets/names/',
+            json=ids[i:i + 1000],
+            headers={'Accept': 'application/json', 'Content-Type': 'application/json',
+                     'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'token': access_token},
+        )
+        resp.raise_for_status()
+        for row in resp.json():
+            nm = (row.get('name') or '').strip()
+            if nm and nm != 'None':
+                names[int(row['item_id'])] = nm
+    return names
+
+
+def fetch_asset_locations(character_id, item_ids, access_token, user_agent):
+    """Resolve owned item_ids -> {x,y,z} positions in batches of 1000. Returns
+    {item_id: {'x':.., 'y':.., 'z':..}} for items ESI can position."""
+    locs = {}
+    ids = [int(i) for i in dict.fromkeys(item_ids)]
+    for i in range(0, len(ids), 1000):
+        resp = _session.post(
+            f'{ESI_BASE}/characters/{int(character_id)}/assets/locations/',
+            json=ids[i:i + 1000],
+            headers={'Accept': 'application/json', 'Content-Type': 'application/json',
+                     'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'token': access_token},
+        )
+        resp.raise_for_status()
+        for row in resp.json():
+            locs[int(row['item_id'])] = row.get('position')
+    return locs
+
+
 def fetch_system_info(system_id, user_agent):
     resp = _session.get(
         f'{ESI_BASE}/universe/systems/{int(system_id)}/',

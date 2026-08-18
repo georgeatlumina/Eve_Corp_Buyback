@@ -147,7 +147,14 @@ async function fetchMoonLocationNames() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     });
-    if (res.ok) Object.assign(moonLocationNames, (await res.json()).names || {});
+    if (res.ok) {
+      const data = await res.json();
+      Object.assign(moonLocationNames, data.names || {});
+      // Show a re-auth hint only when structures went unresolved *because* no
+      // authenticated character holds the read-structures scope.
+      const hint = $('#moon-loc-authhint');
+      if (hint) hint.hidden = !data.structures_unauthorized;
+    }
   } catch { /* ignore — labels fall back to ids */ }
 }
 let mailPresets = [

@@ -16,7 +16,7 @@
 // and the Production Planner's .prod-* CSS for tables/tiles/tree.
 
 (function () {
-  const state = { last: null, loading: false, buyIds: new Set(), catalog: null, matEdited: false };
+  const state = { last: null, loading: false, buyIds: new Set(), catalog: null, matEdited: false, assets: null };
 
   const isk = (n) => (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const iskShort = (n) => {
@@ -279,6 +279,9 @@
     renderRaw(d);
     renderTree(d);
     renderStatus(d);
+    // Chain availability: lazy-load assets once (best-effort), then keep in sync.
+    if (state.assets === null) ensureAssets(false).then(renderAvailability);
+    renderAvailability();
   }
 
   // ---- Catalog browser (all reaction recipes, grouped) ----
@@ -366,6 +369,232 @@
     downloadBlob('reaction-shopping-list.txt', 'text/plain', `${text}\n`);
   }
 
+  // ==================== Chain availability (assets) ====================
+  const nf = (n) => (Number(n) || 0).toLocaleString('en-US');
+
+  // Load every connected toon's assets once (cached). {type_id: {owned, locations[]}}.
+  async function ensureAssets(force) {
+    if (state.assets && !force) return state.assets;
+    const st = $('#rx-avail-status');
+    if (st) st.textContent = 'Loading your assets…';
+    try {
+      const data = await (await fetch(`${API}/api/assets?all=1`)).json();
+      const byType = {};
+      for (const r of (data.assets || [])) {
+        const t = byType[r.type_id] || (byType[r.type_id] = { owned: 0, locations: [] });
+        t.owned += r.quantity;
+        t.locations.push({ name: r.location_name, qty: r.quantity });
+      }
+      state.assets = { byType, unauthorized: data.unauthorized || [], toonCount: data.toon_count || 0 };
+    } catch (e) {
+      state.assets = { byType: {}, unauthorized: [], toonCount: 0, error: String(e) };
+    }
+    if (st) {
+      const un = state.assets.unauthorized;
+      st.textContent = state.assets.error ? `Couldn't load assets: ${state.assets.error}`
+        : un.length ? `⚠ ${un.length} toon(s) need re-auth for assets: ${un.map((u) => u.name).join(', ')}`
+          : `Assets loaded from ${state.assets.toonCount} toon(s).`;
+    }
+    return state.assets;
+  }
+
+  // Flatten the (stock-independent) production tree into distinct chain items,
+  // each with total gross `required` and a `stage` = reaction tier (0 = raw
+  // input, higher = later reactions, top = the final product).
+  function buildChainItems() {
+    const d = state.last;
+    if (!d || !d.tree) return [];
+    const items = {};
+    function walk(node) {
+      const kids = node.children || [];
+      const childTiers = kids.map(walk);
+      const tier = kids.length ? 1 + Math.max(0, ...childTiers) : 0;
+      let it = items[node.type_id];
+      if (!it) it = items[node.type_id] = { type_id: node.type_id, name: node.name, required: 0, stage: tier, activity: node.activity || 'raw' };
+      it.required += Math.ceil(node.qty || 0);
+      if (tier > it.stage) it.stage = tier;
+      if (node.activity && node.activity !== 'raw' && node.activity !== 'buy') it.activity = node.activity;
+      return tier;
+    }
+    (d.tree || []).forEach(walk);
+    return Object.values(items);
+  }
+
+  function computeAvailability() {
+    const byType = (state.assets && state.assets.byType) || {};
+    return buildChainItems().map((it) => {
+      const a = byType[it.type_id];
+      const owned = a ? a.owned : 0;
+      return { ...it, owned, available: Math.min(owned, it.required),
+               missing: Math.max(0, it.required - owned), locations: a ? a.locations : [] };
+    });
+  }
+
+  function stageLabel(s, maxStage) {
+    if (s === 0) return 'Stage 0 · raw inputs';
+    if (s === maxStage) return `Stage ${s} · product`;
+    return `Stage ${s}`;
+  }
+
+  function availItemHtml(it) {
+    const icon = `<img class="rx-av-icon" loading="lazy" src="https://images.evetech.net/types/${it.type_id}/icon?size=32" alt="" onerror="this.style.visibility='hidden'">`;
+    const badge = it.missing > 0
+      ? `<span class="rx-av-miss">need ${nf(it.missing)}</span>`
+      : '<span class="rx-av-ok">✓ have</span>';
+    const detail = it.owned
+      ? `have ${nf(it.owned)} / need ${nf(it.required)}`
+      : `need ${nf(it.required)}`;
+    return `<div class="rx-av-item ${it.missing > 0 ? 'is-missing' : 'is-ok'}">${icon}`
+      + `<span class="rx-av-name">${escapeHtml(it.name)}</span>${badge}`
+      + `<span class="muted rx-av-detail">${detail}</span></div>`;
+  }
+
+  // A "copy missing" button for a set of items (per-stage / per-location / all).
+  function copyBtn(key, label) {
+    return `<button type="button" class="secondary rx-av-copy" data-copy="${escapeHtml(key)}" title="Copy the missing items here as an in-game Multibuy list">Copy missing</button>`;
+  }
+
+  function renderStageGroups(items, maxStage) {
+    const byStage = {};
+    items.forEach((it) => { (byStage[it.stage] = byStage[it.stage] || []).push(it); });
+    return Object.keys(byStage).map(Number).sort((a, b) => b - a).map((s) => {
+      const grp = byStage[s].sort((a, b) => a.name.localeCompare(b.name));
+      const miss = grp.filter((it) => it.missing > 0).length;
+      return `<details class="rx-av-group" open><summary><strong>${escapeHtml(stageLabel(s, maxStage))}</strong>`
+        + ` <span class="muted">· ${grp.length} item(s)${miss ? ` · ${miss} missing` : ' · all owned'}</span>`
+        + (miss ? ` ${copyBtn('stage:' + s)}` : '')
+        + `</summary>${grp.map(availItemHtml).join('')}</details>`;
+    }).join('');
+  }
+
+  function renderLocationGroups(items) {
+    // Owned quantities are grouped under their station/structure; the missing
+    // portion of every item collects under a "To acquire" bucket.
+    const byLoc = {};
+    const missing = [];
+    items.forEach((it) => {
+      (it.locations || []).forEach((l) => {
+        (byLoc[l.name] = byLoc[l.name] || []).push({ ...it, here: l.qty });
+      });
+      if (it.missing > 0) missing.push(it);
+    });
+    let html = Object.keys(byLoc).sort().map((loc) => {
+      const grp = byLoc[loc].sort((a, b) => a.name.localeCompare(b.name));
+      return `<details class="rx-av-group" open><summary><strong>${escapeHtml(loc)}</strong> <span class="muted">· ${grp.length} item(s)</span></summary>`
+        + grp.map((it) => `<div class="rx-av-item is-ok"><img class="rx-av-icon" loading="lazy" src="https://images.evetech.net/types/${it.type_id}/icon?size=32" alt="" onerror="this.style.visibility='hidden'"><span class="rx-av-name">${escapeHtml(it.name)}</span><span class="muted rx-av-detail">have ${nf(it.here)}</span></div>`).join('')
+        + `</details>`;
+    }).join('');
+    if (missing.length) {
+      html += `<details class="rx-av-group rx-av-tobuy" open><summary><strong>🛒 To acquire</strong> <span class="muted">· ${missing.length} item(s)</span> ${copyBtn('missing:all')}</summary>`
+        + missing.sort((a, b) => a.name.localeCompare(b.name)).map(availItemHtml).join('') + `</details>`;
+    }
+    return html || '<p class="muted">No assets loaded.</p>';
+  }
+
+  function renderList(items, maxStage, group) {
+    if (group === 'flat') {
+      const sorted = items.slice().sort((a, b) => b.stage - a.stage || a.name.localeCompare(b.name));
+      const miss = sorted.filter((it) => it.missing > 0).length;
+      const head = `<div class="rx-av-flat-head muted">${sorted.length} item(s)${miss ? ` · ${miss} missing ${copyBtn('all')}` : ' · all owned'}</div>`;
+      return head + sorted.map(availItemHtml).join('');
+    }
+    if (group === 'location') return renderLocationGroups(items);
+    if (group === 'both') {
+      const byStage = {};
+      items.forEach((it) => { (byStage[it.stage] = byStage[it.stage] || []).push(it); });
+      return Object.keys(byStage).map(Number).sort((a, b) => b - a).map((s) =>
+        `<details class="rx-av-group" open><summary><strong>${escapeHtml(stageLabel(s, maxStage))}</strong></summary>`
+        + `<div class="rx-av-nested">${renderLocationGroups(byStage[s])}</div></details>`).join('');
+    }
+    return renderStageGroups(items, maxStage); // default: stage
+  }
+
+  function renderTimeline(items, maxStage) {
+    const byStage = {};
+    items.forEach((it) => { (byStage[it.stage] = byStage[it.stage] || []).push(it); });
+    const cards = [];
+    for (let s = 0; s <= maxStage; s++) {
+      const grp = (byStage[s] || []).sort((a, b) => a.name.localeCompare(b.name));
+      if (!grp.length) continue;
+      const miss = grp.filter((it) => it.missing > 0).length;
+      cards.push(`<div class="rx-tl-card ${miss ? 'has-missing' : 'all-ok'}">`
+        + `<div class="rx-tl-head"><span class="rx-tl-stage">${escapeHtml(stageLabel(s, maxStage))}</span>`
+        + `<span class="muted">${grp.length} item(s)${miss ? ` · ${miss} missing` : ''}</span>`
+        + (miss ? ` ${copyBtn('stage:' + s)}` : '') + `</div>`
+        + grp.map(availItemHtml).join('') + `</div>`);
+    }
+    return `<div class="rx-timeline">${cards.join('<div class="rx-tl-arrow">→</div>')}</div>`;
+  }
+
+  function renderAvailability() {
+    const pane = $('#rx-avail-pane');
+    const wrap = $('#rx-avail');
+    const count = $('#rx-avail-count');
+    if (!pane || !wrap) return;
+    if (!state.last || !(state.last.tree || []).length) { pane.hidden = true; return; }
+    pane.hidden = false;
+    const items = computeAvailability();
+    const maxStage = items.reduce((m, it) => Math.max(m, it.stage), 0);
+    const missTotal = items.filter((it) => it.missing > 0).length;
+    if (count) count.textContent = `${items.length} item(s) · ${missTotal} missing`;
+    const view = $('#rx-avail-view')?.value || 'list';
+    const group = $('#rx-avail-group')?.value || 'stage';
+    wrap.innerHTML = view === 'timeline' ? renderTimeline(items, maxStage) : renderList(items, maxStage, group);
+  }
+
+  // Copy the *missing* items for a selector ('all' | 'stage:N' | 'missing:all')
+  // as an in-game Multibuy list.
+  async function copyMissing(key) {
+    const items = computeAvailability().filter((it) => it.missing > 0
+      && (key === 'all' || key === 'missing:all' || (key.startsWith('stage:') && it.stage === Number(key.slice(6)))));
+    const text = items.map((it) => `${it.name} x${it.missing}`).join('\n');
+    const st = $('#rx-avail-status');
+    if (!text) { if (st) st.textContent = 'Nothing missing to copy here.'; return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      if (st) st.textContent = `Copied ${items.length} missing item(s) as a Multibuy list.`;
+    } catch { if (st) st.textContent = 'Clipboard copy failed.'; }
+  }
+
+  // Auto-detect: fill the on-hand stock box with everything in this chain you own.
+  async function autodetectStock() {
+    const btn = $('#rx-autodetect');
+    const status = $('#rx-status');
+    if (btn) btn.disabled = true;
+    try {
+      if (!state.last) {
+        if (!($('#rx-targets')?.value || '').trim()) {
+          if (status) status.textContent = 'Add reaction targets first, then Auto-detect.';
+          return;
+        }
+        await analyze();
+      }
+      if (status) status.textContent = 'Auto-detecting stock from your assets…';
+      await ensureAssets(true);
+      const byType = (state.assets && state.assets.byType) || {};
+      const lines = [];
+      for (const it of buildChainItems()) {
+        const a = byType[it.type_id];
+        if (a && a.owned > 0) lines.push(`${it.name}\t${a.owned}`);
+      }
+      const box = $('#rx-stock');
+      if (box) box.value = lines.join('\n');
+      const un = (state.assets.unauthorized || []);
+      const unNote = un.length ? ` (${un.length} toon(s) need re-auth for assets)` : '';
+      if (!lines.length) {
+        if (status) status.textContent = `No matching assets found for this chain${unNote}.`;
+        renderAvailability();
+      } else {
+        await analyze(); // recompute with the detected stock; render() refreshes availability
+        if (status) status.textContent = `Auto-filled ${lines.length} stock line(s) from your assets${unNote}.`;
+      }
+    } catch (e) {
+      if (status) status.textContent = `Auto-detect failed: ${e.message || e}`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   let wired = false;
   function initTab() {
     if (wired) return;
@@ -373,6 +602,14 @@
     applyPreset();
     $('#rx-analyze')?.addEventListener('click', analyze);
     $('#rx-browse')?.addEventListener('click', toggleCatalog);
+    $('#rx-autodetect')?.addEventListener('click', autodetectStock);
+    $('#rx-avail-view')?.addEventListener('change', renderAvailability);
+    $('#rx-avail-group')?.addEventListener('change', renderAvailability);
+    $('#rx-avail-refresh')?.addEventListener('click', () => ensureAssets(true).then(renderAvailability));
+    $('#rx-avail')?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-copy]');
+      if (b) copyMissing(b.dataset.copy);
+    });
     $('#rx-copy-raw')?.addEventListener('click', copyRaw);
     $('#rx-dl-raw')?.addEventListener('click', downloadRaw);
     ['#rx-structure', '#rx-rig', '#rx-space'].forEach((s) => $(s)?.addEventListener('change', applyPreset));

@@ -753,6 +753,19 @@ body.link-panel-open main { margin-right: 46vw; }
 .backend-banner button { background: #ffecec; color: #7a1f1f; border: 0; border-radius: 4px; padding: 0.3em 0.85em; font-weight: 600; cursor: pointer; }
 .backend-banner button:hover { background: #fff; }
 
+/* ===== My Assets tab ===== */
+.assets-controls { display: flex; align-items: center; gap: 0.8em; flex-wrap: wrap; margin-bottom: 0.6em; }
+.assets-controls select, .assets-controls input[type="search"] { background: #1c1c1c; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.4em 0.6em; }
+.assets-controls input[type="search"] { flex: 1 1 220px; min-width: 160px; }
+.assets-table { width: 100%; border-collapse: collapse; font-size: 0.92em; }
+.assets-table th, .assets-table td { text-align: left; padding: 0.3em 0.6em; border-bottom: 1px solid #2a2a2a; }
+.assets-table th.num, .assets-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.assets-table td.assets-item { display: flex; align-items: center; gap: 0.5em; }
+.assets-icon { width: 24px; height: 24px; flex: 0 0 auto; }
+.assets-group { margin-bottom: 0.5em; border: 1px solid #2a2a2a; border-radius: 5px; }
+.assets-group > summary { cursor: pointer; padding: 0.45em 0.7em; background: #1c1c1c; border-radius: 5px; }
+.assets-group[open] > summary { border-bottom: 1px solid #2a2a2a; border-radius: 5px 5px 0 0; }
+
 /* ===== Embedded-site tabs (Dotlan Maps, zKillboard) — full-bleed <webview> ===== */
 .webtab.active { display: flex; flex-direction: column; gap: 0.5em; }
 body.webtab-active main { max-width: none; padding: 0.8em; }
@@ -1649,6 +1662,33 @@ body.popout-calc .pib-calc > summary { display: none; }
 .rx-cat-items { display: flex; flex-wrap: wrap; gap: 0.3em; }
 .rx-cat-item { background: #2a2a2a; color: #dfe; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.3em 0.55em; font-size: 0.82em; cursor: pointer; text-align: left; }
 .rx-cat-item:hover { background: #234a3a; color: #7fe0b3; border-color: #3fa87a; }
+
+/* Reaction Calculator — chain availability (assets) */
+.rx-avail-pane { margin-top: 1em; }
+.rx-avail-controls { display: inline-flex; align-items: center; gap: 0.6em; flex-wrap: wrap; margin-left: auto; }
+.rx-avail-controls select { background: #1c1c1c; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.2em 0.4em; }
+.rx-av-group { margin-bottom: 0.4em; border: 1px solid #2a2a2a; border-radius: 5px; }
+.rx-av-group > summary { cursor: pointer; padding: 0.4em 0.7em; background: #1c1c1c; border-radius: 5px; }
+.rx-av-group[open] > summary { border-bottom: 1px solid #2a2a2a; border-radius: 5px 5px 0 0; }
+.rx-av-nested { padding: 0.3em 0.5em; }
+.rx-av-flat-head { padding: 0.3em 0.2em; }
+.rx-av-item { display: flex; align-items: center; gap: 0.5em; padding: 0.25em 0.7em; border-bottom: 1px solid #232323; }
+.rx-av-item.is-missing { background: rgba(122, 31, 31, 0.18); }
+.rx-av-item.is-ok { background: rgba(31, 90, 60, 0.12); }
+.rx-av-icon { width: 22px; height: 22px; flex: 0 0 auto; }
+.rx-av-name { flex: 1 1 auto; min-width: 0; }
+.rx-av-detail { font-size: 0.82em; white-space: nowrap; }
+.rx-av-miss { background: #7a1f1f; color: #ffd9d9; border-radius: 3px; padding: 0 0.4em; font-size: 0.78em; font-weight: 600; }
+.rx-av-ok { color: #7fe0b3; font-size: 0.8em; }
+.rx-av-copy { margin-left: 0.5em; font-size: 0.78em; padding: 0.15em 0.5em; }
+.rx-av-tobuy > summary { background: #2a1c1c; }
+.rx-timeline { display: flex; align-items: stretch; gap: 0.3em; overflow-x: auto; padding-bottom: 0.5em; }
+.rx-tl-card { flex: 0 0 270px; border: 1px solid #333; border-radius: 6px; background: #1a1a1a; padding: 0.4em; }
+.rx-tl-card.has-missing { border-color: #7a3030; }
+.rx-tl-card.all-ok { border-color: #2f6f52; }
+.rx-tl-head { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; padding: 0.2em 0.3em 0.4em; border-bottom: 1px solid #2a2a2a; margin-bottom: 0.3em; }
+.rx-tl-stage { font-weight: 600; }
+.rx-tl-arrow { display: flex; align-items: center; color: #6a8; font-size: 1.4em; padding: 0 0.1em; }
 .prod-act-buy { color: #d0a24a; }
 .prod-act-raw { color: #8a9a8f; }
 

@@ -54,6 +54,10 @@ DEFAULTS = {
         # access too. Enable it in the EVE developer portal before release, or
         # structure locations just fall back to their numeric id.
         'esi-universe.read_structures.v1',
+        # My Assets tab + the reactions auto-detect: read the character's assets
+        # (type, quantity, location). Also requested by the PI + fitting slots
+        # (auth.PI_SCOPES / FIT_SCOPES) so every connected toon's assets show.
+        'esi-assets.read_assets.v1',
         # NB: the PI colony scope (esi-planets.manage_planets.v1) is NOT here —
         # it's requested only by the dedicated PI slots (auth.PI_SCOPES) so PI
         # alts can be authorized without re-scoping the main characters.

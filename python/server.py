@@ -59,6 +59,7 @@ from esi import (
     fetch_corp_structures,
     fetch_corp_wallets,
     fetch_corporation_info,
+    fetch_character_assets,
     fetch_character_planets,
     fetch_character_planet_detail,
     fetch_character_skills,
@@ -1609,6 +1610,7 @@ def _friendly_contracts_error(e) -> str:
 # Contract location ids >= this are player structures (citadels/refineries),
 # resolvable only via the authed structure endpoint; below it are NPC stations.
 _STRUCTURE_ID_FLOOR = 1_000_000_000_000
+_STRUCTURE_SCOPE = 'esi-universe.read_structures.v1'
 _location_name_cache: dict[int, str] = {}
 
 
@@ -1616,15 +1618,43 @@ class LocationNamesRequest(BaseModel):
     ids: list[int] = []
 
 
+def _structure_capable_tokens(ua):
+    """Access tokens for every authenticated main-slot character whose token
+    carries the read-structures scope. A player structure's name is only
+    readable by a character with docking access to it, and different alts can
+    dock at different structures — so we try them all rather than just the
+    default slot. Tokens lacking the scope are skipped (they'd only 403)."""
+    tokens = []
+    try:
+        client_id, secret_key = get_app_credentials()
+    except Exception:
+        return tokens
+    for slot in list_authenticated_slots():
+        try:
+            tok = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            scp = decode_jwt_payload(tok).get('scp') or []
+        except Exception:
+            continue
+        if isinstance(scp, str):
+            scp = [scp]
+        if _STRUCTURE_SCOPE in scp:
+            tokens.append(tok)
+    return tokens
+
+
 @app.post('/api/location-names')
 def resolve_location_names(req: LocationNamesRequest):
     """Resolve contract location ids -> names for the ore/moon buyback UI.
 
-    NPC stations (< 1e12) use the public station endpoint; player structures
+    NPC stations (< 1e12) use the public station endpoint. Player structures
     (>= 1e12) use the authed structure endpoint (needs esi-universe.read_
-    structures.v1 + docking access). Best-effort: an id we can't resolve comes
-    back as null so the UI falls back to showing the raw id. Successful
-    resolutions are cached for the process lifetime."""
+    structures.v1 + docking access); we try every authenticated character that
+    holds the scope, since a given structure may only be dockable by one of
+    them. Best-effort: an id we can't resolve comes back as null so the UI
+    falls back to the raw id. Successful resolutions are cached for the process
+    lifetime. Also returns ``structures_unauthorized`` = true when a structure
+    id was requested but no authenticated character has the read-structures
+    scope, so the UI can prompt for a re-auth instead of silently showing ids."""
     ua = get_user_agent()
     ids = []
     for raw in (req.ids or []):
@@ -1634,13 +1664,8 @@ def resolve_location_names(req: LocationNamesRequest):
             continue
     ids = list(dict.fromkeys(ids))  # de-dup, preserve order
 
-    token = None
-    if any(i >= _STRUCTURE_ID_FLOOR for i in ids if i not in _location_name_cache):
-        try:
-            client_id, secret_key = get_app_credentials()
-            token = get_valid_access_token(client_id, secret_key, ua)
-        except Exception:
-            token = None
+    need_structures = any(i >= _STRUCTURE_ID_FLOOR and i not in _location_name_cache for i in ids)
+    struct_tokens = _structure_capable_tokens(ua) if need_structures else []
 
     out = {}
     for loc in ids:
@@ -1650,16 +1675,206 @@ def resolve_location_names(req: LocationNamesRequest):
         name = None
         try:
             if loc >= _STRUCTURE_ID_FLOOR:
-                if token:
-                    name = (fetch_structure_info(loc, token, ua) or {}).get('name')
+                for tok in struct_tokens:
+                    try:
+                        name = (fetch_structure_info(loc, tok, ua) or {}).get('name')
+                    except Exception:
+                        name = None  # this char lacks access/scope — try the next
+                    if name:
+                        break
             else:
                 name = (fetch_station_info(loc, ua) or {}).get('name')
         except Exception:
-            name = None  # 403/no-access/etc — fall back to the id in the UI
+            name = None
         if name:
             _location_name_cache[loc] = name
         out[str(loc)] = name
-    return {'names': out}
+    return {'names': out, 'structures_unauthorized': bool(need_structures and not struct_tokens)}
+
+
+# ============================== Character assets ==============================
+# My Assets tab + the reactions auto-detect. Reads every connected toon's assets
+# (esi-assets.read_assets.v1), aggregates by (character, type, root location),
+# and resolves type + location names (stations public, structures via a scoped
+# token — same path as the buyback location resolver above, systems via
+# /universe/names).
+_ASSETS_SCOPE = 'esi-assets.read_assets.v1'
+_type_name_cache: dict[int, str] = {}
+
+
+def _resolve_type_names(type_ids, ua):
+    """type_id -> name via /universe/names (batched), memoised for the process."""
+    want = {int(x) for x in type_ids}
+    need = [t for t in want if t not in _type_name_cache]
+    if need:
+        try:
+            for tid, nm in resolve_names(need, ua).items():
+                _type_name_cache[int(tid)] = nm
+        except Exception:  # noqa: BLE001 — names are best-effort
+            pass
+    return {t: _type_name_cache.get(t) for t in want}
+
+
+def _connected_asset_slots():
+    """[(kind, slot)] for every authenticated main / PI / fitting slot."""
+    return ([('main', s) for s in list_authenticated_slots()]
+            + [('pi', s) for s in list_authenticated_pi_slots()]
+            + [('fit', s) for s in list_authenticated_fit_slots()])
+
+
+def _slot_identity(slot, ua):
+    """{token, character_id, name, scopes} for a slot, or None if unusable."""
+    try:
+        client_id, secret_key = get_app_credentials()
+        tok = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+        payload = decode_jwt_payload(tok)
+    except Exception:
+        return None
+    scp = payload.get('scp') or []
+    if isinstance(scp, str):
+        scp = [scp]
+    try:
+        cid = int(str(payload.get('sub', '')).rsplit(':', 1)[-1])
+    except Exception:
+        cid = None
+    return {'token': tok, 'character_id': cid, 'name': payload.get('name') or slot, 'scopes': scp}
+
+
+def _root_location(asset, by_item):
+    """Walk an asset up its container/ship chain to the station / structure /
+    system it ultimately sits in. Returns (location_id, location_type)."""
+    cur = asset
+    seen = set()
+    while (cur.get('location_type') == 'item' and cur.get('location_id') in by_item
+           and cur.get('item_id') not in seen and len(seen) < 32):
+        seen.add(cur['item_id'])
+        cur = by_item[cur['location_id']]
+    return cur.get('location_id'), cur.get('location_type')
+
+
+def _resolve_asset_locations(pairs, ua):
+    """{(location_id, location_type)} -> {location_id: name}. Stations via the
+    public endpoint, player structures via any scoped token, systems via
+    /universe/names. Shares the buyback location-name cache."""
+    names = {}
+    struct_tokens = None
+    system_ids = []
+    for loc_id, loc_type in pairs:
+        if loc_id is None:
+            continue
+        if loc_id in _location_name_cache:
+            names[loc_id] = _location_name_cache[loc_id]
+            continue
+        nm = None
+        try:
+            if loc_id >= _STRUCTURE_ID_FLOOR:
+                if struct_tokens is None:
+                    struct_tokens = _structure_capable_tokens(ua)
+                for tok in struct_tokens:
+                    try:
+                        nm = (fetch_structure_info(loc_id, tok, ua) or {}).get('name')
+                    except Exception:
+                        nm = None
+                    if nm:
+                        break
+            elif loc_type == 'solar_system' or 30000000 <= loc_id < 32000000:
+                system_ids.append(loc_id)
+            elif loc_type == 'station' or 60000000 <= loc_id < 64000000:
+                nm = (fetch_station_info(loc_id, ua) or {}).get('name')
+        except Exception:
+            nm = None
+        if nm:
+            _location_name_cache[loc_id] = nm
+            names[loc_id] = nm
+    if system_ids:
+        try:
+            for sid, snm in resolve_names(system_ids, ua).items():
+                _location_name_cache[int(sid)] = snm
+                names[int(sid)] = snm
+        except Exception:
+            pass
+    return names
+
+
+@app.get('/api/assets/toons')
+def assets_toons():
+    """Connected characters (main + PI + fitting slots) for the My Assets toon
+    picker, each flagged with whether its token holds the assets scope."""
+    ua = get_user_agent()
+    out = []
+    for kind, slot in _connected_asset_slots():
+        ident = _slot_identity(slot, ua)
+        if not ident or ident['character_id'] is None:
+            continue
+        out.append({'slot': slot, 'kind': kind, 'character_id': ident['character_id'],
+                    'name': ident['name'], 'has_assets': _ASSETS_SCOPE in ident['scopes']})
+    return {'toons': out}
+
+
+@app.get('/api/assets')
+def get_assets(slot: Optional[str] = None, all: bool = False):
+    """Character assets for the My Assets tab + the reactions auto-detect.
+
+    Pass a single ``slot`` or ``all=1`` to aggregate every connected toon that
+    holds the assets scope. Rows are aggregated by (character, type, root
+    location) with type + location names resolved. ``unauthorized`` lists
+    connected toons lacking the assets scope (re-auth to include them)."""
+    ua = get_user_agent()
+    if all:
+        targets = [s for _k, s in _connected_asset_slots()]
+    elif slot:
+        targets = [slot]
+    else:
+        raise HTTPException(400, 'Specify ?slot=<slot> or ?all=1')
+
+    per_char = []       # (character_id, name, slot, assets)
+    unauthorized = []
+    errors = []
+    for s in targets:
+        ident = _slot_identity(s, ua)
+        if not ident or ident['character_id'] is None:
+            continue
+        if _ASSETS_SCOPE not in ident['scopes']:
+            unauthorized.append({'slot': s, 'name': ident['name']})
+            continue
+        try:
+            assets = fetch_character_assets(ident['character_id'], ident['token'], ua)
+        except Exception as e:  # noqa: BLE001 — best-effort per toon
+            errors.append({'slot': s, 'name': ident['name'], 'error': str(e)})
+            continue
+        per_char.append((ident['character_id'], ident['name'], s, assets))
+
+    agg = {}            # (cid, type_id, loc_id) -> row
+    type_ids = set()
+    loc_pairs = set()
+    for cid, cname, s, assets in per_char:
+        by_item = {a['item_id']: a for a in assets}
+        for a in assets:
+            tid = a.get('type_id')
+            if tid is None:
+                continue
+            type_ids.add(tid)
+            loc_id, loc_type = _root_location(a, by_item)
+            loc_pairs.add((loc_id, loc_type))
+            key = (cid, tid, loc_id)
+            row = agg.get(key)
+            if not row:
+                row = {'character_id': cid, 'toon': cname, 'type_id': tid, 'quantity': 0,
+                       'location_id': loc_id, 'location_type': loc_type}
+                agg[key] = row
+            row['quantity'] += int(a.get('quantity') or 1)
+
+    type_names = _resolve_type_names(type_ids, ua)
+    loc_names = _resolve_asset_locations(loc_pairs, ua)
+    rows = []
+    for row in agg.values():
+        row['type_name'] = type_names.get(row['type_id']) or f"type {row['type_id']}"
+        row['location_name'] = loc_names.get(row['location_id']) or (
+            'In container' if row['location_type'] == 'item' else str(row['location_id']))
+        rows.append(row)
+    rows.sort(key=lambda r: (r['location_name'], r['type_name']))
+    return {'assets': rows, 'unauthorized': unauthorized, 'errors': errors,
+            'toon_count': len(per_char)}
 
 
 @app.get('/api/universe/ships')

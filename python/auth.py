@@ -28,14 +28,15 @@ PI_SLOTS = tuple(f'pi{i}' for i in range(1, 25))
 # Interplanetary Consolidation (max planets per toon). Toons authed before
 # read_skills was added keep working for colonies but need a one-time re-auth
 # for the optimizer's planet-capacity pull.
-PI_SCOPES = ('publicData', 'esi-planets.manage_planets.v1', 'esi-skills.read_skills.v1')
+PI_SCOPES = ('publicData', 'esi-planets.manage_planets.v1', 'esi-skills.read_skills.v1',
+             'esi-assets.read_assets.v1')
 # Fitting slots authorize alts *just* for reading/writing in-game saved fittings,
 # so you can sync fits from extra characters without spending main slots. The
 # main slots also carry these scopes (see config DEFAULTS) so your mains sync too.
 FIT_SLOTS = tuple(f'fit{i}' for i in range(1, 13))
 FIT_READ_SCOPE = 'esi-fittings.read_fittings.v1'
 FIT_WRITE_SCOPE = 'esi-fittings.write_fittings.v1'
-FIT_SCOPES = ('publicData', FIT_READ_SCOPE, FIT_WRITE_SCOPE)
+FIT_SCOPES = ('publicData', FIT_READ_SCOPE, FIT_WRITE_SCOPE, 'esi-assets.read_assets.v1')
 ALL_SLOTS = VALID_SLOTS + PI_SLOTS + FIT_SLOTS
 
 

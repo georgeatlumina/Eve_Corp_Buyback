@@ -28,6 +28,7 @@
           <button class="tab-btn" data-tab="market">Market</button>
           <button class="tab-btn" data-tab="dotlan">Dotlan Maps</button>
           <button class="tab-btn" data-tab="zkill">zKillboard</button>
+          <button class="tab-btn" data-tab="assets">My Assets</button>
         </div>
       </div>
 
@@ -373,6 +374,7 @@
             </label>
             <label class="moon-group-toggle"><input type="checkbox" id="moon-group-location" /> Group by location</label>
           </div>
+          <p id="moon-loc-authhint" class="muted" hidden>⚠ Some locations show as IDs because no authenticated character can read those structures. Re-authenticate a character with docking access (Auth tab) to grant the <code>read structures</code> permission.</p>
           <div id="moon-results"></div>
         </div>
         <aside class="moon-sidebar" id="moon-calc-sidebar">
@@ -672,6 +674,7 @@
           <option value="Rens">Rens</option>
         </select></label>
         <button id="rx-browse" type="button" class="secondary">Browse reactions ▾</button>
+        <button id="rx-autodetect" type="button" class="secondary" title="Fill on-hand stock from your ESI assets — everything in this chain you already own, across all connected toons">🔍 Auto-detect stock</button>
         <button id="rx-analyze" type="button">Analyze</button>
       </div>
       <div id="rx-catalog" class="rx-catalog" hidden>
@@ -705,6 +708,26 @@
           <button id="rx-tree-collapse" type="button" class="secondary">Collapse all</button>
         </div>
         <div id="rx-tree"></div>
+      </div>
+      <div id="rx-avail-pane" class="rx-avail-pane" hidden>
+        <div class="prod-pane-head">
+          <strong>Chain availability</strong> <span id="rx-avail-count" class="muted"></span>
+          <span class="rx-avail-controls">
+            <label>View <select id="rx-avail-view">
+              <option value="list">List</option>
+              <option value="timeline">Timeline</option>
+            </select></label>
+            <label>Group <select id="rx-avail-group">
+              <option value="stage">Stage</option>
+              <option value="flat">Flat</option>
+              <option value="location">Location</option>
+              <option value="both">Stage + Location</option>
+            </select></label>
+            <button id="rx-avail-refresh" type="button" class="secondary" title="Reload your assets from ESI">↻ Assets</button>
+          </span>
+        </div>
+        <p id="rx-avail-status" class="muted small"></p>
+        <div id="rx-avail"></div>
       </div>
     </section>
 
@@ -834,6 +857,22 @@
         </table>
       </div>
       <p class="webtab-foot muted small">Data from <a href="https://zkillboard.com" data-ext-link>zkillboard.com</a> — the third-party EVE killboard by Squizz Caphinator — enriched with public ESI killmails. Start typing (3+ letters) for suggestions.</p>
+    </section>
+
+    <section id="tab-assets" class="tab">
+      <h2>My Assets</h2>
+      <p class="muted">See, search and filter your characters' assets. Pick a toon (mains and PI toons), or tick <strong>All connected toons</strong> to search across everyone. Locations resolve to station / structure names. Needs the <code>read assets</code> permission — re-authenticate a toon on the Auth tab to include it.</p>
+      <div class="assets-controls">
+        <label>Toon <select id="assets-toon"></select></label>
+        <label class="assets-all-toggle"><input type="checkbox" id="assets-all" /> All connected toons</label>
+        <input id="assets-search" type="search" placeholder="Search item name…" spellcheck="false" autocomplete="off" />
+        <label>Location <select id="assets-location"><option value="all">All locations</option></select></label>
+        <label class="assets-group-toggle"><input type="checkbox" id="assets-group" checked /> Group by location</label>
+        <button id="assets-refresh" type="button">Load assets</button>
+      </div>
+      <p id="assets-authhint" class="muted" hidden></p>
+      <p id="assets-status" class="muted"></p>
+      <div id="assets-results"></div>
     </section>
 
     <section id="tab-pi-builder" class="tab">
@@ -1484,6 +1523,7 @@
   <script src="dscan.js"></script>
   <script src="dotlan.js"></script>
   <script src="zkill.js"></script>
+  <script src="assets.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="fitting.js"></script>

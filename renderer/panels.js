@@ -307,6 +307,19 @@
       workflow: ['Browse or paste your reaction targets', 'Set the structure/rig/space (or type a material %)', 'Add a system for live cost indices (optional)', 'Analyze → read the reactions to run + shopping list + build-vs-buy', 'Copy the multibuy list into EVE'],
       note: 'Uses the same engine as the Production Planner, restricted to reactions. Pricing is best-effort via Janice (set a key in Config for best prices).',
     },
+    assets: {
+      title: 'My Assets',
+      intro: 'See, search and filter your characters\' assets (from ESI). Pick a single toon — mains and PI toons both appear — or tick "All connected toons" to search across everyone. Item locations resolve to station / structure names using the same resolver as the buyback tabs.',
+      controls: [
+        ['Toon dropdown', 'Choose which authenticated character to show. Toons that still need the read-assets permission are marked "needs re-auth".'],
+        ['All connected toons', 'Aggregate assets across every connected character (mains + PI + fitting slots).'],
+        ['Search / Location filter', 'Filter the list by item name and by station/structure.'],
+        ['Group by location', 'Collapse the list into per-station/structure groups with item and unit counts.'],
+        ['Load assets', 'Fetch from ESI. Assets are aggregated by item type and location.'],
+      ],
+      workflow: ['Re-authenticate your toons (Auth tab) to grant read-assets', 'Pick a toon or tick All connected toons', 'Load assets', 'Search / filter / group as needed'],
+      note: 'Needs the esi-assets.read_assets.v1 scope on each character (enable it in your EVE developer app, then re-auth). The reactions Auto-detect button reuses this data.',
+    },
   };
 
   function activeTabId() {
