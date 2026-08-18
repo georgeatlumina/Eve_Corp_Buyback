@@ -2,6 +2,25 @@ const API = window.api.base;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// Appends to <userData>/sidecar.log via main, so state that only lives in the
+// renderer (progress, in-flight async work) can be inspected without having
+// to watch the live window. Never throws — logging must not break the caller.
+function appLog(msg) {
+  const line = `[renderer] ${msg}`;
+  console.log(line);
+  try { window.api?.log?.(line); } catch (_) {}
+}
+
+// A step that throws after updating a progress bar but before clearing it
+// (e.g. inside acqRunHullAnalysis) otherwise leaves the bar frozen with no
+// visible error. Surface every uncaught error/rejection to the log file.
+window.addEventListener('error', (e) => {
+  appLog(`uncaught error: ${e.message} @ ${e.filename}:${e.lineno}`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  appLog(`unhandled rejection: ${e.reason?.stack || e.reason}`);
+});
+
 function updateAppHeaderHeight() {
   const h = document.querySelector('header')?.getBoundingClientRect().height || 0;
   document.documentElement.style.setProperty('--app-header-h', `${h}px`);
@@ -141,6 +160,9 @@ let mailPresets = [
 let srpRejectTemplate = { subject: '', body: '' };
 // How external links open: 'panel' (side panel) or 'window' (own window).
 let linkOpenMode = 'panel';
+// Acquisitions analysis thresholds (hydrated from config in loadConfig).
+let acqShoppingMinCoverage = 0.5;
+let acqShoppingMaxIskGap = 500_000_000;
 
 // Flags that mark a contract for attention but DON'T flip it out of the
 // Approve bucket — these are accepted, just with a visual banded marker
@@ -557,6 +579,10 @@ async function loadConfig() {
   $('[name=ice_refining_efficiency]').value = cfg.ice_refining_efficiency ?? 0.78;
   $('[name=moon_payout_fraction]').value = cfg.moon_payout_fraction ?? 0.80;
   $('[name=non_moon_payout_fraction]').value = cfg.non_moon_payout_fraction ?? 0.90;
+  acqShoppingMinCoverage = cfg.acq_shopping_min_coverage ?? 0.5;
+  acqShoppingMaxIskGap = cfg.acq_shopping_max_isk_gap ?? 500_000_000;
+  $('[name=acq_shopping_min_coverage]').value = acqShoppingMinCoverage;
+  $('[name=acq_shopping_max_isk_gap]').value = acqShoppingMaxIskGap;
 
   renderStructures(Array.isArray(cfg.structures) ? cfg.structures : []);
 
@@ -668,6 +694,8 @@ function collectConfigForm() {
     market_history_pat_write: (fd.get('market_history_pat_write') || '').toString().trim(),
     stockpile_group_name: (fd.get('stockpile_group_name') || '').toString().trim(),
     stockpile_allow_push: $('[name=stockpile_allow_push]')?.checked || false,
+    acq_shopping_min_coverage: parseFloat(fd.get('acq_shopping_min_coverage')) || 0.5,
+    acq_shopping_max_isk_gap: parseFloat(fd.get('acq_shopping_max_isk_gap')) || 500_000_000,
   };
 }
 
@@ -3955,7 +3983,7 @@ function renderContractsTotalValue(list) {
   const total = priced.reduce((sum, c) => sum + Number(c.price), 0);
   const unpriced = list.length - priced.length;
   const unpricedText = unpriced ? ` · ${unpriced} unpriced` : '';
-  totalEl.textContent = `Total value: ${fmtMillions(total)} ISK${unpricedText}`;
+  totalEl.textContent = `${list.length} contract${list.length !== 1 ? 's' : ''} · Total value: ${fmtMillions(total)} ISK${unpricedText}`;
 }
 
 function renderUnpricedToggle(priceEl, unpriced) {
@@ -4507,6 +4535,17 @@ async function copyShoppingList() {
 let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsPasteText = '';  // session-only: survives tab switches, not app restart
+let acquisitionsUpdatedAt = null;  // ISO8601 from the backend's last save, or null if never saved
+// Persists the last Analyse Hulls result across tab navigation.
+let acqHullAnalysisResult = null; // { s1, s2, s3, s4, statusText } — innerHTML snapshots
+
+// Bumped on every acqRunHullAnalysis call. renderAcquisitionsTab() rebuilds
+// #acquisitions-root's innerHTML on every tab switch, so a run that started
+// before a switch-away-and-back (or a second click) holds DOM refs to nodes
+// that are no longer on screen. The run compares its own id against this
+// after its one await point and abandons quietly if it's been superseded,
+// instead of finishing invisibly against detached nodes.
+let acqHullAnalysisRunId = 0;
 
 // How many bare hulls of a given type are in the Acquisitions inventory right
 // now. Shared by the Contracts dashboard's expand-panel row (called once per
@@ -4524,16 +4563,25 @@ async function acquisitionsLoad() {
     const data = await fetch(`${API}/api/acquisitions`).then((r) => r.json());
     acquisitionsHulls = data.hulls || [];
     acquisitionsItems = data.items || [];
+    acquisitionsUpdatedAt = data.updated_at || null;
   } catch (_) {}
+}
+
+// "Last updated" label for the Acquisitions Inventory panel — reflects
+// acquisitionsUpdatedAt, which acquisitionsLoad()/acquisitionsSave() keep
+// in sync with the backend's persisted timestamp.
+function acqUpdatedAtLabel() {
+  return acquisitionsUpdatedAt ? `Last updated ${fmtAge(acquisitionsUpdatedAt)}` : 'Last updated: never';
 }
 
 async function acquisitionsSave() {
   try {
-    await fetch(`${API}/api/acquisitions`, {
+    const data = await fetch(`${API}/api/acquisitions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hulls: acquisitionsHulls, items: acquisitionsItems }),
-    });
+    }).then((r) => r.json());
+    acquisitionsUpdatedAt = data.updated_at || acquisitionsUpdatedAt;
   } catch (_) {}
 }
 
@@ -4594,18 +4642,17 @@ function acqUpdateFinderAvailability(root) {
   const missing = acqFinderMissingScans();
   const warnEl = root.querySelector('#acq-find-warning');
   const buttons = [
-    root.querySelector('#acq-find-full'),
+    root.querySelector('#acq-find-hulls'),
     root.querySelector('#acq-find-nohull'),
-    root.querySelector('#acq-find-market'),
   ];
   if (missing.length) {
     warnEl.hidden = false;
     warnEl.textContent = `Run ${missing.join(' and ')} first — the build finder needs both to match inventory against quota gaps.`;
-    buttons.forEach((b) => { b.disabled = true; });
+    buttons.forEach((b) => { if (b) b.disabled = true; });
   } else {
     warnEl.hidden = true;
     warnEl.textContent = '';
-    buttons.forEach((b) => { b.disabled = false; });
+    buttons.forEach((b) => { if (b) b.disabled = false; });
   }
 }
 
@@ -4646,112 +4693,404 @@ function renderAcqFinderResults(el, result) {
     </table>${note}`;
 }
 
-function acqRunFinder(mode, resultsEl, statusEl) {
-  const inputs = acqFinderInputs();
-  if (inputs.error) {
-    statusEl.textContent = inputs.error;
-    resultsEl.innerHTML = '';
-    return;
-  }
-  const result = planAcquisitions({ pool: inputs.pool, targets: inputs.targets, mode });
-  statusEl.textContent = `${result.builds.length} build(s) found.`;
-  renderAcqFinderResults(resultsEl, result);
+/**
+ * Progressive hull completion analysis.
+ *
+ * Section 1 (inventory-completable) renders immediately.
+ * Sections 2–4 render after the UEXO market loads.
+ */
+function acqProgressSet(bar, fill, step, indeterminate) {
+  bar.querySelector('.progress-fill').style.width = fill + '%';
+  bar.querySelector('.progress-step').textContent = step;
+  bar.querySelector('.progress-bar').classList.toggle('indeterminate', !!indeterminate);
 }
 
-// Mode 3 needs the UEXO order book. loadMarket() honours the server's 5-minute
-// TTL, so repeat clicks are instant and a stale book is re-fetched. It reports
-// failure via aaState.marketError rather than throwing, hence the explicit check.
-async function acqRunMarketFinder(resultsEl, statusEl) {
+async function acqRunHullAnalysis(root, statusEl) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
     statusEl.textContent = inputs.error;
-    resultsEl.innerHTML = '';
     return;
   }
-  if (!aaState.market) {
-    statusEl.textContent = 'Loading UEXO market…';
+  const runId = ++acqHullAnalysisRunId;
+  appLog(`analyse-hulls: start, ${inputs.targets.length} target(s)`);
+
+  let progressBar = root.querySelector('#acq-analysis-progress');
+  let s1 = root.querySelector('#acq-section-inventory');
+  let s2 = root.querySelector('#acq-section-market');
+  let s3 = root.querySelector('#acq-section-shopping');
+  let s4 = root.querySelector('#acq-section-outofreach');
+  [s1, s2, s3, s4].forEach((s) => { s.hidden = true; s.innerHTML = ''; });
+
+  progressBar.hidden = false;
+  acqProgressSet(progressBar, 0, 'Analysing inventory…', true);
+
+  // --- Section 1: inventory pass (immediate) ---
+  const fullResult = planAcquisitions({
+    pool: inputs.pool, targets: inputs.targets, mode: ACQ_MODES.FULL,
+  });
+  renderAcqSection1(s1, fullResult);
+  s1.hidden = false;
+  appLog(`analyse-hulls: section 1 done, ${fullResult.builds.length} build(s) from inventory`);
+
+  const satisfiedByInventory = new Set(
+    fullResult.builds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
+  );
+
+  // Build a pool depleted by section-1 committed builds so shopping gap
+  // reflects what is actually still available, not the raw inventory.
+  const depletedPool = new Map(inputs.pool);
+  for (const b of fullResult.builds) {
+    const target = inputs.targets.find(
+      (t) => t.shipTypeId === b.shipTypeId && (t.fitName || null) === (b.fitName || null)
+    );
+    if (!target) continue;
+    const hullKey = String(b.shipTypeId);
+    depletedPool.set(hullKey, (depletedPool.get(hullKey) || 0) - 1);
+    for (const [tid, need] of target.units) {
+      depletedPool.set(tid, (depletedPool.get(tid) || 0) - need);
+    }
+  }
+
+  acqProgressSet(progressBar, 0, 'Loading UEXO market…', true);
+  statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. ⏳ Loading UEXO market…`;
+
+  let market = aaState.market || null;
+  if (!market) {
+    appLog('analyse-hulls: market not cached, loading UEXO…');
+    const marketStart = performance.now();
+    // Poll marketProgress to show real page-by-page fill while stream loads.
+    const pollId = setInterval(() => {
+      if (runId !== acqHullAnalysisRunId) { clearInterval(pollId); return; }
+      const p = aaState.marketProgress;
+      if (!p) return;
+      if (p.maxPages) {
+        const pct = Math.min(55, Math.round((p.page / p.maxPages) * 55));
+        acqProgressSet(progressBar, pct, `Loading UEXO market… page ${p.page}/${p.maxPages}`, false);
+      } else {
+        acqProgressSet(progressBar, 0, p.message || 'Loading UEXO market…', true);
+      }
+    }, 150);
     await loadMarket(false);
+    clearInterval(pollId);
+    market = aaState.market || null;
+    appLog(`analyse-hulls: UEXO market load finished in ${Math.round(performance.now() - marketStart)}ms, `
+      + `error=${aaState.marketError || 'none'}, types=${market?.by_type ? Object.keys(market.by_type).length : 0}`);
+  } else {
+    appLog(`analyse-hulls: reusing cached market, ${Object.keys(market.by_type || {}).length} type(s)`);
   }
-  if (aaState.marketError) {
-    statusEl.textContent = `Market unavailable — ${aaState.marketError}`;
-    resultsEl.innerHTML = '';
-    return;
-  }
-  const market = aaState.market;
-  if (!market?.by_type) {
-    statusEl.textContent = 'Market unavailable — no order book loaded.';
-    resultsEl.innerHTML = '';
+
+  // The only await above this point is loadMarket(); a click on a re-rendered
+  // Analyse Hulls button (after a tab switch mid-run, or a plain double-click)
+  // bumps acqHullAnalysisRunId before this point is reached. Everything below
+  // is synchronous, so one check here covers the rest of the function.
+  if (runId !== acqHullAnalysisRunId) {
+    appLog('analyse-hulls: superseded by a newer run, abandoning');
     return;
   }
 
-  const result = planAcquisitions({
+  // Nobody re-ran the analysis, but the tab may still have been switched away
+  // and back while we awaited — renderAcquisitionsTab() rebuilds #acquisitions-root's
+  // children on every visit, orphaning the nodes captured above. root itself
+  // is never replaced, so re-query through it to land on whatever is live now.
+  progressBar = root.querySelector('#acq-analysis-progress');
+  s1 = root.querySelector('#acq-section-inventory');
+  s2 = root.querySelector('#acq-section-market');
+  s3 = root.querySelector('#acq-section-shopping');
+  s4 = root.querySelector('#acq-section-outofreach');
+  statusEl = root.querySelector('#acq-find-status') || statusEl;
+  // Section 1 was already rendered into the (now possibly orphaned) old s1
+  // above; re-render it into whichever node is live now. Sections 2-4 are
+  // rendered fresh below regardless, so they don't need the same treatment.
+  progressBar.hidden = false;
+  renderAcqSection1(s1, fullResult);
+  s1.hidden = false;
+
+  if (aaState.marketError || !market?.by_type) {
+    statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. `
+      + `Market unavailable — ${aaState.marketError || 'no order book'}.`;
+  }
+
+  acqProgressSet(progressBar, 60, 'Computing shopping gaps…', false);
+
+  const ageMin = market
+    ? Math.max(0, Math.round((Date.now() / 1000 - (market.fetched_at || 0)) / 60))
+    : null;
+
+  // --- Section 2: market pass (independent pool copy) ---
+  const marketResult = planAcquisitions({
     pool: inputs.pool, targets: inputs.targets, mode: ACQ_MODES.MARKET, market,
   });
-  const ageMin = Math.max(0, Math.round((Date.now() / 1000 - (market.fetched_at || 0)) / 60));
-  statusEl.textContent = `${result.builds.length} build(s) completable — `
-    + `UEXO book ${ageMin}m old, ${(market.order_count || 0).toLocaleString()} orders.`;
-  renderAcqFinderResults(resultsEl, result);
-  renderAcqShoppingList(resultsEl, result, market);
+  const marketBuilds = marketResult.builds.filter(
+    (b) => !satisfiedByInventory.has(`${b.shipTypeId}||${b.fitName || ''}`)
+  );
+
+  renderAcqSection2(s2, marketBuilds, ageMin, market);
+  s2.hidden = false;
+  appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
+
+  const satisfiedByMarket = new Set(
+    marketBuilds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
+  );
+  const satisfiedAll = new Set([...satisfiedByInventory, ...satisfiedByMarket]);
+
+  // --- Sections 3 & 4: shopping candidates and out of reach ---
+  const minCoverage = acqShoppingMinCoverage;
+  const maxGapIsk = acqShoppingMaxIskGap;
+
+  const candidates = [];
+  const outOfReach = [];
+
+  appLog(`analyse-hulls: shopping-gap pass starting, ${inputs.targets.length} target(s)`);
+  const gapStart = performance.now();
+  let gapIndex = 0;
+  for (const target of inputs.targets) {
+    gapIndex += 1;
+    if (gapIndex % 25 === 0) {
+      appLog(`analyse-hulls: shopping-gap ${gapIndex}/${inputs.targets.length} `
+        + `(${Math.round(performance.now() - gapStart)}ms elapsed)`);
+    }
+    try {
+      if ((target.needed || 0) <= 0) continue;
+      if (target.unevaluatable) {
+        outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no fit registered — cannot evaluate' });
+        continue;
+      }
+      const key = `${target.shipTypeId}||${target.fitName || ''}`;
+      if (satisfiedAll.has(key)) continue;
+
+      const hullQty = depletedPool.get(String(target.shipTypeId)) || 0;
+      if (hullQty < 1) {
+        outOfReach.push({ target, gap: { coverage: 0, gapIsk: 0, items: [] }, reason: 'no hull in stock' });
+        continue;
+      }
+
+      const gap = computeShoppingGap(target, depletedPool, market);
+      if (gap.coverage >= minCoverage && gap.gapIsk <= maxGapIsk) {
+        candidates.push({ target, gap });
+      } else {
+        let reason = '';
+        if (gap.coverage < minCoverage && gap.gapIsk > maxGapIsk) {
+          reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold, gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
+        } else if (gap.coverage < minCoverage) {
+          reason = `${Math.round(gap.coverage * 100)}% covered — below coverage threshold`;
+        } else {
+          reason = `gap ${fmtIskShort(gap.gapIsk)} — exceeds ISK limit`;
+        }
+        outOfReach.push({ target, gap, reason });
+      }
+    } catch (err) {
+      appLog(`analyse-hulls: shopping-gap FAILED at ${gapIndex}/${inputs.targets.length} `
+        + `shipTypeId=${target?.shipTypeId} fit=${target?.fitName}: ${err?.stack || err}`);
+      throw err;
+    }
+  }
+  appLog(`analyse-hulls: shopping-gap pass done in ${Math.round(performance.now() - gapStart)}ms, `
+    + `candidates=${candidates.length} outOfReach=${outOfReach.length}`);
+
+  renderAcqSection3(s3, candidates, market);
+  s3.hidden = candidates.length === 0;
+  renderAcqSection4(s4, outOfReach);
+  s4.hidden = outOfReach.length === 0;
+
+  acqProgressSet(progressBar, 100, '', false);
+  const mktMsg = market
+    ? ` + ${marketBuilds.length} with market (book ${ageMin}m old).`
+    : '.';
+  statusEl.textContent = `${fullResult.builds.length} build(s) from inventory${mktMsg}`;
+  appLog('analyse-hulls: complete');
+  // Persist results so they survive tab navigation.
+  acqHullAnalysisResult = {
+    s1: s1.innerHTML, s1hidden: s1.hidden,
+    s2: s2.innerHTML, s2hidden: s2.hidden,
+    s3: s3.innerHTML, s3hidden: s3.hidden,
+    s4: s4.innerHTML, s4hidden: s4.hidden,
+    statusText: statusEl.textContent,
+  };
+  setTimeout(() => { progressBar.hidden = true; }, 400);
 }
 
-// The shopping list is what makes mode 3 actionable: everything the accepted
-// builds are short of, summed across builds, at UEXO's cheapest asking price.
-function renderAcqShoppingList(el, result, market) {
-  const need = new Map();
+function renderAcqSection1(el, result) {
+  const counts = new Map();
   for (const b of result.builds) {
-    for (const m of b.missing) need.set(m.type_id, (need.get(m.type_id) || 0) + m.qty);
+    const key = `${b.shipName}||${b.fitName || ''}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
   }
-  if (!need.size) return;
-
-  let total = 0;
-  const lines = [];
-  const rows = [...need.entries()].map(([tid, qty]) => {
-    const entry = market.by_type[tid] || market.by_type[Number(tid)] || {};
-    const price = entry.min_price || 0;
-    const name = acqTypeName(tid);
-    total += price * qty;
-    lines.push(`${name} x${qty}`);
+  const rows = [...counts.entries()].map(([key, n]) => {
+    const [ship, fit] = key.split('||');
     return `<tr style="border-bottom:1px solid #1e2533">
-        <td style="padding:0.35rem 0.5rem">${escapeHtml(name)}</td>
-        <td style="padding:0.35rem 0.5rem;text-align:right">${qty.toLocaleString()}</td>
-        <td style="padding:0.35rem 0.5rem;text-align:right">${Math.round(price).toLocaleString()}</td>
-        <td style="padding:0.35rem 0.75rem;text-align:right">${Math.round(price * qty).toLocaleString()}</td>
+        <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
+        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
       </tr>`;
   }).join('');
 
-  const div = document.createElement('div');
-  div.style.marginTop = '1rem';
-  div.innerHTML = `
-    <h3 style="margin:0 0 0.5rem;font-size:0.95rem">Shopping list (UEXO)</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
-      <thead>
-        <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
-          <th style="padding:0.35rem 0.5rem">Module</th>
-          <th style="padding:0.35rem 0.5rem;text-align:right">Qty</th>
-          <th style="padding:0.35rem 0.5rem;text-align:right">Min price</th>
-          <th style="padding:0.35rem 0.75rem;text-align:right">Total</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="3" style="padding:0.35rem 0.5rem;text-align:right"><strong>Total</strong></td>
-          <td style="padding:0.35rem 0.75rem;text-align:right"><strong>${Math.round(total).toLocaleString()} ISK</strong></td>
-        </tr>
-      </tfoot>
-    </table>
-    <button id="acq-copy-buy" class="link-btn" style="margin-top:0.4rem">Copy multibuy</button>`;
-  el.appendChild(div);
+  el.innerHTML = `
+    <div style="border:1px solid #16a34a;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="background:#14532d;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#4ade80;font-size:0.9rem">✓ Completable from inventory</strong>
+        <span style="color:#4ade80;font-size:0.8rem">${result.builds.length} build(s)</span>
+      </div>
+      <div style="padding:0.5rem 0.75rem">
+        ${result.builds.length === 0
+          ? '<p style="font-size:0.85rem;color:#8899aa;margin:0">None — inventory alone cannot complete any quota ships.</p>'
+          : `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+              <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e">
+                <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
+                <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
+                <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>`
+        }
+      </div>
+    </div>`;
+}
 
-  const copyBtn = div.querySelector('#acq-copy-buy');
-  copyBtn.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(lines.join('\n'));
-      copyBtn.textContent = 'Copied';
-    } catch (e) {
-      copyBtn.textContent = 'Copy failed';
+function renderAcqSection2(el, builds, ageMin, market) {
+  const counts = new Map();
+  for (const b of builds) {
+    const key = `${b.shipName}||${b.fitName || ''}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const rows = [...counts.entries()].map(([key, n]) => {
+    const [ship, fit] = key.split('||');
+    return `<tr style="border-bottom:1px solid #1e2533">
+        <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
+        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
+      </tr>`;
+  }).join('');
+
+  const ageLabel = ageMin != null ? ` · market ${ageMin}m old` : '';
+  el.innerHTML = `
+    <div style="border:1px solid #2563eb;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="background:#1e3a5f;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#60a5fa;font-size:0.9rem">⊕ Completable with UEXO market</strong>
+        <span style="color:#60a5fa;font-size:0.8rem">${builds.length} build(s)${ageLabel}</span>
+      </div>
+      <div style="padding:0.5rem 0.75rem">
+        ${builds.length === 0
+          ? '<p style="font-size:0.85rem;color:#8899aa;margin:0">None — no additional builds completable via the UEXO market.</p>'
+          : `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+              <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e">
+                <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
+                <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
+                <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>`
+        }
+      </div>
+    </div>`;
+}
+
+function renderAcqSection3(el, candidates, market) {
+  if (!candidates.length) { el.innerHTML = ''; return; }
+  const cards = candidates.map(({ target, gap }) => {
+    const itemRows = gap.items.map((it) => {
+      const name = escapeHtml(acqTypeName(it.type_id));
+      const priceStr = it.price ? Math.round(it.price).toLocaleString() : '—';
+      return `<tr style="border-bottom:1px solid #1e2533;font-size:0.8rem">
+          <td style="padding:0.25rem 0.4rem">${name}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right">${it.need}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right">${it.have}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right;color:#f87171">${it.short}</td>
+          <td style="padding:0.25rem 0.5rem;text-align:right">${priceStr}</td>
+        </tr>`;
+    }).join('');
+
+    const gapALines = gap.items.map((it) => `${acqTypeName(it.type_id)} x${it.short}`);
+    const gapBLines = gap.items
+      .filter((it) => !it.onMarket)
+      .map((it) => `${acqTypeName(it.type_id)} x${it.short}`);
+
+    const coveragePct = Math.round(gap.coverage * 100);
+    const gapIskStr = fmtIskShort(gap.gapIsk);
+    const shipLabel = escapeHtml(`${target.shipName} — ${target.fitName || 'unknown fit'}`);
+    const fitSlug = (target.fitName || 'nofit').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const btnId = `acq-copy-gap-${target.shipTypeId}-${fitSlug}`;
+    const btnBId = `acq-copy-gapb-${target.shipTypeId}-${fitSlug}`;
+
+    return `
+      <div style="margin-bottom:0.75rem;padding:0.6rem 0.75rem;background:#1a1208;border:1px solid #92400e;border-radius:5px">
+        <div style="font-size:0.85rem;margin-bottom:0.4rem">
+          <strong>${shipLabel}</strong>
+          <span style="color:#fbbf24;margin-left:0.5rem">${coveragePct}% covered</span>
+          <span style="color:#8899aa;margin-left:0.5rem">gap ~${gapIskStr}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e;font-size:0.78rem">
+            <th style="padding:0.25rem 0.4rem;text-align:left">Item</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Need</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Have</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">Short</th>
+            <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
+          </tr></thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
+          <button id="${btnId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapALines.join('\n'))}">Copy gap (inventory only)</button>
+          <button id="${btnBId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapBLines.join('\n'))}">Copy gap (inventory + market)</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="border:1px solid #d97706;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="background:#451a03;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#fbbf24;font-size:0.9rem">🛒 Shopping list candidates</strong>
+        <span style="color:#fbbf24;font-size:0.8rem">${candidates.length} hull(s)</span>
+      </div>
+      <div style="padding:0.6rem 0.75rem">${cards}</div>
+    </div>`;
+
+  for (const { target } of candidates) {
+    const fitSlug = (target.fitName || 'nofit').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    for (const id of [`acq-copy-gap-${target.shipTypeId}-${fitSlug}`, `acq-copy-gapb-${target.shipTypeId}-${fitSlug}`]) {
+      const btn = el.querySelector(`#${id}`);
+      if (!btn) continue;
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.lines);
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = btn.id.includes('gapb') ? 'Copy gap (inventory + market)' : 'Copy gap (inventory only)'; }, 1500);
+        } catch { btn.textContent = 'Copy failed'; }
+      });
     }
-  });
+  }
+}
+
+function renderAcqSection4(el, outOfReach) {
+  if (!outOfReach.length) { el.innerHTML = ''; return; }
+  const lines = outOfReach.map(({ target, reason }) =>
+    `<div style="padding:0.2rem 0;font-size:0.82rem;color:#6b7280">
+      ${escapeHtml(target.shipName)}${target.fitName ? ` — ${escapeHtml(target.fitName)}` : ''}: ${escapeHtml(reason)}
+    </div>`
+  ).join('');
+  el.innerHTML = `
+    <details style="border:1px solid #374151;border-radius:6px;overflow:hidden;margin-bottom:0.75rem">
+      <summary style="background:#1f2937;padding:0.5rem 0.75rem;cursor:pointer;color:#6b7280;font-size:0.85rem;list-style:none">
+        ▶ Out of reach — ${outOfReach.length} hull(s) (below threshold)
+      </summary>
+      <div style="padding:0.5rem 0.75rem">${lines}</div>
+    </details>`;
+}
+
+async function acqRunFinder(mode, resultsEl, statusEl, progressBar) {
+  const inputs = acqFinderInputs();
+  if (inputs.error) {
+    statusEl.textContent = inputs.error;
+    resultsEl.innerHTML = '';
+    return;
+  }
+  progressBar.hidden = false;
+  acqProgressSet(progressBar, 0, 'Analysing fits…', false);
+  await new Promise((r) => setTimeout(r, 0));
+  const result = planAcquisitions({ pool: inputs.pool, targets: inputs.targets, mode });
+  renderAcqFinderResults(resultsEl, result);
+  statusEl.textContent = `${result.builds.length} build(s) found.`;
+  acqProgressSet(progressBar, 100, '', false);
+  setTimeout(() => { progressBar.hidden = true; }, 300);
 }
 
 // Names come from whatever the page already resolved; the type id is the fallback.
@@ -4759,7 +5098,14 @@ function acqTypeName(typeId) {
   const key = String(typeId);
   const row = [...acquisitionsHulls, ...acquisitionsItems]
     .find((r) => String(r.type_id) === key);
-  return row?.name || `type ${key}`;
+  if (row?.name) return row.name;
+  // Fall back to fit item names from the readiness scan (covers missing modules
+  // that have zero inventory and therefore aren't in the acquisitions lists).
+  for (const fit of Object.values(readinessState.scan?.fits || {})) {
+    const item = (fit.items || []).find((it) => String(it.typeId) === key);
+    if (item?.name) return item.name;
+  }
+  return `type ${key}`;
 }
 
 function renderAcquisitionsResults(hullsEl, itemsEl) {
@@ -4857,6 +5203,8 @@ async function acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, mode = 'r
       ignoredSection.hidden = true;
     }
     await acquisitionsSave();
+    const updatedEl = root.querySelector('#acq-updated-at');
+    if (updatedEl) updatedEl.textContent = acqUpdatedAtLabel();
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
   } finally {
@@ -4871,9 +5219,13 @@ function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
   acquisitionsItems = [];
   renderAcquisitionsResults(hullsEl, itemsEl);
   statusEl.textContent = '';
-  const ignoredSection = textarea.closest('#acquisitions-root')?.querySelector('#acq-ignored-section');
+  const root = textarea.closest('#acquisitions-root');
+  const ignoredSection = root?.querySelector('#acq-ignored-section');
   if (ignoredSection) ignoredSection.hidden = true;
-  acquisitionsSave();
+  acquisitionsSave().then(() => {
+    const updatedEl = root?.querySelector('#acq-updated-at');
+    if (updatedEl) updatedEl.textContent = acqUpdatedAtLabel();
+  });
 }
 
 function renderAcquisitionsTab() {
@@ -4881,6 +5233,7 @@ function renderAcquisitionsTab() {
   if (!root) return;
   root.innerHTML = `
     <h2>Acquisitions Inventory <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <div id="acq-updated-at" class="muted" style="font-size:0.8rem;margin-top:-0.5rem"></div>
     <p class="muted">Paste inventory (hulls and modules together) in EVE clipboard format
     — Name, tab, quantity, one line per item. Hulls and modules are split automatically.
     <strong>Add to inventory</strong> sums the paste into what's already stored; <strong>Replace inventory</strong> discards the current inventory first.</p>
@@ -4892,17 +5245,25 @@ function renderAcquisitionsTab() {
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
-    <div id="acq-find-warning" class="muted" style="font-size:0.8rem;color:#e8a838;margin-top:0.6rem" hidden></div>
-    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
-      <button id="acq-find-full" class="btn" title="Quota ships this inventory can build outright">Find full hull + fits</button>
-      <button id="acq-find-nohull" class="btn" title="Every module present, hull missing">Find fits without hulls</button>
-      <button id="acq-find-market" class="btn" title="80%+ complete, remainder buyable at UEXO">Find market-completable</button>
-      <span id="acq-find-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
-    </div>
-    <div id="acq-find-results" style="margin-top:0.75rem"></div>
     <div class="progress-area" id="acq-progress" hidden>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="progress-step muted">starting…</div>
+    </div>
+    <div id="acq-find-warning" class="muted" style="font-size:0.8rem;color:#e8a838;margin-top:0.6rem" hidden></div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
+      <button id="acq-find-hulls" class="btn" title="Progressive hull completion analysis: inventory, market, shopping list">Analyse Hulls</button>
+      <button id="acq-find-nohull" class="btn" title="Every module present, hull missing">Analyse Fits</button>
+      <span id="acq-find-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
+    </div>
+    <div id="acq-find-results" style="margin-top:0.75rem">
+      <div class="progress-area" id="acq-analysis-progress" hidden>
+        <div class="progress-bar indeterminate"><div class="progress-fill"></div></div>
+        <div class="progress-step muted"></div>
+      </div>
+      <div id="acq-section-inventory" hidden></div>
+      <div id="acq-section-market" hidden></div>
+      <div id="acq-section-shopping" hidden></div>
+      <div id="acq-section-outofreach" hidden></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1.5rem">
       <div>
@@ -4921,6 +5282,8 @@ function renderAcquisitionsTab() {
       </details>
     </div>`;
 
+  root.querySelector('#acq-updated-at').textContent = acqUpdatedAtLabel();
+
   const textarea = root.querySelector('#acq-paste');
   textarea.value = acquisitionsPasteText;
   textarea.addEventListener('input', () => { acquisitionsPasteText = textarea.value; });
@@ -4935,13 +5298,41 @@ function renderAcquisitionsTab() {
 
   const findStatusEl = root.querySelector('#acq-find-status');
   const findResultsEl = root.querySelector('#acq-find-results');
+  const analysisProgressBar = root.querySelector('#acq-analysis-progress');
   acqUpdateFinderAvailability(root);
-  root.querySelector('#acq-find-full').addEventListener('click',
-    () => acqRunFinder(ACQ_MODES.FULL, findResultsEl, findStatusEl));
+
+  // Restore last Analyse Hulls result if it exists.
+  if (acqHullAnalysisResult) {
+    const r = acqHullAnalysisResult;
+    const s1 = root.querySelector('#acq-section-inventory');
+    const s2 = root.querySelector('#acq-section-market');
+    const s3 = root.querySelector('#acq-section-shopping');
+    const s4 = root.querySelector('#acq-section-outofreach');
+    s1.innerHTML = r.s1; s1.hidden = r.s1hidden;
+    s2.innerHTML = r.s2; s2.hidden = r.s2hidden;
+    s3.innerHTML = r.s3; s3.hidden = r.s3hidden;
+    s4.innerHTML = r.s4; s4.hidden = r.s4hidden;
+    findStatusEl.textContent = r.statusText;
+    // Re-attach copy button listeners lost when innerHTML was restored.
+    for (const btn of root.querySelectorAll('[id^="acq-copy-gap"]')) {
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.lines);
+          const orig = btn.textContent;
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch { btn.textContent = 'Copy failed'; }
+      });
+    }
+  }
+  root.querySelector('#acq-find-hulls').addEventListener('click', async () => {
+    const btn = root.querySelector('#acq-find-hulls');
+    btn.disabled = true;
+    try { await acqRunHullAnalysis(root, findStatusEl); }
+    finally { btn.disabled = false; }
+  });
   root.querySelector('#acq-find-nohull').addEventListener('click',
-    () => acqRunFinder(ACQ_MODES.FITS_NO_HULL, findResultsEl, findStatusEl));
-  root.querySelector('#acq-find-market').addEventListener('click',
-    () => acqRunMarketFinder(findResultsEl, findStatusEl));
+    () => acqRunFinder(ACQ_MODES.FITS_NO_HULL, findResultsEl, findStatusEl, analysisProgressBar));
 
   addBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add'));
   replaceBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'replace'));

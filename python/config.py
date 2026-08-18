@@ -174,6 +174,13 @@ DEFAULTS = {
     # standard location (<Documents>/EVE/PlanetaryInteractionTemplates). The PI
     # layout builder lists saved templates here and saves exports straight to it.
     'pi_templates_dir': '',
+    # ---- Acquisitions analysis thresholds ----
+    # Hull must have at least this fraction of modules in stock to generate
+    # a shopping list. 0.5 = 50% inventory coverage required.
+    'acq_shopping_min_coverage': 0.5,
+    # Hull's missing modules (priced at UEXO min) must total less than this
+    # ISK value to generate a shopping list. 500m default.
+    'acq_shopping_max_isk_gap': 500_000_000.0,
 }
 
 _USER_KEYS = set(DEFAULTS)
@@ -203,7 +210,10 @@ def _migrate(cfg):
 
     # Ensure all baseline scopes are present so newer features (e.g. mail send)
     # work after an app upgrade without manually editing the persisted config.
-    saved_scopes = list(cfg.get('scopes') or [])
+    # Also strip any scopes that are no longer valid (e.g. esi-fleets.read_fleet.v1
+    # was removed from the ESI spec and causes OAuth errors if requested).
+    _removed_scopes = {'esi-fleets.read_fleet.v1'}
+    saved_scopes = [s for s in (cfg.get('scopes') or []) if s not in _removed_scopes]
     for s in DEFAULTS['scopes']:
         if s not in saved_scopes:
             saved_scopes.append(s)

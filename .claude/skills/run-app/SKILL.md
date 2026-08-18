@@ -7,11 +7,27 @@ Eve Corp Buyback is an Electron app with a Python sidecar (FastAPI, port 8766). 
 
 Cross-platform (macOS / Windows / Linux). All paths below are relative to the project root.
 
-## Run (human path)
+## Which method to use
+
+| Goal | Method |
+|---|---|
+| **"Run the app so I can use it"** — user wants the window to stay open | `npm start` in background (see below) |
+| **Take a screenshot / interact / test a UI change** — agent needs to drive the UI | Playwright driver (see below) |
+
+**IMPORTANT:** The Playwright driver owns the Electron process — when the driver session ends (or `quit` is called), the window closes. Never use the driver when the goal is simply to launch the app for the user to use.
+
+## Run for the user (background, window stays open)
+
+Kill any existing instance first, then launch via `npm start` in the background:
 
 ```sh
-npm start   # opens the Electron window directly
+pkill -x Electron 2>/dev/null; sleep 1
+cd /Users/i840005/dev/Eve_Corp_Buyback
+unset ELECTRON_RUN_AS_NODE
+npm start &
 ```
+
+Wait ~5s then confirm the sidecar started by checking the background task output. The window will remain open until the user closes it.
 
 ## Run (agent path — Playwright REPL)
 
@@ -25,10 +41,10 @@ Then at the `driver>` prompt:
 
 ```
 launch          # starts the app, waits for main window (~20s total)
-ss landing      # screenshot → C:\tmp\shots\landing.png
+ss landing      # screenshot → /tmp/eve-shots/landing.png
 tab Contracts   # click a nav tab by name
 click-text Save # click a button by label
-quit
+quit            # WARNING: this closes the Electron window
 ```
 
 ### Commands

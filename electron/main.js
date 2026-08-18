@@ -78,6 +78,11 @@ function logSidecar(line) {
   process.stdout.write && process.stdout.write(text);
 }
 
+// Lets the renderer append diagnostic lines to the same sidecar.log, so
+// otherwise-invisible client-side state (e.g. a stuck progress bar) can be
+// inspected after the fact without driving the live window.
+ipcMain.handle('log:append', (_event, line) => logSidecar(String(line)));
+
 function killOrphanSidecars() {
   // Defensive: a previous app instance that crashed (or was force-quit via Task
   // Manager) can leave its python child running and still bound to port 8766.
