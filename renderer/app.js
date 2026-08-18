@@ -5310,47 +5310,6 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
     }
   }
 }
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="color:#8899aa;border-bottom:1px solid #2e3a4e;font-size:0.78rem">
-            <th style="padding:0.25rem 0.4rem;text-align:left">Item</th>
-            <th style="padding:0.25rem 0.4rem;text-align:right">Need</th>
-            <th style="padding:0.25rem 0.4rem;text-align:right">Have</th>
-            <th style="padding:0.25rem 0.4rem;text-align:right">Short</th>
-            <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
-          </tr></thead>
-          <tbody>${itemRows}</tbody>
-        </table>
-        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
-          <button id="${btnId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapALines.join('\n'))}">Copy gap (inventory only)</button>
-          <button id="${btnBId}" class="link-btn" style="font-size:0.8rem" data-lines="${escapeHtml(gapBLines.join('\n'))}">Copy gap (inventory + market)</button>
-        </div>
-      </div>`;
-  }).join('');
-
-  el.innerHTML = `
-    <div style="border:1px solid #d97706;border-radius:6px;margin-bottom:0.75rem;overflow:hidden">
-      <div style="background:#451a03;padding:0.5rem 0.75rem;display:flex;justify-content:space-between;align-items:center">
-        <strong style="color:#fbbf24;font-size:0.9rem">🛒 Shopping list candidates</strong>
-        <span style="color:#fbbf24;font-size:0.8rem">${candidates.length} hull(s)</span>
-      </div>
-      <div style="padding:0.6rem 0.75rem">${cards}</div>
-    </div>`;
-
-  for (const { target } of candidates) {
-    const fitSlug = (target.fitName || 'nofit').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    for (const id of [`acq-copy-gap-${target.shipTypeId}-${fitSlug}`, `acq-copy-gapb-${target.shipTypeId}-${fitSlug}`]) {
-      const btn = el.querySelector(`#${id}`);
-      if (!btn) continue;
-      btn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(btn.dataset.lines);
-          btn.textContent = 'Copied';
-          setTimeout(() => { btn.textContent = btn.id.includes('gapb') ? 'Copy gap (inventory + market)' : 'Copy gap (inventory only)'; }, 1500);
-        } catch { btn.textContent = 'Copy failed'; }
-      });
-    }
-  }
-}
 
 function renderAcqSection4(el, outOfReach) {
   if (!outOfReach.length) { el.innerHTML = ''; return; }
