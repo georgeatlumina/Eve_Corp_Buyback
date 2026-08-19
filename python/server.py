@@ -1434,8 +1434,10 @@ def auth_login(slot: Optional[str] = None):
         _auth_state['completed'][slot_name] = False
         _auth_state['errors'].pop(slot_name, None)
     url = build_authorize_url(client_id, REDIRECT_URI, scopes, state_token)
-    webbrowser.open(url)
-    return {'opened': True, 'url': url, 'slot': slot_name}
+    # The renderer opens `url` itself via shell.openExternal — reliable in the
+    # packaged app, where this frozen sidecar's webbrowser.open is a no-op (which
+    # is why "Login" appeared to do nothing). Returned for the renderer to open.
+    return {'opened': False, 'url': url, 'slot': slot_name}
 
 
 @app.get('/api/auth/fit-slots')

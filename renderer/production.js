@@ -7,7 +7,7 @@
 // Self-contained IIFE; reuses app.js globals ($, escapeHtml, downloadBlob, API).
 
 (function () {
-  const state = { last: null, loading: false, buyIds: new Set() };
+  const state = { last: null, loading: false, buyIds: new Set(), flow: null };
 
   const isk = (n) => (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const iskShort = (n) => {
@@ -120,7 +120,17 @@
       state.last = await res.json();
       render();
     } catch (e) {
-      if (status) status.textContent = `Failed: ${e.message || e}`;
+      // Be explicit about *why*: a network TypeError ("failed to fetch") means
+      // the local sidecar didn't respond — very different from an HTTP error.
+      if (typeof isNetworkError === 'function' && isNetworkError(e)) {
+        if (typeof showBackendBanner === 'function') showBackendBanner(true);
+        if (status) status.textContent = `Analyze couldn't reach the local backend (${API}). `
+          + `The sidecar isn't responding — restart the app; if it persists, another program may be `
+          + `using that port (see sidecar.log).`;
+      } else if (status) {
+        status.textContent = `Analyze failed: ${e.message || e}`;
+      }
+      console.error('[production] analyze failed:', e);
     } finally {
       state.loading = false;
       if (btn) btn.disabled = false;
@@ -173,7 +183,7 @@
         : escapeHtml(j.name);
       const runsLabel = isInv ? `${j.runs.toLocaleString('en-US')} tries` : j.runs.toLocaleString('en-US');
       const outLabel = isInv ? `${j.produced.toLocaleString('en-US')} BPC` : j.produced.toLocaleString('en-US');
-      const action = isInv ? '' : `<button class="prod-toggle" data-buy="${j.type_id}" title="Buy this instead of building it">→ buy</button>`;
+      const action = isInv ? '' : `<button class="prod-toggle prod-tobuy" data-buy="${j.type_id}" title="Buy this instead of building it — moves it to the Shopping list">🛒 → Shopping list</button>`;
       return `
       <tr>
         <td>${nameCell}</td>
@@ -281,7 +291,17 @@
     renderJobs(d);
     renderRaw(d);
     renderTree(d);
+    renderFlow(d);
     renderStatus(d);
+  }
+
+  function renderFlow(d) {
+    const pane = $('#prod-flow-pane');
+    const wrap = $('#prod-flow');
+    if (!pane || !wrap) return;
+    if (!(d.tree || []).length || typeof ChainFlow !== 'function') { pane.hidden = true; return; }
+    pane.hidden = false;
+    state.flow = ChainFlow(wrap, d.tree);
   }
 
   // In-game Multibuy accepts one "Name xN" per line — this is that exact format,
@@ -307,11 +327,77 @@
     downloadBlob('production-shopping-list.txt', 'text/plain', `${text}\n`);
   }
 
+  // ---- Compare (Phase D): render selected memories' chains read-only, side by side ----
+  async function planFromState(st) {
+    const num = (id, def) => { const v = parseFloat(st[id]); return Number.isFinite(v) ? v : def; };
+    const decr = st['prod-decryptor'] || 'None';
+    const body = {
+      targets_text: (st['prod-targets'] || '').trim(),
+      stock_text: (st['prod-stock'] || '').trim() || undefined,
+      me: num('prod-me', 10),
+      structure_material_mult: (100 - num('prod-struct', 0)) / 100,
+      reaction_material_mult: (100 - num('prod-rx', 0)) / 100,
+      cost_index: num('prod-index', 5) / 100,
+      system: (st['prod-system'] || '').trim() || null,
+      tax: num('prod-tax', 0.25) / 100,
+      invention: !!st['prod-invention'],
+      decryptor: decr === 'None' ? null : decr,
+      invention_skill_level: num('prod-inv-skill', 4),
+      market: st['prod-market'] || 'Jita 4-4',
+      price: true,
+    };
+    const res = await fetch(`${API}/api/industry/plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
+    return res.json();
+  }
+
+  function compareBodyHtml(d) {
+    const t = d.totals || {};
+    const priced = d.pricing && d.pricing.priced;
+    const cost = priced ? `Build ${isk(t.build_cost)} · Buy ${isk(t.buy_cost)} ISK` : 'no price';
+    const tree = (d.tree || []).map((r) => treeNodeHtml(r, 0)).join('');
+    return `<div class="cmp-cost muted">${cost}</div><ul class="prod-tree-root">${tree}</ul>`;
+  }
+
+  async function renderCompare(items) {
+    const pane = $('#prod-compare-pane');
+    const wrap = $('#prod-compare');
+    if (!pane || !wrap) return;
+    if (!items || !items.length) { pane.hidden = true; wrap.innerHTML = ''; return; }
+    pane.hidden = false;
+    wrap.innerHTML = items.map((it) => {
+      const icon = it.icon ? `<img class="cmp-icon" src="https://images.evetech.net/types/${it.icon}/icon?size=32" alt="" onerror="this.style.display='none'">` : '';
+      return `<div class="cmp-card" data-i="${it.index}"><div class="cmp-head">${icon}<strong>${escapeHtml(it.label)}</strong></div><div class="cmp-body muted">Computing…</div></div>`;
+    }).join('');
+    for (const it of items) {
+      const body = wrap.querySelector(`.cmp-card[data-i="${it.index}"] .cmp-body`);
+      try {
+        const plan = await planFromState(it.state);
+        if (body) { body.classList.remove('muted'); body.innerHTML = compareBodyHtml(plan); }
+      } catch (e) {
+        if (body) body.innerHTML = `<span class="muted">Failed: ${escapeHtml(String(e.message || e))}</span>`;
+      }
+    }
+  }
+
+  // Memory bank + auto-persistence (10 recall slots; survives app restart).
+  const mem = (typeof PlannerMemory === 'function') ? PlannerMemory({
+    key: 'production', tab: 'production', bar: 'prod-mem-bar', primary: 'prod-targets',
+    fields: [{ id: 'prod-targets' }, { id: 'prod-stock' }, { id: 'prod-me' }, { id: 'prod-struct' },
+      { id: 'prod-rx' }, { id: 'prod-system' }, { id: 'prod-index' }, { id: 'prod-tax' },
+      { id: 'prod-invention' }, { id: 'prod-decryptor' }, { id: 'prod-inv-skill' }, { id: 'prod-market' }],
+    onRestore: () => {},
+    onCompare: (items) => renderCompare(items),
+    iconTypeId: () => (state.last && state.last.targets && state.last.targets[0] && state.last.targets[0].type_id) || null,
+  }) : null;
+
   let wired = false;
   function initTab() {
-    loadDecryptors();
+    // Restore fields after the decryptor <select> is populated so its value sticks.
+    loadDecryptors().then(() => { if (mem) mem.init(); });
     if (wired) return;
     wired = true;
+    window.addEventListener('resize', () => { if (state.flow) state.flow.redraw(); });
     $('#prod-analyze')?.addEventListener('click', analyze);
     $('#prod-copy-raw')?.addEventListener('click', copyRaw);
     $('#prod-dl-raw')?.addEventListener('click', downloadRaw);

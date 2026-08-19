@@ -29,12 +29,12 @@ ipcMain.handle('open-link-window', (_event, url) => {
 // Pop a single tab out into its own window. Loads the same index.html with a
 // ?popout=<tab> query; the renderer hides the app chrome and shows just that
 // tab. Same preload, so it talks to the shared sidecar on 127.0.0.1:8766.
-ipcMain.handle('pop-out-tab', (_event, tab) => {
+ipcMain.handle('pop-out-tab', (_event, tab, opts) => {
   if (!/^[a-z0-9-]+$/.test(tab || '')) return;
   const win = new BrowserWindow({
     width: 1280,
     height: 900,
-    title: 'Naval Defence — PI',
+    title: 'Naval Defence — pop-out',
     icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     autoHideMenuBar: true,
     backgroundColor: '#1e1e1e',
@@ -46,7 +46,11 @@ ipcMain.handle('pop-out-tab', (_event, tab) => {
   });
   win.setMenuBarVisibility(false);
   const fileUrl = require('url').pathToFileURL(path.join(__dirname, '..', 'renderer', 'index.html')).href;
-  win.loadURL(`${fileUrl}?popout=${encodeURIComponent(tab)}`);
+  let query = `?popout=${encodeURIComponent(tab)}`;
+  // Optional memory slot to auto-load in the popped-out planner window.
+  const mem = opts && Number.isInteger(opts.mem) ? opts.mem : null;
+  if (mem != null && mem >= 0 && mem <= 99) query += `&mem=${mem}`;
+  win.loadURL(`${fileUrl}${query}`);
 });
 ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
 let pythonProcess = null;
@@ -259,9 +263,13 @@ function closeSplashWindow() {
 }
 
 function createWindow() {
+  // Default to a comfortable size for at least a 13" laptop (~1280×800 logical),
+  // but clamp to the available screen so it still fits smaller displays.
+  const work = require('electron').screen.getPrimaryDisplay().workAreaSize;
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 800,
+    width: Math.min(1280, work.width),
+    height: Math.min(860, work.height),
+    center: true,
     title: 'Naval Defence Alliance Management Tool',
     icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     show: false,

@@ -1118,6 +1118,16 @@ async function startSlotLogin(slot) {
     alert(`Login failed: ${await res.text()}`);
     return;
   }
+  // Open the EVE SSO page from the app (shell.openExternal) rather than relying
+  // on the sidecar's webbrowser.open, which is a no-op in the packaged app — so
+  // clicking Login/Re-login reliably brings up the login flow in the browser.
+  try {
+    const data = await res.json();
+    if (data && data.url) {
+      if (window.api && window.api.openExternal) window.api.openExternal(data.url);
+      else window.open(data.url, '_blank');
+    }
+  } catch (_) { /* still poll — the sidecar may have opened it */ }
   // Poll for ~3 min — long enough for the SSO round-trip.
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 2000));

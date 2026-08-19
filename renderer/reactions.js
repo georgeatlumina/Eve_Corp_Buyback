@@ -16,7 +16,7 @@
 // and the Production Planner's .prod-* CSS for tables/tiles/tree.
 
 (function () {
-  const state = { last: null, loading: false, buyIds: new Set(), catalog: null, matEdited: false, assets: null };
+  const state = { last: null, loading: false, buyIds: new Set(), catalog: null, matEdited: false, assets: null, flow: null };
 
   const isk = (n) => (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const iskShort = (n) => {
@@ -131,7 +131,15 @@
       state.last = await res.json();
       render();
     } catch (e) {
-      if (status) status.textContent = `Failed: ${e.message || e}`;
+      if (typeof isNetworkError === 'function' && isNetworkError(e)) {
+        if (typeof showBackendBanner === 'function') showBackendBanner(true);
+        if (status) status.textContent = `Analyze couldn't reach the local backend (${API}). `
+          + `The sidecar isn't responding — restart the app; if it persists, another program may be `
+          + `using that port (see sidecar.log).`;
+      } else if (status) {
+        status.textContent = `Analyze failed: ${e.message || e}`;
+      }
+      console.error('[reactions] analyze failed:', e);
     } finally {
       state.loading = false;
       if (btn) btn.disabled = false;
@@ -172,7 +180,7 @@
     if (!jobs.length) { wrap.innerHTML = '<p class="muted">No reactions — every target is a raw item.</p>'; return; }
     const priced = d.pricing && d.pricing.priced;
     const rows = jobs.map((j) => {
-      const action = `<button class="prod-toggle" data-buy="${j.type_id}" title="Buy this instead of reacting it">→ buy</button>`;
+      const action = `<button class="prod-toggle prod-tobuy" data-buy="${j.type_id}" title="Buy this instead of reacting it — moves it to the Shopping list">🛒 → Shopping list</button>`;
       return `
       <tr>
         <td>${escapeHtml(j.name)}</td>
@@ -278,10 +286,20 @@
     renderJobs(d);
     renderRaw(d);
     renderTree(d);
+    renderFlow(d);
     renderStatus(d);
     // Chain availability: lazy-load assets once (best-effort), then keep in sync.
     if (state.assets === null) ensureAssets(false).then(renderAvailability);
     renderAvailability();
+  }
+
+  function renderFlow(d) {
+    const pane = $('#rx-flow-pane');
+    const wrap = $('#rx-flow');
+    if (!pane || !wrap) return;
+    if (!(d.tree || []).length || typeof ChainFlow !== 'function') { pane.hidden = true; return; }
+    pane.hidden = false;
+    state.flow = ChainFlow(wrap, d.tree);
   }
 
   // ---- Catalog browser (all reaction recipes, grouped) ----
@@ -595,11 +613,73 @@
     }
   }
 
+  // ---- Compare (Phase D): render selected memories' chains read-only, side by side ----
+  async function planFromState(st) {
+    const num = (id, def) => { const v = parseFloat(st[id]); return Number.isFinite(v) ? v : def; };
+    const body = {
+      targets_text: (st['rx-targets'] || '').trim(),
+      stock_text: (st['rx-stock'] || '').trim() || undefined,
+      me: 0, structure_material_mult: 1.0,
+      reaction_material_mult: (100 - num('rx-matbonus', 0)) / 100,
+      cost_index: num('rx-index', 5) / 100,
+      system: (st['rx-system'] || '').trim() || null,
+      tax: num('rx-tax', 0.25) / 100,
+      invention: false,
+      market: st['rx-market'] || 'Jita 4-4',
+      price: true,
+    };
+    const res = await fetch(`${API}/api/industry/plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
+    return res.json();
+  }
+
+  function compareBodyHtml(d) {
+    const t = d.totals || {};
+    const priced = d.pricing && d.pricing.priced;
+    const cost = priced ? `React ${isk(t.build_cost)} · Buy ${isk(t.buy_cost)} ISK` : 'no price';
+    const tree = (d.tree || []).map((r) => treeNodeHtml(r, 0)).join('');
+    return `<div class="cmp-cost muted">${cost}</div><ul class="prod-tree-root">${tree}</ul>`;
+  }
+
+  async function renderCompare(items) {
+    const pane = $('#rx-compare-pane');
+    const wrap = $('#rx-compare');
+    if (!pane || !wrap) return;
+    if (!items || !items.length) { pane.hidden = true; wrap.innerHTML = ''; return; }
+    pane.hidden = false;
+    wrap.innerHTML = items.map((it) => {
+      const icon = it.icon ? `<img class="cmp-icon" src="https://images.evetech.net/types/${it.icon}/icon?size=32" alt="" onerror="this.style.display='none'">` : '';
+      return `<div class="cmp-card" data-i="${it.index}"><div class="cmp-head">${icon}<strong>${escapeHtml(it.label)}</strong></div><div class="cmp-body muted">Computing…</div></div>`;
+    }).join('');
+    for (const it of items) {
+      const body = wrap.querySelector(`.cmp-card[data-i="${it.index}"] .cmp-body`);
+      try {
+        const plan = await planFromState(it.state);
+        if (body) { body.classList.remove('muted'); body.innerHTML = compareBodyHtml(plan); }
+      } catch (e) {
+        if (body) body.innerHTML = `<span class="muted">Failed: ${escapeHtml(String(e.message || e))}</span>`;
+      }
+    }
+  }
+
+  // Memory bank + auto-persistence (10 recall slots; survives app restart).
+  const mem = (typeof PlannerMemory === 'function') ? PlannerMemory({
+    key: 'reactions', tab: 'reactions', bar: 'rx-mem-bar', primary: 'rx-targets',
+    fields: [{ id: 'rx-targets' }, { id: 'rx-stock' }, { id: 'rx-structure' }, { id: 'rx-rig' },
+      { id: 'rx-space' }, { id: 'rx-matbonus' }, { id: 'rx-system' }, { id: 'rx-index' },
+      { id: 'rx-tax' }, { id: 'rx-market' }],
+    onRestore: () => {},
+    onCompare: (items) => renderCompare(items),
+    iconTypeId: () => (state.last && state.last.targets && state.last.targets[0] && state.last.targets[0].type_id) || null,
+  }) : null;
+
   let wired = false;
   function initTab() {
     if (wired) return;
     wired = true;
+    window.addEventListener('resize', () => { if (state.flow) state.flow.redraw(); });
     applyPreset();
+    if (mem) mem.init();
     $('#rx-analyze')?.addEventListener('click', analyze);
     $('#rx-browse')?.addEventListener('click', toggleCatalog);
     $('#rx-autodetect')?.addEventListener('click', autodetectStock);

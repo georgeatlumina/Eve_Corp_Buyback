@@ -553,6 +553,7 @@
     <section id="tab-production" class="tab">
       <h2>Production Planner</h2>
       <p class="muted">Paste what you want to build (one <code>Item xN</code> per line). The planner explodes the full manufacturing + reaction tree down to raw materials, applies ME and whole-run rounding, subtracts any stock you list, and prices the buy list + jobs against Jita. Inspired by <strong>ravworks.com</strong>.</p>
+      <div id="prod-mem-bar" class="pmem-bar"></div>
       <div class="prod-inputs">
         <div class="prod-col">
           <label class="prod-label">Build targets</label>
@@ -606,6 +607,14 @@
         </div>
         <div id="prod-tree"></div>
       </div>
+      <div id="prod-flow-pane" class="prod-tree-pane cf-pane" hidden>
+        <div class="prod-pane-head"><strong>Chain calculator</strong> <span class="muted">— click a node to trace its sub-chain; edit any quantity to rescale the whole chain</span></div>
+        <div id="prod-flow" class="cf-wrap"></div>
+      </div>
+      <div id="prod-compare-pane" class="cmp-pane" hidden>
+        <div class="prod-pane-head"><strong>Compare recipes</strong> <span class="muted">— read-only chains, side by side</span></div>
+        <div id="prod-compare" class="cmp-grid"></div>
+      </div>
     </section>
 
     <section id="tab-production-favourites" class="tab">
@@ -638,6 +647,7 @@
     <section id="tab-reactions" class="tab">
       <h2>Reaction Calculator</h2>
       <p class="muted">Pick or paste reaction products and get the reactions to run and the raw materials (moon goo, gas, PI) to buy — the full multi-tier reaction chain, priced against Jita. Reactions ignore ME; material savings come only from a <strong>Tatara</strong> with Reactor&nbsp;Efficiency rigs. Inspired by <strong>ravworks.com</strong>.</p>
+      <div id="rx-mem-bar" class="pmem-bar"></div>
       <div class="prod-inputs">
         <div class="prod-col">
           <label class="prod-label">Reaction targets <span class="muted">(one <code>Name xN</code> per line — or use Browse)</span></label>
@@ -709,6 +719,10 @@
         </div>
         <div id="rx-tree"></div>
       </div>
+      <div id="rx-flow-pane" class="prod-tree-pane cf-pane" hidden>
+        <div class="prod-pane-head"><strong>Chain calculator</strong> <span class="muted">— click a node to trace its sub-chain; edit any quantity to rescale the whole chain</span></div>
+        <div id="rx-flow" class="cf-wrap"></div>
+      </div>
       <div id="rx-avail-pane" class="rx-avail-pane" hidden>
         <div class="prod-pane-head">
           <strong>Chain availability</strong> <span id="rx-avail-count" class="muted"></span>
@@ -728,6 +742,10 @@
         </div>
         <p id="rx-avail-status" class="muted small"></p>
         <div id="rx-avail"></div>
+      </div>
+      <div id="rx-compare-pane" class="cmp-pane" hidden>
+        <div class="prod-pane-head"><strong>Compare recipes</strong> <span class="muted">— read-only chains, side by side</span></div>
+        <div id="rx-compare" class="cmp-grid"></div>
       </div>
     </section>
 
@@ -1515,6 +1533,8 @@
   <script src="stockpile.js"></script>
   <script src="doctrine-stock.js"></script>
   <script src="module-sorter.js"></script>
+  <script src="planner-memory.js"></script>
+  <script src="chain-flow.js"></script>
   <script src="production.js"></script>
   <script src="reactions.js"></script>
   <script src="production-favourites.js"></script>

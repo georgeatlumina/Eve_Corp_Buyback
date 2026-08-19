@@ -1248,6 +1248,16 @@ body.liq-full main { max-width: none; }
 .pib-node-hi { border-color: #4a8; box-shadow: 0 0 0 1px #2f6b4d inset; }
 .pib-flow-focus .pib-flow-lines path { stroke: #ffffff1f; }
 .pib-flow-lines path.pib-line-hi { stroke: #6fd0a0; stroke-width: 2.25; }
+/* Production/Reaction interactive chain flow (reuses .pib-flow/.pib-node) */
+.cf-pane { margin-top: 1em; }
+.cf-wrap { overflow-x: auto; padding: 0.5em 0.2em; }
+.cf-name { display: flex; align-items: center; gap: 0.35em; font-size: 0.82em; color: #dfe; margin-bottom: 0.25em; min-width: 0; }
+.cf-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-icon { width: 20px; height: 20px; flex: 0 0 auto; }
+.pib-node.cf-node { width: 168px; }
+.pib-node-row .cf-q { flex: 1 1 auto; min-width: 0; background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.15em 0.3em; text-align: right; font-variant-numeric: tabular-nums; }
+.pib-node.cf-node .cf-q { cursor: text; }
+.cf-node.cf-hi-root { border-color: #6fd0a0; box-shadow: 0 0 0 1px #6fd0a0 inset; }
 
 /* PI Builder — planet optimizer */
 .pib-opt { margin-top: 0.9em; padding-top: 0.8em; border-top: 1px solid #263039; }
@@ -1628,6 +1638,10 @@ body.popout-calc .pib-calc > summary { display: none; }
 .prod-toggle { background: transparent; color: #7fb3d5; border: 1px solid #3a4a55; border-radius: 4px; padding: 0.05em 0.5em; font-size: 0.78em; cursor: pointer; opacity: 0.55; transition: opacity 0.1s, background 0.1s; }
 .prod-table tr:hover .prod-toggle { opacity: 1; }
 .prod-toggle:hover { background: #2a3a45; opacity: 1; }
+/* The "move to Shopping list" (buy) action is visible by default, not just on hover. */
+.prod-toggle.prod-tobuy { opacity: 0.92; white-space: nowrap; color: #cfe; border-color: #3a5a7a; }
+.prod-table tr:hover .prod-toggle.prod-tobuy { opacity: 1; }
+.prod-toggle.prod-tobuy:hover { background: #2f4a66; }
 /* Fitting — module grouping */
 .fit-count { font-size: 0.82em; color: #6fd0a0; font-weight: 700; flex: 0 0 auto; }
 .fit-grp-btn { background: none; border: 1px solid #35505c; color: #7f93a0; border-radius: 3px; cursor: pointer; font-size: 0.8em; padding: 0 0.25em; flex: 0 0 auto; line-height: 1.4; }
@@ -1689,6 +1703,36 @@ body.popout-calc .pib-calc > summary { display: none; }
 .rx-tl-head { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; padding: 0.2em 0.3em 0.4em; border-bottom: 1px solid #2a2a2a; margin-bottom: 0.3em; }
 .rx-tl-stage { font-weight: 600; }
 .rx-tl-arrow { display: flex; align-items: center; color: #6a8; font-size: 1.4em; padding: 0 0.1em; }
+
+/* Planner memory bank (Production + Reaction planners) */
+.pmem-bar { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; margin: 0.4em 0 0.8em; }
+.pmem-title { font-weight: 600; font-size: 0.85em; }
+.pmem-slots { display: flex; gap: 0.3em; flex-wrap: wrap; }
+.pmem-slot { position: relative; display: inline-flex; align-items: center; gap: 0.35em; min-width: 2.2em; max-width: 12em; padding: 0.25em 0.5em; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 5px; cursor: pointer; font-size: 0.82em; }
+.pmem-slot.pmem-empty { color: #777; border-style: dashed; cursor: default; }
+.pmem-slot.pmem-filled:hover { background: #234a3a; border-color: #3fa87a; }
+.pmem-num { color: #888; font-variant-numeric: tabular-nums; }
+.pmem-icon { width: 22px; height: 22px; flex: 0 0 auto; }
+.pmem-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmem-actions { display: none; align-items: center; gap: 0.1em; margin-left: 0.2em; }
+.pmem-slot:hover .pmem-actions { display: inline-flex; }
+.pmem-act { background: transparent; border: 0; color: #cfe; cursor: pointer; font-size: 0.9em; padding: 0 0.15em; line-height: 1; }
+.pmem-act:hover { color: #fff; }
+.pmem-reset { font-size: 0.8em; padding: 0.25em 0.6em; }
+.pmem-slot.pmem-active { border-color: #4a8; color: #cfffe6; background: #1d3a2c; animation: pmemPulse 1.8s ease-in-out infinite; }
+@keyframes pmemPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(68, 170, 136, 0.55); }
+  50% { box-shadow: 0 0 10px 3px rgba(68, 170, 136, 0.85); }
+}
+.pmem-slot.pmem-compare-sel { outline: 2px solid #6cf; outline-offset: 1px; }
+.pmem-compare.pmem-on { background: #234a6a; color: #cfe; }
+/* Compare panel — read-only recipe chains side by side */
+.cmp-pane { margin-top: 1em; }
+.cmp-grid { display: flex; gap: 0.6em; overflow-x: auto; align-items: flex-start; padding-bottom: 0.5em; }
+.cmp-card { flex: 0 0 340px; max-height: 60vh; overflow: auto; border: 1px solid #333; border-radius: 6px; background: #1a1a1a; padding: 0.5em; }
+.cmp-head { display: flex; align-items: center; gap: 0.4em; padding-bottom: 0.4em; border-bottom: 1px solid #2a2a2a; margin-bottom: 0.4em; position: sticky; top: 0; background: #1a1a1a; }
+.cmp-icon { width: 24px; height: 24px; flex: 0 0 auto; }
+.cmp-cost { margin-bottom: 0.4em; }
 .prod-act-buy { color: #d0a24a; }
 .prod-act-raw { color: #8a9a8f; }
 
