@@ -4,6 +4,16 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.6.1 — dedicated Inventory Characters auth
+
+- New **Inventory Characters** section on the Auth tab: authorize alts **just** for reading their
+  assets (`esi-assets.read_assets.v1` only) — up to **24**, fully isolated from your main
+  characters' scopes. They power the **auto inventory search** on the Production & Reaction planners
+  (Auto-detect stock + node availability) and the **My Assets** tab, without re-scoping your main /
+  PI / fitting characters. Use *Add inventory character* to log in the next one.
+
+---
+
 ## v3.6.0 — Planner memory bank & interactive chain calculator
 
 ### Memory bank — Production & Reaction planners
