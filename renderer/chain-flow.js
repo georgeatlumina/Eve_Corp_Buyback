@@ -75,7 +75,7 @@
       flow.querySelectorAll('.pib-node-hi').forEach((n) => n.classList.remove('pib-node-hi'));
       flow.querySelectorAll('.cf-hi-root').forEach((n) => n.classList.remove('cf-hi-root'));
       flow.querySelectorAll('.pib-line-hi').forEach((p) => p.classList.remove('pib-line-hi'));
-      if (already) return; // toggle off
+      if (already) { if (container._cfSelect) container._cfSelect(null); return; }
       const paths = [...flow.querySelectorAll('.pib-flow-lines path')];
       const set = new Set([node.dataset.tid]);
       const step = (x, up) => {
@@ -91,12 +91,14 @@
       flow.querySelectorAll('.cf-node').forEach((n) => n.classList.toggle('pib-node-hi', set.has(n.dataset.tid)));
       node.classList.add('cf-hi-root');
       flow.querySelectorAll('.pib-flow-lines path').forEach((p) => p.classList.toggle('pib-line-hi', set.has(p.dataset.src) && set.has(p.dataset.dst)));
+      if (container._cfSelect) container._cfSelect(node.dataset.tid);
     });
   }
 
-  function ChainFlow(container, tree) {
+  function ChainFlow(container, tree, opts) {
     if (!container) return null;
     wire(container);
+    container._cfSelect = (opts && opts.onSelect) || null;
     const { nodes, edges } = build(tree);
     if (!nodes.length) { container.innerHTML = '<p class="muted">Run Analyze to see the chain.</p>'; return null; }
     const maxTier = nodes.reduce((m, n) => Math.max(m, n.tier), 0);
@@ -146,6 +148,61 @@
     drawLines();
     return { redraw: drawLines };
   }
+
+  // ---- Node blow-up detail panel ----
+  // ctx: { assetsTotals:{tid:owned}, isBuy(tid), onToggleBuy(tid), runsFor(tid),
+  //        nameFor(tid) }. Renders inputs/outputs, the blueprint name (copyable),
+  //        availability colouring (green full / yellow partial / red missing),
+  //        and a build<->buy toggle that the planner re-plans from.
+  window.renderNodeDetail = async function (container, typeId, ctx) {
+    if (!container) return;
+    if (typeId == null) { container.innerHTML = ''; container.hidden = true; return; }
+    container.hidden = false;
+    container.innerHTML = '<p class="muted">Loading recipe…</p>';
+    let r;
+    try {
+      const res = await fetch(`${API}/api/industry/recipe/${typeId}`);
+      if (res.status === 404) {
+        const nm = ctx && ctx.nameFor ? ctx.nameFor(typeId) : `type ${typeId}`;
+        container.innerHTML = `<div class="cfd-head"><img class="cfd-icon" src="${IMG}/types/${typeId}/icon?size=32" onerror="this.style.display='none'"><strong>${esc(nm)}</strong> <span class="muted">— raw material (bought; no recipe)</span></div>`;
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      r = await res.json();
+    } catch (e) {
+      container.innerHTML = `<p class="muted">Couldn't load recipe: ${esc(String(e.message || e))}</p>`;
+      return;
+    }
+    const runs = (ctx && ctx.runsFor && ctx.runsFor(typeId)) || 1;
+    const owned = (ctx && ctx.assetsTotals) || {};
+    const isBuy = !!(ctx && ctx.isBuy && ctx.isBuy(typeId));
+    const rows = r.materials.map((m) => {
+      const total = Math.ceil(m.per_run * runs);
+      const o = owned[m.type_id] || 0;
+      const cls = o <= 0 ? 'cfd-miss' : (o >= total ? 'cfd-have' : 'cfd-part');
+      return `<tr class="${cls}"><td><img class="cfd-icon" src="${IMG}/types/${m.type_id}/icon?size=32" onerror="this.style.display='none'">${esc(m.name)}</td>`
+        + `<td class="num">${m.per_run.toLocaleString('en-US')}/run</td><td class="num">${total.toLocaleString('en-US')}</td>`
+        + `<td class="num muted">${o ? 'have ' + o.toLocaleString('en-US') : '—'}</td></tr>`;
+    }).join('');
+    container.innerHTML = `
+      <div class="cfd-head">
+        <img class="cfd-icon" src="${IMG}/types/${r.type_id}/icon?size=32" onerror="this.style.display='none'">
+        <strong>${esc(r.name)}</strong> <span class="cfd-act">${esc(r.activity)}</span>
+        <span class="muted">· ${runs.toLocaleString('en-US')} run(s) → ${(r.output_qty * runs).toLocaleString('en-US')} produced (${r.output_qty}/run)</span>
+      </div>
+      <div class="cfd-bp">
+        <span class="muted">Recipe:</span>
+        <button type="button" class="cfd-copy" data-copy="${esc(r.blueprint_name)}" title="Copy the blueprint/formula name to paste in the in-game market/search">📋 ${esc(r.blueprint_name)}</button>
+        ${ctx && ctx.onToggleBuy ? `<button type="button" class="cfd-buytoggle secondary" data-tid="${r.type_id}">${isBuy ? '↩ Build instead' : '🛒 Buy instead → shopping list'}</button>` : ''}
+      </div>
+      <table class="cfd-mats"><thead><tr><th>Input</th><th class="num">Per run</th><th class="num">Total needed</th><th class="num">On hand</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted small cfd-legend"><span class="cfd-have">green = enough</span> · <span class="cfd-part">yellow = partial</span> · <span class="cfd-miss">red = missing</span> — from your assets.</p>`;
+    container.querySelector('.cfd-copy')?.addEventListener('click', (e) => {
+      const t = e.currentTarget.getAttribute('data-copy');
+      navigator.clipboard?.writeText(t).then(() => { e.currentTarget.textContent = '✓ Copied'; }).catch(() => {});
+    });
+    container.querySelector('.cfd-buytoggle')?.addEventListener('click', () => { if (ctx && ctx.onToggleBuy) ctx.onToggleBuy(typeId); });
+  };
 
   window.ChainFlow = ChainFlow;
 })();

@@ -293,13 +293,33 @@
     renderAvailability();
   }
 
+  let assetTotals = null;
+  async function nodeSelect(tid) {
+    const el = $('#rx-node-detail');
+    if (!el || typeof window.renderNodeDetail !== 'function') return;
+    if (tid == null) { window.renderNodeDetail(el, null); return; }
+    if (assetTotals === null && typeof window.assetTotalsByType === 'function') {
+      try { assetTotals = (await window.assetTotalsByType()).totals || {}; } catch (_) { assetTotals = {}; }
+    }
+    const jobFor = (t) => (state.last && state.last.jobs || []).find((x) => x.type_id === Number(t));
+    window.renderNodeDetail(el, Number(tid), {
+      assetsTotals: assetTotals || {},
+      isBuy: (t) => state.buyIds.has(Number(t)),
+      onToggleBuy: (t) => setBuild(Number(t), !state.buyIds.has(Number(t))),
+      runsFor: (t) => { const j = jobFor(t); return j ? j.runs : 1; },
+      nameFor: (t) => { const j = jobFor(t); return j ? j.name : `type ${t}`; },
+    });
+  }
+
   function renderFlow(d) {
     const pane = $('#rx-flow-pane');
     const wrap = $('#rx-flow');
     if (!pane || !wrap) return;
+    const detail = $('#rx-node-detail');
+    if (detail) { detail.hidden = true; detail.innerHTML = ''; } // fresh plan → close the blow-up
     if (!(d.tree || []).length || typeof ChainFlow !== 'function') { pane.hidden = true; return; }
     pane.hidden = false;
-    state.flow = ChainFlow(wrap, d.tree);
+    state.flow = ChainFlow(wrap, d.tree, { onSelect: nodeSelect });
   }
 
   // ---- Catalog browser (all reaction recipes, grouped) ----

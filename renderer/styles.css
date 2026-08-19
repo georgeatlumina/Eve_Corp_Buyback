@@ -1258,6 +1258,25 @@ body.liq-full main { max-width: none; }
 .pib-node-row .cf-q { flex: 1 1 auto; min-width: 0; background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.15em 0.3em; text-align: right; font-variant-numeric: tabular-nums; }
 .pib-node.cf-node .cf-q { cursor: text; }
 .cf-node.cf-hi-root { border-color: #6fd0a0; box-shadow: 0 0 0 1px #6fd0a0 inset; }
+/* Node blow-up detail panel */
+.cfd-panel { margin-top: 0.7em; border: 1px solid #333; border-radius: 6px; background: #16181c; padding: 0.6em 0.8em; }
+.cfd-panel[hidden] { display: none; }
+.cfd-head { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; margin-bottom: 0.4em; }
+.cfd-act { background: #223; color: #9cf; border-radius: 3px; padding: 0 0.4em; font-size: 0.75em; }
+.cfd-bp { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; margin-bottom: 0.5em; }
+.cfd-copy { background: #23303a; color: #cfe; border: 1px solid #3a5a7a; border-radius: 4px; padding: 0.2em 0.6em; cursor: pointer; }
+.cfd-copy:hover { background: #2f4a66; }
+.cfd-buytoggle { font-size: 0.85em; padding: 0.2em 0.6em; }
+.cfd-icon { width: 20px; height: 20px; vertical-align: middle; margin-right: 0.35em; }
+.cfd-mats { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+.cfd-mats th, .cfd-mats td { text-align: left; padding: 0.2em 0.5em; border-bottom: 1px solid #242424; }
+.cfd-mats th.num, .cfd-mats td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.cfd-mats tr.cfd-have { background: rgba(31, 120, 70, 0.16); }
+.cfd-mats tr.cfd-part { background: rgba(200, 160, 40, 0.16); }
+.cfd-mats tr.cfd-miss { background: rgba(150, 40, 60, 0.16); }
+.cfd-legend .cfd-have { color: #6fd08a; }
+.cfd-legend .cfd-part { color: #e6c84a; }
+.cfd-legend .cfd-miss { color: #e0708a; }
 
 /* PI Builder — planet optimizer */
 .pib-opt { margin-top: 0.9em; padding-top: 0.8em; border-top: 1px solid #263039; }

@@ -838,6 +838,39 @@ def reaction_recipes():
     return {'groups': groups, 'total': sum(len(g['items']) for g in groups)}
 
 
+@app.get('/api/industry/recipe/{type_id}')
+def industry_recipe(type_id: int):
+    """Per-item recipe detail for the chain-flow node blow-up: activity,
+    output-per-run, the blueprint/reaction-formula name (to copy in-game), and
+    the input materials (name + per-run quantity)."""
+    data = industry.load_industry_data()
+    r = data['recipes'].get(int(type_id))
+    if not r:
+        raise HTTPException(404, 'No manufacturing/reaction recipe for that item.')
+    ua = get_user_agent()
+    bp_id = r.get('blueprint_type_id')
+    bp_name = None
+    if bp_id:
+        try:
+            bp_name = resolve_names([bp_id], ua).get(bp_id)
+        except Exception:  # noqa: BLE001 — name is best-effort
+            bp_name = None
+    if not bp_name:
+        suffix = 'Reaction Formula' if r.get('activity') == industry.REACTION else 'Blueprint'
+        bp_name = f'{industry.type_name(int(type_id), data)} {suffix}'
+    materials = [{'type_id': m[0], 'name': industry.type_name(m[0], data), 'per_run': m[1]}
+                 for m in (r.get('materials') or [])]
+    return {
+        'type_id': int(type_id),
+        'name': industry.type_name(int(type_id), data),
+        'activity': r.get('activity'),
+        'output_qty': r.get('output_qty') or 1,
+        'blueprint_type_id': bp_id,
+        'blueprint_name': bp_name,
+        'materials': materials,
+    }
+
+
 def _industry_resolve_stock(stock_field, stock_text, data):
     stock = {}
     for k, v in (stock_field or {}).items():
