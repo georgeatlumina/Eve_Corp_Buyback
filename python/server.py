@@ -1019,6 +1019,9 @@ def industry_plan(req: IndustryPlanRequest):
     result['config'] = {'me': req.me, 'structure_material_mult': req.structure_material_mult,
                         'reaction_material_mult': req.reaction_material_mult,
                         'cost_index': req.cost_index, 'tax': req.tax}
+    # Resolved on-hand stock (type_id -> qty) so the chain-flow node blow-up can
+    # colour availability from the stock box as well as ESI assets.
+    result['stock_resolved'] = {str(k): v for k, v in stock.items()}
     return result
 
 

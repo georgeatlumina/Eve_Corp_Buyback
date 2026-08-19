@@ -62,6 +62,12 @@
         if (q !== elm) q.value = Math.round(qty);
         if (q.nextElementSibling) q.nextElementSibling.textContent = runLabel(q.dataset.activity, qty, parseFloat(q.dataset.out) || 1);
       });
+      // Push the rescale through to the actual plan (tree/jobs/shopping list),
+      // debounced so it re-plans once the user stops typing rather than per key.
+      if (container._cfRescale && Math.abs(scale - 1) > 1e-6) {
+        clearTimeout(container._cfRescaleTimer);
+        container._cfRescaleTimer = setTimeout(() => container._cfRescale(scale), 700);
+      }
     });
 
     // Click a node -> highlight its connected sub-chain (upstream + downstream).
@@ -99,6 +105,7 @@
     if (!container) return null;
     wire(container);
     container._cfSelect = (opts && opts.onSelect) || null;
+    container._cfRescale = (opts && opts.onRescale) || null;
     const { nodes, edges } = build(tree);
     if (!nodes.length) { container.innerHTML = '<p class="muted">Run Analyze to see the chain.</p>'; return null; }
     const maxTier = nodes.reduce((m, n) => Math.max(m, n.tier), 0);
@@ -194,6 +201,7 @@
         <span class="muted">Recipe:</span>
         <button type="button" class="cfd-copy" data-copy="${esc(r.blueprint_name)}" title="Copy the blueprint/formula name to paste in the in-game market/search">📋 ${esc(r.blueprint_name)}</button>
         ${ctx && ctx.onToggleBuy ? `<button type="button" class="cfd-buytoggle secondary" data-tid="${r.type_id}">${isBuy ? '↩ Build instead' : '🛒 Buy instead → shopping list'}</button>` : ''}
+        ${ctx && ctx.onMultiply ? '<span class="cfd-mult muted">Scale chain: <button type="button" class="cfd-mbtn" data-f="2">×2</button> <button type="button" class="cfd-mbtn" data-f="5">×5</button> <button type="button" class="cfd-mbtn" data-f="10">×10</button></span>' : ''}
       </div>
       <table class="cfd-mats"><thead><tr><th>Input</th><th class="num">Per run</th><th class="num">Total needed</th><th class="num">On hand</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="muted small cfd-legend"><span class="cfd-have">green = enough</span> · <span class="cfd-part">yellow = partial</span> · <span class="cfd-miss">red = missing</span> — from your assets.</p>`;
@@ -202,6 +210,7 @@
       navigator.clipboard?.writeText(t).then(() => { e.currentTarget.textContent = '✓ Copied'; }).catch(() => {});
     });
     container.querySelector('.cfd-buytoggle')?.addEventListener('click', () => { if (ctx && ctx.onToggleBuy) ctx.onToggleBuy(typeId); });
+    container.querySelectorAll('.cfd-mbtn').forEach((b) => b.addEventListener('click', () => { if (ctx && ctx.onMultiply) ctx.onMultiply(parseFloat(b.dataset.f)); }));
   };
 
   window.ChainFlow = ChainFlow;

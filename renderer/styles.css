@@ -1277,6 +1277,9 @@ body.liq-full main { max-width: none; }
 .cfd-legend .cfd-have { color: #6fd08a; }
 .cfd-legend .cfd-part { color: #e6c84a; }
 .cfd-legend .cfd-miss { color: #e0708a; }
+.cfd-mult { display: inline-flex; align-items: center; gap: 0.25em; }
+.cfd-mbtn { background: #23303a; color: #cfe; border: 1px solid #3a5a7a; border-radius: 4px; padding: 0.1em 0.45em; cursor: pointer; font-size: 0.85em; }
+.cfd-mbtn:hover { background: #2f4a66; }
 
 /* PI Builder — planet optimizer */
 .pib-opt { margin-top: 0.9em; padding-top: 0.8em; border-top: 1px solid #263039; }

@@ -296,6 +296,22 @@
   }
 
   let assetTotals = null;
+
+  // Scale every target by `scale` and re-plan — used by the chain-flow node
+  // quantity edits and the ×N multiply buttons, so a change flows through the
+  // whole page (tree, jobs, shopping list, flow).
+  function scaleTargetsAndAnalyze(scale) {
+    if (!(state.last && (state.last.targets || []).length)) return;
+    if (!(scale > 0) || Math.abs(scale - 1) < 1e-6) return;
+    const text = state.last.targets
+      .filter((t) => t.type_id && t.qty)
+      .map((t) => `${t.name} x${Math.max(1, Math.round(t.qty * scale))}`)
+      .join('\n');
+    if (!text) return;
+    if ($('#prod-targets')) $('#prod-targets').value = text;
+    analyze();
+  }
+
   async function nodeSelect(tid) {
     const el = $('#prod-node-detail');
     if (!el || typeof window.renderNodeDetail !== 'function') return;
@@ -303,11 +319,16 @@
     if (assetTotals === null && typeof window.assetTotalsByType === 'function') {
       try { assetTotals = (await window.assetTotalsByType()).totals || {}; } catch (_) { assetTotals = {}; }
     }
+    // Availability = ESI assets + the on-hand-stock box (resolved server-side).
+    const owned = Object.assign({}, assetTotals || {});
+    const stock = (state.last && state.last.stock_resolved) || {};
+    for (const k in stock) owned[k] = (Number(owned[k]) || 0) + Number(stock[k]);
     const jobFor = (t) => (state.last && state.last.jobs || []).find((x) => x.type_id === Number(t));
     window.renderNodeDetail(el, Number(tid), {
-      assetsTotals: assetTotals || {},
+      assetsTotals: owned,
       isBuy: (t) => state.buyIds.has(Number(t)),
       onToggleBuy: (t) => setBuild(Number(t), !state.buyIds.has(Number(t))),
+      onMultiply: (f) => scaleTargetsAndAnalyze(f),
       runsFor: (t) => { const j = jobFor(t); return j ? j.runs : 1; },
       nameFor: (t) => { const j = jobFor(t); return j ? j.name : `type ${t}`; },
     });
@@ -321,7 +342,7 @@
     if (detail) { detail.hidden = true; detail.innerHTML = ''; } // fresh plan → close the blow-up
     if (!(d.tree || []).length || typeof ChainFlow !== 'function') { pane.hidden = true; return; }
     pane.hidden = false;
-    state.flow = ChainFlow(wrap, d.tree, { onSelect: nodeSelect });
+    state.flow = ChainFlow(wrap, d.tree, { onSelect: nodeSelect, onRescale: scaleTargetsAndAnalyze });
   }
 
   // In-game Multibuy accepts one "Name xN" per line — this is that exact format,
