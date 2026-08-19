@@ -1,28 +1,29 @@
-# v3.5.0 — My Assets tab, reactions availability & auto-detect
+# v3.6.0 — Planner memory bank & interactive chain calculator
 
-## My Assets tab (new) — General group
-See, search and filter every character's assets from ESI. A **toon dropdown** (mains **and** PI
-toons), an **All connected toons** checkbox to aggregate everyone, **item search**, **location
-filter**, and **group by location**. Item locations resolve to real **station / structure names**.
+## Memory bank — Production & Reaction planners
+- **10 memory slots** per planner: record / recall / rename / clear, an auto label + product icon,
+  and a **pulsing glow** on the active slot. Recalling over unsaved work offers to stash it first.
+- **Auto-persistence**: everything you type is saved and **restored when you reopen the app** — no
+  more losing a recipe on close. **Reset** clears the page (your saved memories are kept).
+- **Pop out** any memory into its own window (several at once), and an in-tab **Compare** mode shows
+  recipe chains read-only, side by side.
 
-## Reactions — assets-aware
-- **🔍 Auto-detect stock** — fills the on-hand stock box with everything in the reaction chain you
-  already own (across all connected toons), then re-analyzes.
-- **Chain availability** panel: **group by Stage / Location / both / flat**, and toggle a
-  **Timeline** view where each stage (raw inputs → product) shows **available vs missing** at a
-  glance.
-- **Per-stage "Copy missing"** shopping-list buttons, alongside the whole-chain list.
+## Interactive Chain calculator — Production & Reaction
+A node graph next to each tree: columns by tier (raw → product) with connector lines, and **every
+quantity is editable — change any node and the whole page re-plans** (tree, jobs, shopping list).
+- **Click a node** to trace its sub-chain and open a **blow-up detail**: the **blueprint /
+  reaction-formula name to copy in-game**, the **inputs** (per-run + total) with **availability
+  colouring** — green = enough, yellow = partial, red = missing (from your assets **and** on-hand
+  stock) — the output, a **Build ↔ Buy** toggle, and **×2 / ×5 / ×10** multiply.
 
-## Ore Buyback
-- Structure locations now resolve using **every authenticated character** that can read structures
-  (not just one), with a hint prompting a re-auth when none can — so far fewer locations fall back
-  to raw IDs.
-
-## ⚠️ Upgrade note — re-auth required
-These features use two ESI scopes — **`esi-assets.read_assets.v1`** (new) and
-**`esi-universe.read_structures.v1`**. Enable both in your **EVE developer application**, then
-**re-authenticate your characters** on the Auth tab to grant them. Until then, assets / structure
-names won't load, and the app tells you which toons still need a re-auth.
+## Quality-of-life & fixes
+- **Login / Re-login** now reliably opens the EVE SSO page (the packaged app's login previously
+  appeared to do nothing).
+- **Analyze** errors are explicit — a network failure names the backend / port instead of a bare
+  "failed to fetch".
+- The jobs **"buy"** action reads **"→ Shopping list"** and is visible by default.
+- **Larger default window** (1280×860, clamped to your screen, centered) for a comfortable
+  at-least-13-inch default.
 
 ---
 
