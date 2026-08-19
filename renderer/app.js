@@ -1057,6 +1057,24 @@ function renderFitAuthSection(container, info) {
     <div class="auth-pi-add-row">${add} ${count}</div>`;
 }
 
+function renderAssetAuthSection(container, info) {
+  const authed = info.filter((s) => s.authenticated);
+  const free = info.find((s) => !s.authenticated);
+  const cards = authed.map((s) => {
+    const err = s.error ? `<span class="auth-pi-err" title="${escapeHtml(s.error)}">⚠</span>` : '';
+    return `<div class="auth-pi-card" data-slot="${s.slot}">
+      <span class="auth-pi-name">${escapeHtml(s.character || s.slot)}${err}</span>
+      <button type="button" class="auth-slot-logout linklike auth-pi-x" data-slot="${s.slot}" title="Log out">✕</button>
+    </div>`;
+  }).join('');
+  const count = `<span class="muted auth-pi-count">${authed.length}/${info.length} authorized</span>`;
+  const add = free
+    ? `<button type="button" class="auth-slot-login auth-pi-add" data-slot="${free.slot}">+ Add inventory character</button>`
+    : `<span class="muted">All ${info.length} inventory slots in use.</span>`;
+  container.innerHTML = `<div class="auth-pi-grid">${cards || '<span class="muted">No inventory characters yet.</span>'}</div>
+    <div class="auth-pi-add-row">${add} ${count}</div>`;
+}
+
 async function refreshAuthStatus() {
   const container = $('#auth-slots');
   if (container) container.innerHTML = '<p class="muted">Checking slots…</p>';
@@ -1095,6 +1113,16 @@ async function refreshAuthStatus() {
       const fr = await fetch(`${API}/api/auth/fit-slots`);
       const fitInfo = fr.ok ? ((await fr.json()).slots || []) : [];
       renderFitAuthSection(fitContainer, fitInfo);
+    } catch (_) { /* leave as-is on failure */ }
+  }
+  // Inventory Characters — a separate, minimal-scope auth just for reading assets
+  // (powers the planners' auto-inventory-search + My Assets).
+  const assetContainer = $('#auth-asset-slots');
+  if (assetContainer) {
+    try {
+      const ar = await fetch(`${API}/api/auth/asset-slots`);
+      const assetInfo = ar.ok ? ((await ar.json()).slots || []) : [];
+      renderAssetAuthSection(assetContainer, assetInfo);
     } catch (_) { /* leave as-is on failure */ }
   }
 

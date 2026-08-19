@@ -37,7 +37,12 @@ FIT_SLOTS = tuple(f'fit{i}' for i in range(1, 13))
 FIT_READ_SCOPE = 'esi-fittings.read_fittings.v1'
 FIT_WRITE_SCOPE = 'esi-fittings.write_fittings.v1'
 FIT_SCOPES = ('publicData', FIT_READ_SCOPE, FIT_WRITE_SCOPE, 'esi-assets.read_assets.v1')
-ALL_SLOTS = VALID_SLOTS + PI_SLOTS + FIT_SLOTS
+# Dedicated inventory slots: authorize alts *just* for reading assets, so the
+# Production/Reaction planners' auto-inventory-search can see their stock without
+# re-scoping the main characters. Up to 24.
+ASSET_SLOTS = tuple(f'asset{i}' for i in range(1, 25))
+ASSET_SCOPES = ('publicData', 'esi-assets.read_assets.v1')
+ALL_SLOTS = VALID_SLOTS + PI_SLOTS + FIT_SLOTS + ASSET_SLOTS
 
 
 def get_app_credentials():
@@ -155,6 +160,12 @@ def list_authenticated_fit_slots():
     """Return authenticated dedicated fitting slot names."""
     slots = _load_all_slots()
     return [s for s in FIT_SLOTS if s in slots]
+
+
+def list_authenticated_asset_slots():
+    """Return authenticated dedicated inventory (asset) slot names."""
+    slots = _load_all_slots()
+    return [s for s in ASSET_SLOTS if s in slots]
 
 
 def get_valid_access_token(client_id, secret_key, user_agent, slot=DEFAULT_SLOT):

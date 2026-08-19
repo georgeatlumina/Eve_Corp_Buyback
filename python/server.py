@@ -28,6 +28,8 @@ from auth import (
     PI_SCOPES,
     FIT_SLOTS,
     FIT_SCOPES,
+    ASSET_SLOTS,
+    ASSET_SCOPES,
     FIT_READ_SCOPE,
     FIT_WRITE_SCOPE,
     build_authorize_url,
@@ -41,6 +43,7 @@ from auth import (
     list_authenticated_slots,
     list_authenticated_pi_slots,
     list_authenticated_fit_slots,
+    list_authenticated_asset_slots,
     load_cached_tokens,
     refresh_access_token,
     save_cached_tokens,
@@ -145,8 +148,8 @@ _auth_lock = threading.Lock()
 
 def _normalize_slot(slot: Optional[str]) -> str:
     s = slot or DEFAULT_SLOT
-    if s not in VALID_SLOTS and s not in PI_SLOTS and s not in FIT_SLOTS:
-        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS + PI_SLOTS + FIT_SLOTS}')
+    if s not in VALID_SLOTS and s not in PI_SLOTS and s not in FIT_SLOTS and s not in ASSET_SLOTS:
+        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS + PI_SLOTS + FIT_SLOTS + ASSET_SLOTS}')
     return s
 
 
@@ -1462,6 +1465,8 @@ def auth_login(slot: Optional[str] = None):
         scopes = list(PI_SCOPES)
     elif slot_name in FIT_SLOTS:
         scopes = list(FIT_SCOPES)
+    elif slot_name in ASSET_SLOTS:
+        scopes = list(ASSET_SCOPES)
     else:
         scopes = cfg['scopes']
     state_token = secrets.token_urlsafe(32)
@@ -1486,6 +1491,13 @@ def auth_fit_slots():
 def auth_pi_slots():
     """Status for every PI slot — used by the Auth tab's PI Characters section."""
     return {'slots': [_slot_status(s) for s in PI_SLOTS]}
+
+
+@app.get('/api/auth/asset-slots')
+def auth_asset_slots():
+    """Status for every dedicated inventory slot — Auth tab's Inventory
+    Characters section (powers the planners' auto-inventory-search)."""
+    return {'slots': [_slot_status(s) for s in ASSET_SLOTS]}
 
 
 @app.post('/api/auth/logout')
@@ -1757,7 +1769,8 @@ def _connected_asset_slots():
     """[(kind, slot)] for every authenticated main / PI / fitting slot."""
     return ([('main', s) for s in list_authenticated_slots()]
             + [('pi', s) for s in list_authenticated_pi_slots()]
-            + [('fit', s) for s in list_authenticated_fit_slots()])
+            + [('fit', s) for s in list_authenticated_fit_slots()]
+            + [('inventory', s) for s in list_authenticated_asset_slots()])
 
 
 def _slot_identity(slot, ua):
