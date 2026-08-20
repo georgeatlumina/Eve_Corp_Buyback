@@ -1,10 +1,10 @@
-# v3.6.1 — dedicated Inventory Characters auth
+# v3.6.2 — pick which character the auto-inventory-search uses
 
-- New **Inventory Characters** section on the Auth tab: authorize alts **just** for reading their
-  assets (`esi-assets.read_assets.v1` only) — up to **24**, fully isolated from your main
-  characters' scopes. They power the **auto inventory search** on the Production & Reaction planners
-  (Auto-detect stock + node availability) and the **My Assets** tab, without re-scoping your main /
-  PI / fitting characters. Use *Add inventory character* to log in the next one.
+- The **Production** and **Reaction** planners get an **Inventory** dropdown listing **all connected
+  characters** (main / PI / fitting / inventory slots) plus **All connected toons**. The
+  **auto-inventory-search** — *Auto-detect stock* and the node **availability** colouring — now uses
+  the character you pick. The choice is **shared across both planners** and **remembered between app
+  restarts**.
 
 ---
 

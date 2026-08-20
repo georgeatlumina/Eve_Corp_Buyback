@@ -4,6 +4,16 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.6.2 — pick which character the auto-inventory-search uses
+
+- The **Production** and **Reaction** planners get an **Inventory** dropdown listing **all connected
+  characters** (main / PI / fitting / inventory slots) plus **All connected toons**. The
+  **auto-inventory-search** — *Auto-detect stock* and the node **availability** colouring — now uses
+  the character you pick. The choice is **shared across both planners** and **remembered between app
+  restarts**.
+
+---
+
 ## v3.6.1 — dedicated Inventory Characters auth
 
 - New **Inventory Characters** section on the Auth tab: authorize alts **just** for reading their
