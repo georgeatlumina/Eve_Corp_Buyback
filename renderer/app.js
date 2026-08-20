@@ -1075,6 +1075,36 @@ function renderAssetAuthSection(container, info) {
     <div class="auth-pi-add-row">${add} ${count}</div>`;
 }
 
+// Settings-page version picker: list released versions (from the sidecar's
+// GitHub-backed /api/releases) so users can switch to or roll back to any of
+// them. Selecting one hands the tag to main.js, which downloads that installer
+// and runs it (with its own confirm dialog).
+async function initVersionPicker() {
+  const sel = $('#app-version-select');
+  if (!sel) return;
+  let current = '';
+  try { current = (await window.api?.getMeta?.())?.version || ''; } catch (_) {}
+  let tags = [];
+  try {
+    const data = await (await fetch(`${API}/api/releases`)).json();
+    tags = (data.releases || []).map((r) => String(r.tag || '').replace(/^v/, '')).filter(Boolean);
+  } catch (_) { /* offline — just show the current version */ }
+  if (current && !tags.includes(current)) tags.unshift(current);
+  if (!tags.length && current) tags = [current];
+  sel.innerHTML = tags.map((t) => `<option value="${escapeHtml(t)}"${t === current ? ' selected' : ''}>v${escapeHtml(t)}${t === current ? ' (current)' : ''}</option>`).join('');
+  sel.value = current || (tags[0] || '');
+  const status = $('#app-version-status');
+  if (status) status.textContent = current ? `You're running v${current}. Pick another to switch / roll back.` : '';
+  if (!sel.dataset.wired) {
+    sel.dataset.wired = '1';
+    sel.addEventListener('change', () => {
+      const tag = sel.value;
+      sel.value = current; // main.js drives the actual switch via its own dialog
+      if (tag && tag !== current) window.api?.installVersion?.(tag);
+    });
+  }
+}
+
 async function refreshAuthStatus() {
   const container = $('#auth-slots');
   if (container) container.innerHTML = '<p class="muted">Checking slots…</p>';
@@ -1653,6 +1683,8 @@ document.addEventListener('click', async (e) => {
 
 checkBackend(); // surface an unreachable sidecar up front, not just on first write
 loadConfig().then(maybeAutoSyncQuotas);
+initVersionPicker();
+document.querySelector('.tab-btn[data-tab="config"]')?.addEventListener('click', initVersionPicker);
 refreshStockpileAccess();
 refreshIndyAccess();
 refreshAuthStatus();

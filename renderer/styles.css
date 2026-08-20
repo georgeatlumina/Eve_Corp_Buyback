@@ -1280,6 +1280,9 @@ body.liq-full main { max-width: none; }
 .cfd-mult { display: inline-flex; align-items: center; gap: 0.25em; }
 .cfd-mbtn { background: #23303a; color: #cfe; border: 1px solid #3a5a7a; border-radius: 4px; padding: 0.1em 0.45em; cursor: pointer; font-size: 0.85em; }
 .cfd-mbtn:hover { background: #2f4a66; }
+/* Settings-page app-version picker */
+.app-version-row { display: flex; align-items: center; gap: 0.8em; flex-wrap: wrap; margin-bottom: 1em; padding-bottom: 0.8em; border-bottom: 1px solid #2a2a2a; }
+.app-version-row select { background: #1c1c1c; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.3em 0.5em; }
 
 /* PI Builder — planet optimizer */
 .pib-opt { margin-top: 0.9em; padding-top: 0.8em; border-top: 1px solid #263039; }

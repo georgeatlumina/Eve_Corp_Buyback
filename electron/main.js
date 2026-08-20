@@ -53,6 +53,7 @@ ipcMain.handle('pop-out-tab', (_event, tab, opts) => {
   win.loadURL(`${fileUrl}${query}`);
 });
 ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
+ipcMain.handle('app:install-version', (_event, tag) => installVersion(tag));
 let pythonProcess = null;
 let mainWindow = null;
 let splashWindow = null;
@@ -551,6 +552,82 @@ async function checkForUpdate({ interactive = false } = {}) {
     // installer can't overwrite the locked sidecar.exe and the update silently
     // keeps the OLD sidecar (e.g. on the previous port). Kill the whole tree
     // first so the installer replaces every file, including the sidecar.
+    killOrphanSidecars();
+    await shell.openPath(destPath);
+    setTimeout(() => app.quit(), 500);
+  } else if (after.response === 1) {
+    shell.showItemInFolder(destPath);
+  }
+}
+
+// Install (or roll back to) a specific release by tag — powers the Settings
+// page's version picker. Same download+run flow as checkForUpdate, but for an
+// explicitly chosen version, which may be older than the one installed.
+async function installVersion(tag) {
+  const clean = String(tag || '').replace(/^v/, '');
+  if (!/^\d+\.\d+\.\d+$/.test(clean)) return;
+  if (!app.isPackaged) {
+    await dialog.showMessageBox(mainWindow || null, {
+      type: 'info', title: 'Version switch',
+      message: 'Running an unpackaged build — installing a specific version is disabled.',
+      detail: 'This only works in installed releases (DMG / NSIS / deb / rpm).',
+      buttons: ['OK'],
+    });
+    return;
+  }
+  const current = app.getVersion();
+  if (clean === current) return;
+  let release;
+  try {
+    release = await httpsGetJson(`https://api.github.com/repos/${UPDATE_REPO}/releases/tags/v${clean}`);
+  } catch (e) {
+    dialog.showErrorBox('Version lookup failed', `Couldn't fetch release v${clean}: ${e.message || e}`);
+    return;
+  }
+  const asset = pickPlatformAsset(release.assets || []);
+  if (!asset) {
+    await dialog.showMessageBox(mainWindow || null, {
+      type: 'info', title: 'No installer',
+      message: `v${clean} has no installer for your platform attached.`, buttons: ['OK'],
+    });
+    return;
+  }
+  const down = compareSemver(clean, current) < 0;
+  if (updateDialogOpen) return;
+  updateDialogOpen = true;
+  let confirm;
+  try {
+    confirm = await dialog.showMessageBox(mainWindow || null, {
+      type: 'warning',
+      title: down ? 'Roll back version' : 'Switch version',
+      message: `${down ? 'Roll back to' : 'Switch to'} version ${clean}?`,
+      detail: `You are running ${current}. This downloads ${asset.name} (~${Math.round((asset.size || 0) / 1024 / 1024)} MB) and runs the installer to replace your current install.`,
+      buttons: [down ? 'Download & roll back' : 'Download & install', 'Cancel'],
+      defaultId: 0, cancelId: 1,
+    });
+  } finally {
+    updateDialogOpen = false;
+  }
+  if (confirm.response !== 0) return;
+  const destPath = path.join(app.getPath('downloads'), asset.name);
+  try {
+    await downloadToFile(asset.browser_download_url, destPath);
+  } catch (e) {
+    dialog.showErrorBox('Download failed', String(e.message || e));
+    return;
+  }
+  const after = await dialog.showMessageBox(mainWindow || null, {
+    type: 'info', title: 'Downloaded',
+    message: `${asset.name} saved to your Downloads folder.`,
+    detail: process.platform === 'darwin'
+      ? 'Open the .dmg and drag the app into Applications, then re-launch.'
+      : process.platform === 'linux'
+        ? 'Install it with your package manager, then re-launch.'
+        : 'Run the installer to complete the switch. The app will close so the installer can replace it.',
+    buttons: ['Open & quit', 'Show in folder', 'Cancel'],
+    defaultId: 0, cancelId: 2,
+  });
+  if (after.response === 0) {
     killOrphanSidecars();
     await shell.openPath(destPath);
     setTimeout(() => app.quit(), 500);

@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   base: 'http://127.0.0.1:8766',
   getMeta: () => ipcRenderer.invoke('app:meta'),
   checkForUpdate: () => ipcRenderer.invoke('app:check-update'),
+  installVersion: (tag) => ipcRenderer.invoke('app:install-version', tag),
   openCalculator: () => ipcRenderer.invoke('open-calculator'),
   aaOpen: () => ipcRenderer.invoke('aa:open'),
   aaLogout: () => ipcRenderer.invoke('aa:logout'),
