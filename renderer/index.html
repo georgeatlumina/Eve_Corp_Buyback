@@ -585,6 +585,7 @@
           <option value="Dodixie">Dodixie</option>
           <option value="Rens">Rens</option>
         </select></label>
+        <label title="Which character's assets the node-availability check uses (remembered between restarts)">Inventory <select id="prod-assets-toon" class="assets-toon-sel"></select></label>
         <button id="prod-analyze" type="button">Analyze</button>
       </div>
       <p id="prod-status" class="muted"></p>
@@ -689,7 +690,8 @@
           <option value="Rens">Rens</option>
         </select></label>
         <button id="rx-browse" type="button" class="secondary">Browse reactions ▾</button>
-        <button id="rx-autodetect" type="button" class="secondary" title="Fill on-hand stock from your ESI assets — everything in this chain you already own, across all connected toons">🔍 Auto-detect stock</button>
+        <label title="Which character's assets the auto-inventory-search uses (remembered between restarts)">Inventory <select id="rx-assets-toon" class="assets-toon-sel"></select></label>
+        <button id="rx-autodetect" type="button" class="secondary" title="Fill on-hand stock from your ESI assets — everything in this chain you already own, from the selected inventory toon">🔍 Auto-detect stock</button>
         <button id="rx-analyze" type="button">Analyze</button>
       </div>
       <div id="rx-catalog" class="rx-catalog" hidden>

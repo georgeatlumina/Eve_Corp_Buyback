@@ -123,7 +123,7 @@
   // all connected toons (best-effort; empty on failure).
   async function assetTotalsByType() {
     try {
-      const data = await (await fetch(`${API}/api/assets?all=1`)).json();
+      const data = await (await fetch(`${API}/api/assets?${window.assetsQuery()}`)).json();
       const totals = {};
       for (const r of (data.assets || [])) totals[r.type_id] = (totals[r.type_id] || 0) + r.quantity;
       return { totals, unauthorized: data.unauthorized || [] };
@@ -132,6 +132,36 @@
     }
   }
   window.assetTotalsByType = assetTotalsByType;
+
+  // ---- Shared "which toon's inventory to use" preference (persisted) ----
+  // 'all' or a slot name (slot1 / pi3 / fit2 / asset1). Drives the planners'
+  // auto-inventory-search (Auto-detect stock + node availability).
+  const PREF_KEY = 'planner-assets-toon';
+  window.assetsPref = () => localStorage.getItem(PREF_KEY) || 'all';
+  window.assetsQuery = () => {
+    const v = window.assetsPref();
+    return v === 'all' ? 'all=1' : `slot=${encodeURIComponent(v)}`;
+  };
+  // Populate a <select> with all connected toons + "All connected toons", restore
+  // the saved choice, and persist + fire onChange when the user picks one.
+  window.populateAssetsToonSelect = async function (selectEl, onChange) {
+    if (!selectEl) return;
+    let toons = [];
+    try { toons = (await (await fetch(`${API}/api/assets/toons`)).json()).toons || []; } catch (_) { /* keep [] */ }
+    const cur = window.assetsPref();
+    selectEl.innerHTML = '<option value="all">All connected toons</option>'
+      + toons.map((t) => `<option value="${escapeHtml(t.slot)}">${escapeHtml(t.name)}${t.has_assets ? '' : ' — needs re-auth'}</option>`).join('');
+    selectEl.value = [...selectEl.options].some((o) => o.value === cur) ? cur : 'all';
+    if (!selectEl.dataset.wired) {
+      selectEl.dataset.wired = '1';
+      selectEl.addEventListener('change', () => {
+        localStorage.setItem(PREF_KEY, selectEl.value);
+        // Keep any other planner's selector in sync with the shared preference.
+        document.querySelectorAll('.assets-toon-sel').forEach((el) => { if (el !== selectEl) el.value = selectEl.value; });
+        if (onChange) onChange();
+      });
+    }
+  };
 
   let wired = false;
   function initTab() {

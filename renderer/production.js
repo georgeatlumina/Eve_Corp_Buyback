@@ -297,6 +297,14 @@
 
   let assetTotals = null;
 
+  // The inventory-toon dropdown changed → drop cached assets so the next node
+  // blow-up re-reads the selected character's stock.
+  function onToonChange() {
+    assetTotals = null;
+    const d = $('#prod-node-detail');
+    if (d) { d.hidden = true; d.innerHTML = ''; }
+  }
+
   // Scale every target by `scale` and re-plan — used by the chain-flow node
   // quantity edits and the ×N multiply buttons, so a change flows through the
   // whole page (tree, jobs, shopping list, flow).
@@ -439,6 +447,7 @@
     if (wired) return;
     wired = true;
     window.addEventListener('resize', () => { if (state.flow) state.flow.redraw(); });
+    if (typeof window.populateAssetsToonSelect === 'function') window.populateAssetsToonSelect($('#prod-assets-toon'), onToonChange);
     $('#prod-analyze')?.addEventListener('click', analyze);
     $('#prod-copy-raw')?.addEventListener('click', copyRaw);
     $('#prod-dl-raw')?.addEventListener('click', downloadRaw);

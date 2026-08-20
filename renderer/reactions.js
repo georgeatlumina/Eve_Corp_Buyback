@@ -295,6 +295,16 @@
 
   let assetTotals = null;
 
+  // The inventory-toon dropdown changed → drop cached assets and refresh anything
+  // that used them (node availability + the chain availability panel).
+  function onToonChange() {
+    assetTotals = null;
+    state.assets = null;
+    const d = $('#rx-node-detail');
+    if (d) { d.hidden = true; d.innerHTML = ''; }
+    if (state.last) ensureAssets(true).then(renderAvailability);
+  }
+
   // Scale every target by `scale` and re-plan — used by the chain-flow node
   // quantity edits and the ×N multiply buttons, so a change flows through the
   // whole page (tree, jobs, shopping list, flow).
@@ -437,7 +447,7 @@
     const st = $('#rx-avail-status');
     if (st) st.textContent = 'Loading your assets…';
     try {
-      const data = await (await fetch(`${API}/api/assets?all=1`)).json();
+      const data = await (await fetch(`${API}/api/assets?${window.assetsQuery ? window.assetsQuery() : 'all=1'}`)).json();
       const byType = {};
       for (const r of (data.assets || [])) {
         const t = byType[r.type_id] || (byType[r.type_id] = { owned: 0, locations: [] });
@@ -721,6 +731,7 @@
     window.addEventListener('resize', () => { if (state.flow) state.flow.redraw(); });
     applyPreset();
     if (mem) mem.init();
+    if (typeof window.populateAssetsToonSelect === 'function') window.populateAssetsToonSelect($('#rx-assets-toon'), onToonChange);
     $('#rx-analyze')?.addEventListener('click', analyze);
     $('#rx-browse')?.addEventListener('click', toggleCatalog);
     $('#rx-autodetect')?.addEventListener('click', autodetectStock);
