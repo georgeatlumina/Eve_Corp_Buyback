@@ -4834,7 +4834,7 @@ function acqCheckRunLive(runId, where) {
 // is never replaced, so re-query through it to land on whatever is live now,
 // and re-render section 1 (already computed, just needs to reach the current
 // nodes) — sections 2-4 are rendered fresh by their callers regardless.
-function acqReacquireLiveNodes(root, fullResult) {
+function acqReacquireLiveNodes(root, fullResult, neededMap = new Map()) {
   const progressBar = root.querySelector('#acq-analysis-progress');
   const s1 = root.querySelector('#acq-section-inventory');
   const s2 = root.querySelector('#acq-section-market');
@@ -4842,7 +4842,7 @@ function acqReacquireLiveNodes(root, fullResult) {
   const s4 = root.querySelector('#acq-section-outofreach');
   const statusEl = root.querySelector('#acq-find-status');
   progressBar.hidden = false;
-  renderAcqSection1(s1, fullResult);
+  renderAcqSection1(s1, fullResult, new Map(), neededMap);
   s1.hidden = false;
   return { progressBar, s1, s2, s3, s4, statusEl };
 }
@@ -4911,6 +4911,14 @@ async function acqRunHullAnalysis(root, statusEl) {
   const runId = ++acqHullAnalysisRunId;
   appLog(`analyse-hulls: start, ${inputs.targets.length} target(s)`);
 
+  // Build a map of quota-needed counts for display, then uncap targets so the
+  // analysis shows how many can actually be built, not just the gap.
+  const neededMap = new Map(
+    inputs.targets.map((t) => [`${t.shipTypeId}||${t.fitName || ''}`, t.needed])
+  );
+  const uncappedTargets = inputs.targets.map((t) => ({ ...t, needed: 999 }));
+  inputs.targets = uncappedTargets;
+
   let progressBar = root.querySelector('#acq-analysis-progress');
   let s1 = root.querySelector('#acq-section-inventory');
   let s2 = root.querySelector('#acq-section-market');
@@ -4925,7 +4933,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   const fullResult = planAcquisitions({
     pool: inputs.pool, targets: inputs.targets, mode: ACQ_MODES.FULL,
   });
-  renderAcqSection1(s1, fullResult, new Map());
+  renderAcqSection1(s1, fullResult, new Map(), neededMap);
   s1.hidden = false;
   appLog(`analyse-hulls: section 1 done, ${fullResult.builds.length} build(s) from inventory`);
 
@@ -4980,7 +4988,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   // or a plain double-click) bumps acqHullAnalysisRunId before this point is
   // reached. Call after every await in this function — see acqCheckRunLive.
   if (!acqCheckRunLive(runId, 'after market load')) return;
-  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult));
+  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult, neededMap));
 
   if (aaState.marketError || !market?.by_type) {
     statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. `
@@ -5007,9 +5015,9 @@ async function acqRunHullAnalysis(root, statusEl) {
     acqFetchJaniceFitPrices(inputs.targets),
   ]);
   if (!acqCheckRunLive(runId, 'after Jita pricing')) return;
-  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult));
+  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult, neededMap));
 
-  renderAcqSection1(s1, fullResult, janiceFitPrices);
+  renderAcqSection1(s1, fullResult, janiceFitPrices, neededMap);
   renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices, janiceFitPrices);
   s2.hidden = false;
   appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
@@ -5106,11 +5114,11 @@ async function acqRunHullAnalysis(root, statusEl) {
   setTimeout(() => { progressBar.hidden = true; }, 400);
 }
 
-function renderAcqSection1(el, result, janiceFitPrices = new Map()) {
+function renderAcqSection1(el, result, janiceFitPrices = new Map(), neededMap = new Map()) {
   const counts = new Map();
   for (const b of result.builds) {
     const key = `${b.shipTypeId}||${b.fitName || ''}`;
-    const entry = counts.get(key) || { n: 0, shipName: b.shipName, fitName: b.fitName || '' };
+    const entry = counts.get(key) || { n: 0, shipName: b.shipName, fitName: b.fitName || '', shipTypeId: b.shipTypeId };
     entry.n += 1;
     counts.set(key, entry);
   }
@@ -5120,10 +5128,14 @@ function renderAcqSection1(el, result, janiceFitPrices = new Map()) {
     const contractPrice = fitPrice != null
       ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
       : `<span style="color:#4b5563">—</span>`;
+    const needed = neededMap.get(`${e.shipTypeId}||${e.fitName}`);
+    const neededNote = (needed != null && e.n > needed)
+      ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed} needed)</span>`
+      : '';
     return `<tr style="border-bottom:1px solid #1e2533">
         <td style="padding:0.3rem 0.5rem">${escapeHtml(e.shipName)}</td>
         <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(e.fitName)}</td>
-        <td style="padding:0.3rem 0.75rem;text-align:right">${e.n}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${e.n}${neededNote}</td>
         <td style="padding:0.3rem 0.5rem;text-align:right;font-size:0.82rem" title="Janice Jita sell × ${pct}%">${contractPrice}</td>
       </tr>`;
   }).join('');
@@ -5483,7 +5495,7 @@ function renderAcquisitionsTab() {
   const root = $('#acquisitions-root');
   if (!root) return;
   root.innerHTML = `
-    <h2>Acquisitions Inventory <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <h2>Acquisitions Inventory</h2>
     <div id="acq-updated-at" class="muted" style="font-size:0.8rem;margin-top:-0.5rem"></div>
     <p class="muted">Paste inventory (hulls and modules together) in EVE clipboard format
     — Name, tab, quantity, one line per item. Hulls and modules are split automatically.
@@ -5922,7 +5934,7 @@ function renderHaulxTab() {
       !hasReadiness && '<li>Run a <strong>Market Readiness</strong> scan (Market Readiness tab → Scan doctrines &amp; fits)</li>',
     ].filter(Boolean).join('');
     root.innerHTML = `
-      <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+      <h2>HaulX</h2>
       <p class="muted">Before you can plan a haul, complete the following:</p>
       <ul style="color:#e0e8f0;line-height:2">${items}</ul>`;
     return;
@@ -5931,7 +5943,7 @@ function renderHaulxTab() {
   const quotas = lastContractsScan.quotas || [];
 
   root.innerHTML = `
-    <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <h2>HaulX</h2>
     <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Jita to UEXO. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Rows use the same sort order as the <strong>Contracts</strong> page — change the sort there and re-open this tab to reorder them. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
     <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
       <span style="font-weight:600">HaulX</span>
