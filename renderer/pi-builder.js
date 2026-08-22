@@ -723,7 +723,11 @@
     return p.facAdv * tierUnitPerHour(tier);
   }
 
-  function runOptimize(targetId, N, p) {
+  // `sysPool` (optional) constrains the plan to a chosen system: {byType:{planet
+  // type: count}, total, chars, system}. Extractors of a P0 are then capped by how
+  // many of its compatible planets that system has × the character count (one
+  // colony per planet per character), so the plan is physically deployable there.
+  function runOptimize(targetId, N, p, sysPool) {
     const needs = chainNeeds(targetId);
     const ext = [], fac = [];
     for (const [tid, per] of needs) {
@@ -735,10 +739,40 @@
       (role === 'extractor' ? ext : fac).push(node);
     }
     if (!ext.length && !fac.length) return { error: 'Nothing to build for this target.' };
+
+    // System planet caps (one colony per planet per character). A shared pool of
+    // planet-slots per type (count × chars) is consumed as colonies are placed, so
+    // the plan is physically deployable and each extractor records which planet
+    // types it lands on (`byType`).
+    const chars = sysPool ? Math.max(1, sysPool.chars || 1) : 1;
+    const pool = {};
+    if (sysPool) {
+      const missing = [];
+      for (const t in sysPool.byType) pool[t] = (sysPool.byType[t] || 0) * chars;
+      for (const e of ext) {
+        const p0 = extractorP0(e, p.model);
+        e.compat = p0PlanetTypes(p0).filter((t) => (sysPool.byType[t] || 0) > 0);
+        e.byType = {};
+        if (!e.compat.length) missing.push(commodityName(p0));
+      }
+      if (missing.length) {
+        return { systemInfeasible: true, error: `Can't build this in ${sysPool.system} — no planet there extracts ${[...new Set(missing)].join(', ')}.` };
+      }
+    }
+    const totalPool = sysPool ? sysPool.total * chars : Infinity;
+    // Consume one free planet slot from `types` (the most-abundant first, so scarce
+    // planet types are left for the P0s that can only use them) → its type, or null.
+    const consume = (types) => {
+      let best = null, br = 0;
+      for (const t of types) { if ((pool[t] || 0) > br) { br = pool[t]; best = t; } }
+      if (!best) return null;
+      pool[best]--; return best;
+    };
+    const growExt = (e) => { if (!sysPool) { e.alloc++; return true; } const t = consume(e.compat); if (!t) return false; e.byType[t] = (e.byType[t] || 0) + 1; e.alloc++; return true; };
+
     // Each distinct raw material needs its OWN extractor planet, but factory
-    // schematics can share a planet (several Industry Facilities per planet), so
-    // the real floor is one planet per extractor plus (at least) one shared
-    // factory planet — NOT one planet per production step.
+    // schematics can share a planet, so the floor is one planet per extractor plus
+    // (at least) one shared factory planet — NOT one planet per production step.
     const minPlanets = ext.length + (fac.length ? 1 : 0);
     if (N < minPlanets) {
       return {
@@ -748,19 +782,42 @@
           + ` — but only ${N} available.`,
       };
     }
-    // Extractors get an integer planet each; factory steps share `fp` planets,
-    // whose capacity is split across their schematics. Give each extra planet to
-    // whichever subsystem is currently the throughput bottleneck.
+    if (sysPool && minPlanets > totalPool) {
+      return { systemInfeasible: true, error: `${sysPool.system} has only ${sysPool.total} planet(s) × ${chars} char(s) = ${totalPool}; this chain needs at least ${minPlanets}.` };
+    }
+
     const facCost = fac.reduce((a, n) => a + n.cost, 0);
     const extThroughput = (n) => n.alloc / n.cost;
-    let fp = fac.length ? 1 : 0;
+    let fp = 0;
     const facThroughput = () => (fac.length ? fp / facCost : Infinity);
-    let remaining = N - ext.length - fp;
-    while (remaining > 0) {
-      let worst = facThroughput(); let worstExt = null;
-      for (const e of ext) { const t = extThroughput(e); if (t < worst) { worst = t; worstExt = e; } }
-      if (worstExt) worstExt.alloc++; else fp++;
-      remaining--;
+    const growFac = () => { if (!sysPool) { fp++; return true; } if (!consume(Object.keys(pool))) return false; fp++; return true; };
+
+    // Place the mandatory floor: one planet per extractor + one shared factory
+    // planet. With a system, each consumes a real planet slot from the pool.
+    let placed = 0;
+    if (sysPool) {
+      for (const e of ext) e.alloc = 0;   // rebuild from the pool so byType is recorded
+      const shortInit = [];
+      for (const e of ext) { if (growExt(e)) placed++; else shortInit.push(commodityName(extractorP0(e, p.model))); }
+      if (shortInit.length) {
+        return { systemInfeasible: true, error: `${sysPool.system} hasn't enough distinct planets to extract ${[...new Set(shortInit)].join(', ')} at once — add characters or another system.` };
+      }
+      if (fac.length && growFac()) placed++;
+    } else {
+      placed = ext.length;
+      if (fac.length) { fp = 1; placed++; }
+    }
+
+    // Give each remaining planet to the current throughput bottleneck until the
+    // planet budget or the system pool is exhausted, or the bottleneck can't grow.
+    const budget = Math.min(N, totalPool);
+    let systemLimited = false;
+    while (placed < budget) {
+      let R = facThroughput(); let bnExt = null;
+      for (const e of ext) { const t = extThroughput(e); if (t < R) { R = t; bnExt = e; } }
+      const ok = bnExt ? growExt(bnExt) : growFac();
+      if (!ok) { systemLimited = true; break; }
+      placed++;
     }
     let R = facThroughput();
     let bottleneck = fac[0] || null;   // factory-bound → point at a factory schematic
@@ -768,7 +825,7 @@
     // Factory "alloc" = the planet-share each schematic uses to sustain R.
     for (const f of fac) f.alloc = R * f.cost;
     const nodes = ext.concat(fac);
-    return { nodes, R, bottleneck, used: N, facPlanets: fp, N, model: p.model };
+    return { nodes, R, bottleneck, used: placed, facPlanets: fp, N, model: p.model, systemLimited, system: sysPool ? sysPool.system : null };
   }
 
   // Split planets across toons, keeping the shared factory planets together on as
@@ -797,29 +854,25 @@
   function commandCentreTally(res, sys, chars) {
     const have = (sys && sys.counts && Object.keys(sys.counts).length) ? sys.counts : null;
     const C = Math.max(1, chars || 1);
-    const demands = res.nodes.filter((n) => n.role === 'extractor')
-      .map((n) => { const p0 = extractorP0(n, res.model); return { p0, alloc: n.alloc, types: p0PlanetTypes(p0) }; })
-      .sort((a, b) => a.types.length - b.types.length);   // most-constrained P0s first
+    const exts = res.nodes.filter((n) => n.role === 'extractor');
     const tally = {};
-    const shortfalls = [];
-    for (const d of demands) {
-      let cand = d.types;
-      if (have) cand = d.types.filter((t) => (have[t] || 0) > 0);
-      if (!cand.length) {
-        if (have) { shortfalls.push({ p0: d.p0, types: d.types, alloc: d.alloc }); tally['(no planet in system)'] = (tally['(no planet in system)'] || 0) + d.alloc; }
-        else tally['(any)'] = (tally['(any)'] || 0) + d.alloc;
-        continue;
+    if (have) {
+      // System plan: the optimizer already assigned each extractor to real planet
+      // types (`byType`) from the shared pool, so just sum them — always feasible.
+      for (const n of exts) for (const [t, c] of Object.entries(n.byType || {})) tally[t] = (tally[t] || 0) + c;
+    } else {
+      // No system: consolidate each P0 onto the most-used compatible type, to keep
+      // the number of distinct command centres down.
+      const demands = exts.map((n) => ({ alloc: Math.round(n.alloc), types: p0PlanetTypes(extractorP0(n, res.model)) }))
+        .sort((a, b) => a.types.length - b.types.length);
+      for (const d of demands) {
+        if (!d.types.length) { tally['(any)'] = (tally['(any)'] || 0) + d.alloc; continue; }
+        let best = d.types[0], bestC = -1;
+        for (const t of d.types) { const c = tally[t] || 0; if (c > bestC) { bestC = c; best = t; } }
+        tally[best] = (tally[best] || 0) + d.alloc;
       }
-      let best = cand[0], bestScore = -Infinity;
-      for (const t of cand) {
-        // With a system: most remaining planet capacity (have×chars − assigned).
-        // Without: most-used, to consolidate onto fewer distinct command centres.
-        const score = have ? (have[t] || 0) * C - (tally[t] || 0) : (tally[t] || 0);
-        if (score > bestScore) { bestScore = score; best = t; }
-      }
-      tally[best] = (tally[best] || 0) + d.alloc;
     }
-    return { tally, factory: res.facPlanets || 0, shortfalls, have, chars: C, total: (sys && sys.total) || 0 };
+    return { tally, factory: res.facPlanets || 0, have, chars: C, total: (sys && sys.total) || 0 };
   }
 
   // System-aware toon split: each character may hold at most one colony per planet
@@ -941,13 +994,21 @@
     el.textContent = calcItem ? `Target: ${commodityName(calcItem)}` : 'Target: pick a commodity in the calculator above';
   }
 
+  // Build the system constraint for runOptimize from the chosen system + toon count.
+  function currentSysPool() {
+    const sys = optSystemPlanets;
+    if (!sys || !sys.total || !Object.keys(sys.counts || {}).length) return null;
+    const chars = Math.max(1, optToons.filter((t) => (t.use || 0) > 0).length);
+    return { byType: sys.counts, total: sys.total, chars, system: sys.system };
+  }
+
   async function optimizeNow() {
     const out = $('#pib-opt-out'); if (!out) return;
     if (!calcItem) { out.innerHTML = '<div class="pib-opt-err">Pick a commodity in the calculator above first.</div>'; return; }
     readOptParams();
     const N = Math.max(1, parseInt($('#pib-opt-total').value, 10) || 1);
-    await loadSystemPlanets();   // so the CC tally + split reflect the chosen system
-    optResult = runOptimize(calcItem, N, optParams);
+    await loadSystemPlanets();   // so the plan + CC tally + split reflect the chosen system
+    optResult = runOptimize(calcItem, N, optParams, currentSysPool());
     renderOptResult(optResult);
     if (!optResult.error) fillValue(optResult);
   }
@@ -999,25 +1060,22 @@
     const ccChip = (t, c) => {
       if (t.startsWith('(')) return `<span class="pib-opt-chip pib-opt-chip-warn">${escapeHtml(t === '(any)' ? `×${c} (any type)` : `${c} extractor(s) — ${t}`)}</span>`;
       const inSys = have ? (have[t] || 0) : null;
-      const short = have && c > inSys * cc.chars;   // not enough of this planet even across all chars
-      const note = have ? ` <span class="muted">· ${inSys} in system${cc.chars > 1 ? ` × ${cc.chars} chars` : ''}</span>` : '';
-      return `<span class="pib-opt-chip ${short ? 'pib-opt-chip-warn' : 'pib-opt-chip-cc'}">${escapeHtml(t)} CC ×${c}${note}</span>`;
+      const note = have ? ` <span class="muted">· ${c > inSys ? `across ${cc.chars} chars — ` : ''}${inSys} in system</span>` : '';
+      return `<span class="pib-opt-chip pib-opt-chip-cc">${escapeHtml(t)} CC ×${c}${note}</span>`;
     };
     const ccParts = Object.entries(cc.tally).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t, c]) => ccChip(t, c));
     if (cc.factory) {
-      const facNote = have ? ` <span class="muted">· any of ${sys.total} planets</span>` : ` <span class="muted">· any type</span>`;
+      const facNote = have ? ` <span class="muted">· any of ${sys.total} planet types</span>` : ` <span class="muted">· any type</span>`;
       ccParts.push(`<span class="pib-opt-chip pib-opt-chip-fac">Factory planet ×${cc.factory}${facNote}</span>`);
     }
     const ccTotal = Object.values(cc.tally).reduce((a, b) => a + b, 0) + cc.factory;
-    // system-level warnings
+    // The plan is capped to the system's planets, so the only note is when that cap
+    // stopped it short of the requested planet budget.
     const warns = [];
-    if (have && cc.shortfalls.length) {
-      warns.push(`${sys.system} has no planet to extract ${[...new Set(cc.shortfalls.map((s) => commodityName(s.p0)))].join(', ')} — this chain isn't fully buildable there.`);
+    if (have && res.systemLimited) {
+      warns.push(`Limited by ${sys.system}'s planets: this system + ${cc.chars} character${cc.chars === 1 ? '' : 's'} support ${res.used} colon${res.used === 1 ? 'y' : 'ies'} of this chain (you asked for ${res.N}). Add characters or a richer system for more throughput.`);
     }
-    if (have && ccTotal > sys.total * cc.chars) {
-      warns.push(`Needs ${ccTotal} colonies but ${sys.system} has only ${sys.total} planet(s) × ${cc.chars} char(s) = ${sys.total * cc.chars} max (one colony per planet per character).`);
-    }
-    if (sys.error) warns.push(`System ${sys.error} — showing all planet types.`);
+    if (sys && sys.error) warns.push(`System ${sys.error} — showing all planet types.`);
     const sysLabel = have ? ` <span class="muted">in ${escapeHtml(sys.system)} (${sys.total} planets)</span>` : '';
     const ccHtml = ccParts.length
       ? `<div class="pib-opt-cc"><div class="pib-opt-group-h">Command centres to deploy (${ccTotal})${sysLabel}</div>${ccParts.join('')}`
@@ -1238,12 +1296,14 @@
       d = await r.json();
     } catch (e) { out.innerHTML = `<span class="pib-opt-err">${escapeHtml(e.message || 'Analyze failed — check the system name.')}</span>`; return; }
     readOptParams();
+    await loadSystemPlanets();
+    const pool = currentSysPool();
     const N = Math.max(1, parseInt($('#pib-opt-total').value, 10) || 1);
     const byTier = { 1: [], 2: [], 3: [], 4: [] };
     for (const row of (d.rows || [])) {
       const t = row.tier; if (!byTier[t]) continue;
-      const res = runOptimize(row.type_id, N, optParams);
-      if (res.error) continue;                       // infeasible with N planets — reflects the budget
+      const res = runOptimize(row.type_id, N, optParams, pool);
+      if (res.error) continue;                       // infeasible with N planets / this system — skip
       const perDay = res.R * 24;
       byTier[t].push({ tid: row.type_id, name: row.name, perUnit: row.chain_profit, iskDay: perDay * row.chain_profit, unitsDay: perDay, planets: res.used });
     }

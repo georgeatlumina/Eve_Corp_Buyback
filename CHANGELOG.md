@@ -4,6 +4,18 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.9.1 — PI optimiser: command-centre tally is now physically deployable
+
+- **Fix:** with a system chosen, the optimiser could tally more colonies of a planet type than
+  the system physically has (e.g. "×28 Oceanic" in a system with one Oceanic planet). The plan is
+  now **constrained by the chosen system**, modelling a shared pool of `planets × characters` slots
+  (one colony per planet per character): extractors consume real planet slots and each P0 is spread
+  across all its compatible in-system planet types, so the command-centre tally can never exceed
+  what the system holds.
+- Chains that a system can't extract are now reported plainly (e.g. *"Can't build this in UEXO-Z —
+  no planet there extracts Reactive Gas, Felsic Magma…"*), and when the system caps throughput below
+  the requested planet budget the plan says so.
+
 ## v3.9.0 — Native Maps + a system-aware PI colony planner
 
 ### Maps — now native (no more embedded Dotlan)
