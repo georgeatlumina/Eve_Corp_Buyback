@@ -1,18 +1,14 @@
-# v3.9.3 — PI optimiser: the plan now always fits your toons
+# v3.9.4 — PI optimiser: factory planets consolidated onto your largest toons
 
-A follow-up fix to the system-aware PI planner.
+A follow-up to the system-aware PI planner.
 
-## Fix
-- The toon split could say **"N won't fit in <system>"** for a plan the optimiser had just declared
-  valid. Two causes, both fixed:
-  1. The optimiser assumed every character could host `planets × characters` colonies — but a toon with
-     a **1-planet budget** can only host one colony in a system. It now uses each toon's **real**
-     in-system capacity, `min(planet budget, system planets)`.
-  2. The split placed the flexible factory planets before the scarce extractor types, which could paint
-     it into a corner. It now places the **most-constrained planet type first** and drops factory
-     planets into whatever slots remain.
-- Factory planets still group onto the fewest toons **where capacity allows** — a system packed exactly
-  full simply has no spare room to keep them together.
+## What changed
+- The suggested toon split now **consolidates factory planets onto the fewest, largest toons** — it
+  fills the biggest toon's factory slots first, so your reaction/factory colonies land on as few
+  characters as possible (e.g. all 4 factory planets on one main; 8 factory planets on your two biggest).
+- Feasibility still wins: if concentrating the factory planets would leave an extractor with nowhere to
+  go, the split automatically falls back to a layout that fits every colony (one colony per planet per
+  character).
 
 ---
 

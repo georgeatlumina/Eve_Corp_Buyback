@@ -908,33 +908,46 @@
   // toons. `tally` = per-type extractor counts from commandCentreTally.
   function splitAcrossToonsSystem(tally, factory, sys, toons) {
     const have = sys.counts, total = sys.total || 0;
-    const caps = toons.filter((t) => (t.use || 0) > 0)
+    // Most-constrained planet type first (fewest of that type → needs the most
+    // distinct toons), so a feasible plan always packs.
+    const types = Object.keys(tally).filter((t) => !t.startsWith('(')).sort((a, b) => (have[a] || 0) - (have[b] || 0));
+    const mkCaps = () => toons.filter((t) => (t.use || 0) > 0)
       .map((t) => ({ name: t.name, cap: Math.min(t.use || 0, total || (t.use || 0)), fac: 0, ext: 0, byType: {}, used: 0 }))
       .sort((a, b) => b.cap - a.cap);
-    // Extractors FIRST, most-constrained planet type first (fewest of that type →
-    // needs the most distinct toons), each spread onto the toons with the most
-    // spare capacity. Placing scarce types before the flexible factory planets is
-    // what keeps a feasible plan from failing to fit.
-    const types = Object.keys(tally).filter((t) => !t.startsWith('(')).sort((a, b) => (have[a] || 0) - (have[b] || 0));
-    let extUnplaced = 0;
-    for (const T of types) {
-      let need = tally[T]; const cap = have[T] || 0; let progress = true;
-      while (need > 0 && progress) {
-        progress = false;
-        const cand = caps.filter((c) => c.used < c.cap && (c.byType[T] || 0) < cap)
-          .sort((a, b) => (b.cap - b.used) - (a.cap - a.used));
-        for (const c of cand) { if (need <= 0) break; c.byType[T] = (c.byType[T] || 0) + 1; c.ext++; c.used++; need--; progress = true; }
+    // Factory planets (any type) concentrated onto the biggest toons — fill the
+    // largest remaining capacity first, so they land on the fewest characters.
+    const placeFactory = (caps) => {
+      let left = factory;
+      for (const c of caps.slice().sort((a, b) => (b.cap - b.used) - (a.cap - a.used))) {
+        if (left <= 0) break; const take = Math.min(c.cap - c.used, left); c.fac += take; c.used += take; left -= take;
       }
-      extUnplaced += need;
-    }
-    // Factory planets (any type) LAST, filling the remaining slots — concentrated
-    // on the fewest toons by taking the largest remaining capacity first.
-    let fLeft = factory;
-    for (const c of caps.slice().sort((a, b) => (b.cap - b.used) - (a.cap - a.used))) {
-      if (fLeft <= 0) break; const take = Math.min(c.cap - c.used, fLeft); c.fac += take; c.used += take; fLeft -= take;
-    }
-    caps.forEach((c) => { c.n = c.used; });
-    return { split: caps.filter((c) => c.used > 0), unassigned: fLeft + extUnplaced };
+      return left;
+    };
+    const placeExt = (caps) => {
+      let un = 0;
+      for (const T of types) {
+        let need = tally[T]; const cap = have[T] || 0; let progress = true;
+        while (need > 0 && progress) {
+          progress = false;
+          const cand = caps.filter((c) => c.used < c.cap && (c.byType[T] || 0) < cap).sort((a, b) => (b.cap - b.used) - (a.cap - a.used));
+          for (const c of cand) { if (need <= 0) break; c.byType[T] = (c.byType[T] || 0) + 1; c.ext++; c.used++; need--; progress = true; }
+        }
+        un += need;
+      }
+      return un;
+    };
+    const attempt = (factoryFirst) => {
+      const caps = mkCaps();
+      const un = factoryFirst ? placeFactory(caps) + placeExt(caps) : (placeExt(caps) + placeFactory(caps));
+      caps.forEach((c) => { c.n = c.used; });
+      return { split: caps.filter((c) => c.used > 0), unassigned: un };
+    };
+    // Prefer factory-first (consolidates factory onto the largest toons); only if
+    // that can't seat every extractor do we fall back to placing extractors first.
+    const a = attempt(true);
+    if (a.unassigned === 0) return a;
+    const b = attempt(false);
+    return b.unassigned < a.unassigned ? b : a;
   }
 
   // The P0 an extractor planet pulls (ext-p1: the P1's raw input; else the node itself).
@@ -1128,7 +1141,7 @@
       let split, unassigned;
       if (have) ({ split, unassigned } = splitAcrossToonsSystem(cc.tally, cc.factory, sys, optToons));
       else ({ split, unassigned } = splitAcrossToons(res.facPlanets || 0, Math.max(0, res.used - (res.facPlanets || 0)), optToons));
-      const note = have ? '— one colony per planet per character; factory planets grouped where capacity allows' : '— factory planets kept together';
+      const note = have ? '— one colony per planet per character; factory planets consolidated onto your largest toons' : '— factory planets kept together';
       splitHtml = `<div class="pib-opt-split"><div class="pib-opt-group-h">Suggested split across toons <span class="muted">${note}</span></div>`
         + split.map((s) => `<span class="pib-opt-chip">${escapeHtml(s.name || 'toon')}: ${s.n}${s.fac ? ` <span class="pib-opt-chip-fmark">· ${s.fac} factory</span>` : ''}</span>`).join('')
         + (unassigned > 0 ? `<span class="pib-opt-chip pib-opt-chip-warn">${unassigned} won't fit${have ? ` in ${escapeHtml(sys.system)}` : ''} (add characters${have ? ' or another system' : ''})</span>` : '')

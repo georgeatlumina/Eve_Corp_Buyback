@@ -4,6 +4,13 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.9.4 — PI optimiser: factory planets consolidated onto your largest toons
+
+- The suggested toon split now **consolidates factory planets onto the fewest, largest toons** (fill the
+  biggest toon's factory slots first), so your reaction/factory colonies live on as few characters as
+  possible. It only spreads them if concentrating would stop the extractors fitting — then it falls back
+  to a feasible layout automatically.
+
 ## v3.9.3 — PI optimiser: the plan now always fits your toons
 
 - **Fix:** the toon split could report "N won't fit in <system>" for a plan the optimiser said was
