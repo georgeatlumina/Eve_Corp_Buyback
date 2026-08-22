@@ -648,6 +648,7 @@
   let optParams = null;               // {model, cc, facBasic, facAdv, facHi, extP1, extP0}
   let optResult = null;
   let optSystemPlanets = { system: null, counts: {}, total: 0 };   // chosen system's planet make-up
+  let lastCCBuy = null;   // {planetType: count} command centres for the current plan (multibuy copy)
 
   // The system the optimizer targets: its own field, falling back to the planner's
   // profit-ranking system search. Blank = all planets.
@@ -915,11 +916,20 @@
       .map((t) => ({ name: t.name, cap: Math.min(t.use || 0, total || (t.use || 0)), fac: 0, ext: 0, byType: {}, used: 0 }))
       .sort((a, b) => b.cap - a.cap);
     // Factory planets (any type) concentrated onto the biggest toons — fill the
-    // largest remaining capacity first, so they land on the fewest characters.
+    // largest remaining capacity first. Each factory colony is assigned a concrete
+    // planet type on its toon (the one with the most free planets left, one colony
+    // per planet), so we know exactly which command centre it needs.
     const placeFactory = (caps) => {
       let left = factory;
       for (const c of caps.slice().sort((a, b) => (b.cap - b.used) - (a.cap - a.used))) {
-        if (left <= 0) break; const take = Math.min(c.cap - c.used, left); c.fac += take; c.used += take; left -= take;
+        while (left > 0 && c.used < c.cap) {
+          let bestT = null, bestFree = 0;
+          for (const T in have) { const free = (have[T] || 0) - (c.byType[T] || 0); if (free > bestFree) { bestFree = free; bestT = T; } }
+          if (!bestT) break;
+          c.byType[bestT] = (c.byType[bestT] || 0) + 1;
+          c.facByType = c.facByType || {}; c.facByType[bestT] = (c.facByType[bestT] || 0) + 1;
+          c.fac++; c.used++; left--;
+        }
       }
       return left;
     };
@@ -1022,6 +1032,7 @@
       if (reauth) parts.push(`${reauth} need re-auth for skills`);
       if (failed.length) parts.push(`${failed.length} failed to read from ESI: ${failed.map((t) => `${t.name || t.character_id}: ${t.error}`).join('; ')}`);
       st.textContent = parts.join(' · ');
+      saveWip();
     } catch (e) {
       // Be explicit about *why*. A network TypeError ("failed to fetch") means
       // the local sidecar didn't answer — very different from an ESI/auth error.
@@ -1043,6 +1054,43 @@
     el.textContent = calcItem ? `Target: ${commodityName(calcItem)}` : 'Target: pick a commodity in the calculator above';
   }
 
+  // ---- Auto-persist the PI page's work-in-progress across app restarts ----
+  const PIB_WIP_KEY = 'pib-wip';
+  let wipLoaded = false, wipTimer = null;
+  const wipVal = (id) => { const e = $('#' + id); return e ? e.value : ''; };
+  const wipSet = (id, v) => { const e = $('#' + id); if (e && v != null && v !== '') e.value = v; };
+
+  function saveWip() {
+    try {
+      try { if (optParams) readOptParams(); } catch (_) {}
+      const wip = {
+        system: wipVal('pi-system'), optSystem: wipVal('pib-opt-system'),
+        total: wipVal('pib-opt-total'), tax: wipVal('pi-tax'),
+        calcItem: wipVal('pib-calc-item'), calcQty: wipVal('pib-calc-qty'),
+        params: optParams ? { ...optParams } : null,
+        valuation: ['pib-opt-poco', 'pib-opt-bb', 'pib-opt-courier', 'pib-opt-epithal', 'pib-opt-dst'].reduce((o, id) => (o[id] = wipVal(id), o), {}),
+        toons: optToons.map((t) => ({ ...t })),
+      };
+      localStorage.setItem(PIB_WIP_KEY, JSON.stringify(wip));
+    } catch (_) {}
+  }
+  const saveWipDebounced = () => { clearTimeout(wipTimer); wipTimer = setTimeout(saveWip, 500); };
+
+  function loadWip() {
+    if (wipLoaded) return; wipLoaded = true;
+    let wip;
+    try { wip = JSON.parse(localStorage.getItem(PIB_WIP_KEY) || 'null'); } catch (_) { wip = null; }
+    if (!wip) return;
+    wipSet('pi-system', wip.system); wipSet('pib-opt-system', wip.optSystem);
+    wipSet('pib-opt-total', wip.total); wipSet('pi-tax', wip.tax);
+    if (wip.valuation) for (const id in wip.valuation) wipSet(id, wip.valuation[id]);
+    if (wip.params) { optParams = { ...wip.params }; renderOptParams(); }
+    if (Array.isArray(wip.toons) && wip.toons.length) { optToons = wip.toons; renderOptToons(); }
+    if (wip.calcItem) { const cs = $('#pib-calc-item'); if (cs) { cs.value = wip.calcItem; setCalcItem(+wip.calcItem); } }
+    wipSet('pib-calc-qty', wip.calcQty);
+    updateOptSysHint(); updateOptTarget();
+  }
+
   // Build the system constraint for runOptimize from the chosen system + toons.
   // Each toon's in-system capacity is min(its planet budget, the system's planet
   // count) — a toon with 1 planet can only host one colony here, even if the
@@ -1055,6 +1103,22 @@
     return { byType: sys.counts, total: sys.total, chars: Math.max(1, caps.length), caps: caps.length ? caps : [sys.total], system: sys.system };
   }
 
+  // In-game Multibuy list of command centres ("<Type> Command Center xN").
+  function ccMultibuyText() {
+    if (!lastCCBuy) return '';
+    return Object.entries(lastCCBuy).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([t, c]) => `${t} Command Center x${c}`).join('\n');
+  }
+  async function copyCommandCentres() {
+    const text = ccMultibuyText();
+    const btn = $('#pib-opt-cc-copy');
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      if (btn) { const o = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = o; }, 1500); }
+    } catch (_) { if (btn) btn.textContent = 'Copy failed'; }
+  }
+
   async function optimizeNow() {
     const out = $('#pib-opt-out'); if (!out) return;
     if (!calcItem) { out.innerHTML = '<div class="pib-opt-err">Pick a commodity in the calculator above first.</div>'; return; }
@@ -1064,6 +1128,7 @@
     optResult = runOptimize(calcItem, N, optParams, currentSysPool());
     renderOptResult(optResult);
     if (!optResult.error) fillValue(optResult);
+    saveWip();
   }
 
   function renderOptResult(res) {
@@ -1103,27 +1168,36 @@
       return `<div class="pib-opt-group"><div class="pib-opt-group-h">${title} (${pc} planet${pc === 1 ? '' : 's'})</div>${rows.map(row).join('')}</div>`;
     };
 
-    // Command centres needed, tallied by planet type (+ any-type factory planets),
-    // relevant to the chosen system's planets and the one-colony-per-planet rule.
+    // Command centres needed, tallied by planet type. With a system + toons we
+    // assign every colony (including factory planets) to a concrete toon+planet
+    // type, then derive BOTH the aggregate tally and the per-toon breakdown from
+    // that one assignment, so they always agree and factory planets get real types.
     const withPlanets = optToons.filter((t) => (t.use || 0) > 0);
     const charCount = withPlanets.length || 1;
     const sys = optSystemPlanets;
     const cc = commandCentreTally(res, sys, charCount);
     const have = cc.have;
+
+    let splitData = null, aggTally = cc.tally, foldedFactory = false;
+    if (have && withPlanets.length) {
+      splitData = splitAcrossToonsSystem(cc.tally, cc.factory, sys, optToons);
+      aggTally = {};
+      for (const s of splitData.split) for (const [t, c] of Object.entries(s.byType)) aggTally[t] = (aggTally[t] || 0) + c;
+      foldedFactory = true;   // factory planets are now inside aggTally, on real types
+    }
+
     const ccChip = (t, c) => {
       if (t.startsWith('(')) return `<span class="pib-opt-chip pib-opt-chip-warn">${escapeHtml(t === '(any)' ? `×${c} (any type)` : `${c} extractor(s) — ${t}`)}</span>`;
       const inSys = have ? (have[t] || 0) : null;
       const note = have ? ` <span class="muted">· ${c > inSys ? `across ${cc.chars} chars — ` : ''}${inSys} in system</span>` : '';
       return `<span class="pib-opt-chip pib-opt-chip-cc">${escapeHtml(t)} CC ×${c}${note}</span>`;
     };
-    const ccParts = Object.entries(cc.tally).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t, c]) => ccChip(t, c));
-    if (cc.factory) {
+    const ccParts = Object.entries(aggTally).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t, c]) => ccChip(t, c));
+    if (!foldedFactory && cc.factory) {
       const facNote = have ? ` <span class="muted">· any of ${sys.total} planet types</span>` : ` <span class="muted">· any type</span>`;
       ccParts.push(`<span class="pib-opt-chip pib-opt-chip-fac">Factory planet ×${cc.factory}${facNote}</span>`);
     }
-    const ccTotal = Object.values(cc.tally).reduce((a, b) => a + b, 0) + cc.factory;
-    // The plan is capped to the system's planets, so the only note is when that cap
-    // stopped it short of the requested planet budget.
+    const ccTotal = Object.values(aggTally).reduce((a, b) => a + b, 0) + (foldedFactory ? 0 : cc.factory);
     const warns = [];
     if (have && res.systemLimited) {
       warns.push(`Limited by ${sys.system}'s planets: this system + ${cc.chars} character${cc.chars === 1 ? '' : 's'} support ${res.used} colon${res.used === 1 ? 'y' : 'ies'} of this chain (you asked for ${res.N}). Add characters or a richer system for more throughput.`);
@@ -1132,19 +1206,43 @@
     const sysLabel = have
       ? ` <span class="muted">in ${escapeHtml(sys.system)} (${sys.total} planets)</span>`
       : ' <span class="muted">— all planets; set a System above to match a real system’s planets</span>';
+    const facFold = foldedFactory && cc.factory
+      ? `<div class="pib-opt-ccnote muted">${cc.factory} of these ${ccTotal} command centres run factory schematics (spread across planet types); the rest are extractors.</div>` : '';
+    // Multibuy list of command centres for this plan. With no per-toon assignment
+    // for the factory planets, default them onto the most-used planet type so the
+    // list is still complete and pasteable.
+    lastCCBuy = {};
+    for (const [t, c] of Object.entries(aggTally)) if (!t.startsWith('(')) lastCCBuy[t] = c;
+    if (!foldedFactory && cc.factory) {
+      const biggest = Object.entries(lastCCBuy).sort((a, b) => b[1] - a[1])[0];
+      const t = biggest ? biggest[0] : 'Temperate';
+      lastCCBuy[t] = (lastCCBuy[t] || 0) + cc.factory;
+    }
+    const copyBtn = Object.keys(lastCCBuy).length
+      ? ` <button id="pib-opt-cc-copy" class="secondary pib-opt-ccbtn" type="button" title="Copy a multibuy list of command centres to paste in-game">🛒 Copy multibuy</button>` : '';
     const ccHtml = ccParts.length
-      ? `<div class="pib-opt-cc"><div class="pib-opt-group-h">Command centres to deploy (${ccTotal})${sysLabel}</div>${ccParts.join('')}`
-        + warns.map((w) => `<div class="pib-opt-warn">⚠ ${escapeHtml(w)}</div>`).join('') + `</div>` : '';
+      ? `<div class="pib-opt-cc"><div class="pib-opt-group-h">Command centres to deploy (${ccTotal})${sysLabel}${copyBtn}</div>${ccParts.join('')}`
+        + facFold + warns.map((w) => `<div class="pib-opt-warn">⚠ ${escapeHtml(w)}</div>`).join('') + `</div>` : '';
 
+    // Per-toon breakdown: which planet-type command centres each toon deploys.
     let splitHtml = '';
-    if (withPlanets.length) {
-      let split, unassigned;
-      if (have) ({ split, unassigned } = splitAcrossToonsSystem(cc.tally, cc.factory, sys, optToons));
-      else ({ split, unassigned } = splitAcrossToons(res.facPlanets || 0, Math.max(0, res.used - (res.facPlanets || 0)), optToons));
-      const note = have ? '— one colony per planet per character; factory planets consolidated onto your largest toons' : '— factory planets kept together';
-      splitHtml = `<div class="pib-opt-split"><div class="pib-opt-group-h">Suggested split across toons <span class="muted">${note}</span></div>`
+    if (splitData) {
+      const toonRow = (s) => {
+        const types = Object.entries(s.byType).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t, c]) => {
+          const fc = (s.facByType && s.facByType[t]) || 0;
+          return `<span class="pib-opt-toontype">${escapeHtml(t)} ×${c}${fc ? `<span class="pib-opt-toon-fac"> ${fc}f</span>` : ''}</span>`;
+        }).join('');
+        return `<div class="pib-opt-toonrow"><span class="pib-opt-toonname">${escapeHtml(s.name || 'toon')}</span><span class="pib-opt-toontypes">${types}</span><span class="pib-opt-toonsum muted">${s.n} CC${s.fac ? ` · ${s.fac} factory` : ''}</span></div>`;
+      };
+      splitHtml = `<div class="pib-opt-split"><div class="pib-opt-group-h">Per-toon command centres <span class="muted">— one colony per planet per character; “Nf” = factory planets; factories consolidated onto your largest toons</span></div>`
+        + splitData.split.map(toonRow).join('')
+        + (splitData.unassigned > 0 ? `<div class="pib-opt-warn">⚠ ${splitData.unassigned} won't fit in ${escapeHtml(sys.system)} — add characters or another system.</div>` : '')
+        + `</div>`;
+    } else if (withPlanets.length) {
+      const { split, unassigned } = splitAcrossToons(res.facPlanets || 0, Math.max(0, res.used - (res.facPlanets || 0)), optToons);
+      splitHtml = `<div class="pib-opt-split"><div class="pib-opt-group-h">Suggested split across toons <span class="muted">— factory planets kept together</span></div>`
         + split.map((s) => `<span class="pib-opt-chip">${escapeHtml(s.name || 'toon')}: ${s.n}${s.fac ? ` <span class="pib-opt-chip-fmark">· ${s.fac} factory</span>` : ''}</span>`).join('')
-        + (unassigned > 0 ? `<span class="pib-opt-chip pib-opt-chip-warn">${unassigned} won't fit${have ? ` in ${escapeHtml(sys.system)}` : ''} (add characters${have ? ' or another system' : ''})</span>` : '')
+        + (unassigned > 0 ? `<span class="pib-opt-chip pib-opt-chip-warn">${unassigned} unassigned (raise a toon's cap)</span>` : '')
         + `</div>`;
     }
 
@@ -1408,7 +1506,7 @@
     loadStatic().then(() => {
       if (!model) model = emptyModel('Barren');
       renderPalette(); setMeta(); render(); refreshTemplates();
-      populateCalc(); initOptimizer();
+      populateCalc(); initOptimizer(); loadWip();
     });
   }
 
@@ -1482,6 +1580,15 @@
     // planet optimizer
     $('#pib-opt-pull').addEventListener('click', pullPlanets);
     $('#pib-opt-run').addEventListener('click', optimizeNow);
+    $('#pib-opt-out').addEventListener('click', (e) => { if (e.target.closest('#pib-opt-cc-copy')) copyCommandCentres(); });
+    // Auto-persist work-in-progress as the user edits the optimizer inputs.
+    ['pi-system', 'pib-opt-system', 'pib-opt-total', 'pi-tax', 'pib-opt-poco', 'pib-opt-bb', 'pib-opt-courier', 'pib-opt-epithal', 'pib-opt-dst', 'pib-calc-qty']
+      .forEach((id) => $('#' + id)?.addEventListener('input', saveWipDebounced));
+    $('#pib-opt-params')?.addEventListener('input', saveWipDebounced);
+    $('#pib-opt-params')?.addEventListener('change', saveWipDebounced);
+    $('#pib-opt-toons')?.addEventListener('input', saveWipDebounced);
+    $('#pib-calc-item')?.addEventListener('change', saveWipDebounced);
+    window.addEventListener('pagehide', saveWip);   // capture the latest state at app close
     $('#pib-opt-total').addEventListener('input', () => { /* manual override; used as-is on Optimize */ });
     // Optimizer's own System field: seed from the planner's search, then keep the
     // resolved-planets hint fresh as the user types.

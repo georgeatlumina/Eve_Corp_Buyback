@@ -1,14 +1,21 @@
-# v3.9.4 — PI optimiser: factory planets consolidated onto your largest toons
+# v3.9.5 — PI optimiser: per-toon command centres, multibuy & saved work
 
-A follow-up to the system-aware PI planner.
+## Per-toon command-centre breakdown
+- The toon split now spells out **exactly which planet-type command centres each toon deploys** —
+  e.g. `SushiAndSushi — Barren ×3 3f · Oceanic ×1 1f · Temperate ×1 1f — 5 CC · 5 factory` — where
+  `Nf` marks how many of that type are factory planets.
+- Factory planets are now assigned **concrete planet types** (spread across each toon's available
+  planets) instead of a vague "any type", so you know precisely how many of each command centre to buy
+  per character. The aggregate tally folds them in and notes how many run factories.
 
-## What changed
-- The suggested toon split now **consolidates factory planets onto the fewest, largest toons** — it
-  fills the biggest toon's factory slots first, so your reaction/factory colonies land on as few
-  characters as possible (e.g. all 4 factory planets on one main; 8 factory planets on your two biggest).
-- Feasibility still wins: if concentrating the factory planets would leave an extractor with nowhere to
-  go, the split automatically falls back to a layout that fits every colony (one colony per planet per
-  character).
+## Copy command-centre multibuy
+- A **🛒 Copy multibuy** button on the command-centre tally copies a ready-to-paste in-game Multibuy
+  list of every command centre the plan needs (`Barren Command Center x16`, `Temperate Command Center
+  x12`, …).
+
+## Work-in-progress persists across restarts
+- The PI optimiser now **auto-saves and restores** your work — chosen system, planet budget, target
+  commodity, assumptions, valuation settings and pulled toons all come back when you reopen the app.
 
 ---
 

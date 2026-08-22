@@ -4,6 +4,17 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.9.5 — PI optimiser: per-toon command centres, multibuy & saved work
+
+- **Per-toon breakdown**: the split now lists exactly which planet-type command centres each toon
+  deploys (e.g. `SushiAndSushi — Barren ×3 3f · Oceanic ×1 1f · Temperate ×1 1f`), with `Nf` marking
+  the factory planets. Factory planets are assigned concrete planet types (spread across each toon's
+  available planets) instead of a vague "any type", and the aggregate tally folds them in.
+- **Copy multibuy**: a button on the command-centre tally copies a ready-to-paste in-game Multibuy
+  list of every command centre needed (`Barren Command Center x16`, …).
+- **Work persists across restarts**: the PI optimiser's system, planet budget, target commodity,
+  assumptions, valuation and pulled toons are auto-saved and restored when you reopen the app.
+
 ## v3.9.4 — PI optimiser: factory planets consolidated onto your largest toons
 
 - The suggested toon split now **consolidates factory planets onto the fewest, largest toons** (fill the
