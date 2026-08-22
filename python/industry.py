@@ -420,10 +420,31 @@ def plan(targets, stock=None, config=None, data=None):
           'buildable': tid in recipes} for tid, q in raw.items() if q > 0),
         key=lambda r: r['name'],
     )
+    # Compact per-type metadata (display name + market group) for every distinct
+    # type in the plan, so the chain-flow UI can name and *categorise* nodes —
+    # including raw materials that have no recipe (ore, moon goo, PI, minerals) —
+    # without any extra look-ups.
+    def _collect_ids(node, acc):
+        if node.get('type_id') is not None:
+            acc.add(int(node['type_id']))
+        for c in node.get('children') or []:
+            _collect_ids(c, acc)
+
+    meta_ids = {j['type_id'] for j in jobs_out if j.get('type_id') is not None}
+    meta_ids |= {r['type_id'] for r in raw_out if r.get('type_id') is not None}
+    for root in tree:
+        _collect_ids(root, meta_ids)
+    type_meta = {}
+    for tid in meta_ids:
+        m = data['types'].get(int(tid)) or {}
+        type_meta[int(tid)] = {'name': m.get('name') or type_name(tid, data),
+                               'group': m.get('group_name')}
+
     return {
         'jobs': jobs_out,
         'raw_materials': raw_out,
         'tree': tree,
+        'type_meta': type_meta,
         'invention': {
             'enabled': invent,
             'decryptor': cfg.get('decryptor') or 'None',

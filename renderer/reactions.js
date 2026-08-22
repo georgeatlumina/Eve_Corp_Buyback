@@ -18,6 +18,19 @@
 (function () {
   const state = { last: null, loading: false, buyIds: new Set(), catalog: null, matEdited: false, assets: null, flow: null };
 
+  // Per-type name + market group from the plan (backend), so the flow / node
+  // blow-up can name and categorise raw materials that have no recipe.
+  const typeMeta = () => (state.last && state.last.type_meta) || {};
+  const groupFor = (t) => { const m = typeMeta()[String(t)] || typeMeta()[Number(t)]; return (m && m.group) || ''; };
+  const nameForType = (t) => {
+    const m = typeMeta()[String(t)] || typeMeta()[Number(t)];
+    if (m && m.name) return m.name;
+    const j = (state.last && state.last.jobs || []).find((x) => x.type_id === Number(t));
+    if (j) return j.name;
+    const r = (state.last && state.last.raw_materials || []).find((x) => x.type_id === Number(t));
+    return (r && r.name) || `type ${t}`;
+  };
+
   const isk = (n) => (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const iskShort = (n) => {
     const v = Number(n) || 0;
@@ -338,7 +351,9 @@
       onToggleBuy: (t) => setBuild(Number(t), !state.buyIds.has(Number(t))),
       onMultiply: (f) => scaleTargetsAndAnalyze(f),
       runsFor: (t) => { const j = jobFor(t); return j ? j.runs : 1; },
-      nameFor: (t) => { const j = jobFor(t); return j ? j.name : `type ${t}`; },
+      nameFor: (t) => nameForType(t),
+      groupFor: (t) => groupFor(t),
+      onOptimisePI: (t) => { if (typeof window.openPIOptimizer === 'function') window.openPIOptimizer(Number(t), nameForType(t)); },
     });
   }
 
@@ -350,7 +365,12 @@
     if (detail) { detail.hidden = true; detail.innerHTML = ''; } // fresh plan → close the blow-up
     if (!(d.tree || []).length || typeof ChainFlow !== 'function') { pane.hidden = true; return; }
     pane.hidden = false;
-    state.flow = ChainFlow(wrap, d.tree, { onSelect: nodeSelect, onRescale: scaleTargetsAndAnalyze });
+    state.flow = ChainFlow(wrap, d.tree, {
+      onSelect: nodeSelect,
+      onRescale: scaleTargetsAndAnalyze,
+      meta: d.type_meta || {},
+      onOptimisePI: (t) => { if (typeof window.openPIOptimizer === 'function') window.openPIOptimizer(Number(t), nameForType(t)); },
+    });
   }
 
   // ---- Catalog browser (all reaction recipes, grouped) ----

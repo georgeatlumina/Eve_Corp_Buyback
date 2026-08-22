@@ -16,6 +16,13 @@
   const esc = (s) => (typeof escapeHtml === 'function' ? escapeHtml(s) : String(s == null ? '' : s));
   const IMG = 'https://images.evetech.net';
 
+  // A type belongs to the Planetary Interaction production chain when its market
+  // group is one of the PI commodity tiers (P1–P4) or raw planetary resources.
+  function isPIGroup(group) {
+    return !!group && /\b(Commodities|Planetary)\b/i.test(group);
+  }
+  window.cfIsPIGroup = isPIGroup;
+
   function runLabel(activity, qty, out) {
     if (activity === 'buy') return 'buy';
     if (activity === 'raw') return 'raw';
@@ -73,6 +80,8 @@
     // Click a node -> highlight its connected sub-chain (upstream + downstream).
     container.addEventListener('click', (e) => {
       if (e.target.closest('.cf-q')) return;
+      const piBtn = e.target.closest('.cf-pi-btn');
+      if (piBtn) { e.stopPropagation(); if (container._cfOptPI) container._cfOptPI(Number(piBtn.dataset.tid)); return; }
       const node = e.target.closest('.cf-node');
       const flow = container.querySelector('.pib-flow');
       if (!node || !flow) return;
@@ -106,6 +115,8 @@
     wire(container);
     container._cfSelect = (opts && opts.onSelect) || null;
     container._cfRescale = (opts && opts.onRescale) || null;
+    container._cfOptPI = (opts && opts.onOptimisePI) || null;
+    const meta = (opts && opts.meta) || {};
     const { nodes, edges } = build(tree);
     if (!nodes.length) { container.innerHTML = '<p class="muted">Run Analyze to see the chain.</p>'; return null; }
     const maxTier = nodes.reduce((m, n) => Math.max(m, n.tier), 0);
@@ -117,13 +128,21 @@
       const col = (byTier[t] || []).sort((a, b) => a.name.localeCompare(b.name));
       if (!col.length) continue;
       const label = t === 0 ? 'RAW' : (t === maxTier ? 'PRODUCT' : 'T' + t);
-      const cells = col.map((n) => `<div class="pib-node cf-node${t === maxTier ? ' pib-node-product' : ''}" data-tid="${n.tid}">
+      const cells = col.map((n) => {
+        const grp = (meta[n.tid] && meta[n.tid].group) || '';
+        const pi = grp && isPIGroup(grp) && container._cfOptPI;
+        const catHtml = grp
+          ? `<div class="cf-cat muted" title="${esc(grp)}">${esc(grp)}${pi ? `<button type="button" class="cf-pi-btn" data-tid="${n.tid}" title="Optimise this PI commodity in the PI planner">⚙ PI</button>` : ''}</div>`
+          : '';
+        return `<div class="pib-node cf-node${t === maxTier ? ' pib-node-product' : ''}" data-tid="${n.tid}">
         <div class="cf-name" title="${esc(n.name)}"><img class="cf-icon" src="${IMG}/types/${n.tid}/icon?size=32" alt="" onerror="this.style.display='none'"><span>${esc(n.name)}</span></div>
+        ${catHtml}
         <div class="pib-node-row">
           <input class="cf-q" data-tid="${n.tid}" data-base="${n.base}" data-out="${n.out}" data-activity="${n.activity}" type="number" min="0" value="${Math.round(n.base)}" />
           <span class="pib-node-runs muted">${runLabel(n.activity, n.base, n.out)}</span>
         </div>
-      </div>`).join('');
+      </div>`;
+      }).join('');
       cols.push(`<div class="pib-flow-col"><div class="pib-flow-col-h">${esc(label)}</div>${cells}</div>`);
     }
     container.innerHTML = `<div class="pib-flow"><svg class="pib-flow-lines" xmlns="http://www.w3.org/2000/svg"></svg><div class="pib-flow-cols">${cols.join('')}</div></div>`;
@@ -157,21 +176,40 @@
   }
 
   // ---- Node blow-up detail panel ----
-  // ctx: { assetsTotals:{tid:owned}, isBuy(tid), onToggleBuy(tid), runsFor(tid),
-  //        nameFor(tid) }. Renders inputs/outputs, the blueprint name (copyable),
+  // ctx: { assetsTotals:{tid:owned}, isBuy(tid), onToggleBuy(tid), onMultiply(f),
+  //        runsFor(tid), nameFor(tid), groupFor(tid), isGather(tid),
+  //        onToggleGather(tid), onOptimisePI(tid) }. Renders inputs/outputs, the
+  //        blueprint name (copyable), the item's market group (category),
   //        availability colouring (green full / yellow partial / red missing),
-  //        and a build<->buy toggle that the planner re-plans from.
+  //        a build<->buy toggle, a buy<->gather (self-source) toggle for raw
+  //        materials, and a "⚙ Optimise PI" hook for PI commodities.
+  const wrenchBtn = (tid) => `<button type="button" class="cfd-pibtn secondary" data-tid="${tid}" title="Optimise this PI commodity in the PI planner">⚙ Optimise PI</button>`;
+  const gatherBtn = (tid, on) => `<button type="button" class="cfd-gathertoggle secondary" data-tid="${tid}">${on ? '↩ Back to buy' : '⛏ Gather / self-source'}</button>`;
+  const catSpan = (grp) => (grp ? `<span class="cfd-cat" title="Market group">${esc(grp)}</span>` : '');
+
   window.renderNodeDetail = async function (container, typeId, ctx) {
     if (!container) return;
     if (typeId == null) { container.innerHTML = ''; container.hidden = true; return; }
     container.hidden = false;
+    const grp = (ctx && ctx.groupFor && ctx.groupFor(typeId)) || '';
+    const isPI = grp && isPIGroup(grp);
+    const isGather = !!(ctx && ctx.isGather && ctx.isGather(typeId));
     container.innerHTML = '<p class="muted">Loading recipe…</p>';
     let r;
     try {
       const res = await fetch(`${API}/api/industry/recipe/${typeId}`);
       if (res.status === 404) {
-        const nm = ctx && ctx.nameFor ? ctx.nameFor(typeId) : `type ${typeId}`;
-        container.innerHTML = `<div class="cfd-head"><img class="cfd-icon" src="${IMG}/types/${typeId}/icon?size=32" onerror="this.style.display='none'"><strong>${esc(nm)}</strong> <span class="muted">— raw material (bought; no recipe)</span></div>`;
+        const nm = (ctx && ctx.nameFor && ctx.nameFor(typeId)) || `type ${typeId}`;
+        const acts = [];
+        if (ctx && ctx.onToggleGather) acts.push(gatherBtn(typeId, isGather));
+        if (ctx && ctx.onOptimisePI && isPI) acts.push(wrenchBtn(typeId));
+        container.innerHTML = `<div class="cfd-head">
+            <img class="cfd-icon" src="${IMG}/types/${typeId}/icon?size=32" onerror="this.style.display='none'">
+            <strong>${esc(nm)}</strong> ${catSpan(grp)}
+            <span class="muted">— raw material (${isGather ? 'self-sourced' : 'bought'}; no recipe)</span>
+          </div>
+          ${acts.length ? `<div class="cfd-bp">${acts.join('')}</div>` : ''}`;
+        wireDetailActions(container, typeId, ctx);
         return;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -194,24 +232,32 @@
     container.innerHTML = `
       <div class="cfd-head">
         <img class="cfd-icon" src="${IMG}/types/${r.type_id}/icon?size=32" onerror="this.style.display='none'">
-        <strong>${esc(r.name)}</strong> <span class="cfd-act">${esc(r.activity)}</span>
+        <strong>${esc(r.name)}</strong> <span class="cfd-act">${esc(r.activity)}</span> ${catSpan(grp)}
         <span class="muted">· ${runs.toLocaleString('en-US')} run(s) → ${(r.output_qty * runs).toLocaleString('en-US')} produced (${r.output_qty}/run)</span>
       </div>
       <div class="cfd-bp">
         <span class="muted">Recipe:</span>
         <button type="button" class="cfd-copy" data-copy="${esc(r.blueprint_name)}" title="Copy the blueprint/formula name to paste in the in-game market/search">📋 ${esc(r.blueprint_name)}</button>
         ${ctx && ctx.onToggleBuy ? `<button type="button" class="cfd-buytoggle secondary" data-tid="${r.type_id}">${isBuy ? '↩ Build instead' : '🛒 Buy instead → shopping list'}</button>` : ''}
+        ${ctx && ctx.onToggleGather && isBuy ? gatherBtn(typeId, isGather) : ''}
+        ${ctx && ctx.onOptimisePI && isPI ? wrenchBtn(typeId) : ''}
         ${ctx && ctx.onMultiply ? '<span class="cfd-mult muted">Scale chain: <button type="button" class="cfd-mbtn" data-f="2">×2</button> <button type="button" class="cfd-mbtn" data-f="5">×5</button> <button type="button" class="cfd-mbtn" data-f="10">×10</button></span>' : ''}
       </div>
       <table class="cfd-mats"><thead><tr><th>Input</th><th class="num">Per run</th><th class="num">Total needed</th><th class="num">On hand</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="muted small cfd-legend"><span class="cfd-have">green = enough</span> · <span class="cfd-part">yellow = partial</span> · <span class="cfd-miss">red = missing</span> — from your assets.</p>`;
+    wireDetailActions(container, typeId, ctx);
+  };
+
+  function wireDetailActions(container, typeId, ctx) {
     container.querySelector('.cfd-copy')?.addEventListener('click', (e) => {
       const t = e.currentTarget.getAttribute('data-copy');
       navigator.clipboard?.writeText(t).then(() => { e.currentTarget.textContent = '✓ Copied'; }).catch(() => {});
     });
     container.querySelector('.cfd-buytoggle')?.addEventListener('click', () => { if (ctx && ctx.onToggleBuy) ctx.onToggleBuy(typeId); });
+    container.querySelector('.cfd-gathertoggle')?.addEventListener('click', () => { if (ctx && ctx.onToggleGather) ctx.onToggleGather(typeId); });
+    container.querySelector('.cfd-pibtn')?.addEventListener('click', () => { if (ctx && ctx.onOptimisePI) ctx.onOptimisePI(typeId); });
     container.querySelectorAll('.cfd-mbtn').forEach((b) => b.addEventListener('click', () => { if (ctx && ctx.onMultiply) ctx.onMultiply(parseFloat(b.dataset.f)); }));
-  };
+  }
 
   window.ChainFlow = ChainFlow;
 })();

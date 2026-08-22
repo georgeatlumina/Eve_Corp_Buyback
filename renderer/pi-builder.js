@@ -709,27 +709,50 @@
 
   function runOptimize(targetId, N, p) {
     const needs = chainNeeds(targetId);
-    const nodes = [];
+    const ext = [], fac = [];
     for (const [tid, per] of needs) {
-      if (!nodeRole(tierOf(tid), p.model)) continue;
+      const role = nodeRole(tierOf(tid), p.model);
+      if (!role) continue;
       const out = perPlanetOutput(tierOf(tid), p.model, p);
       if (out <= 0) return { error: `Capacity for a P${tierOf(tid)} step is zero — check the assumptions (CC level / factories).` };
-      nodes.push({ tid, per, role: nodeRole(tierOf(tid), p.model), out, alloc: 1 });
+      const node = { tid, per, role, out, alloc: 1, cost: per / out };  // cost = planet-equiv per unit/hr
+      (role === 'extractor' ? ext : fac).push(node);
     }
-    if (!nodes.length) return { error: 'Nothing to build for this target.' };
-    if (N < nodes.length) return { error: `Need at least ${nodes.length} planets — one per production step — but only ${N} available.`, minPlanets: nodes.length };
-    let remaining = N - nodes.length;
+    if (!ext.length && !fac.length) return { error: 'Nothing to build for this target.' };
+    // Each distinct raw material needs its OWN extractor planet, but factory
+    // schematics can share a planet (several Industry Facilities per planet), so
+    // the real floor is one planet per extractor plus (at least) one shared
+    // factory planet — NOT one planet per production step.
+    const minPlanets = ext.length + (fac.length ? 1 : 0);
+    if (N < minPlanets) {
+      return {
+        minPlanets,
+        error: `Need at least ${minPlanets} planet${minPlanets === 1 ? '' : 's'} — ${ext.length} to extract the raw material${ext.length === 1 ? '' : 's'}`
+          + (fac.length ? ' plus at least one shared factory planet (factory schematics can be consolidated onto the same planet)' : '')
+          + ` — but only ${N} available.`,
+      };
+    }
+    // Extractors get an integer planet each; factory steps share `fp` planets,
+    // whose capacity is split across their schematics. Give each extra planet to
+    // whichever subsystem is currently the throughput bottleneck.
+    const facCost = fac.reduce((a, n) => a + n.cost, 0);
+    const extThroughput = (n) => n.alloc / n.cost;
+    let fp = fac.length ? 1 : 0;
+    const facThroughput = () => (fac.length ? fp / facCost : Infinity);
+    let remaining = N - ext.length - fp;
     while (remaining > 0) {
-      let bi = 0, bt = Infinity;
-      for (let i = 0; i < nodes.length; i++) {
-        const t = nodes[i].alloc * nodes[i].out / nodes[i].per;
-        if (t < bt) { bt = t; bi = i; }
-      }
-      nodes[bi].alloc++; remaining--;
+      let worst = facThroughput(); let worstExt = null;
+      for (const e of ext) { const t = extThroughput(e); if (t < worst) { worst = t; worstExt = e; } }
+      if (worstExt) worstExt.alloc++; else fp++;
+      remaining--;
     }
-    let R = Infinity, bottleneck = null;
-    for (const n of nodes) { const t = n.alloc * n.out / n.per; if (t < R) { R = t; bottleneck = n; } }
-    return { nodes, R, bottleneck, used: nodes.reduce((a, n) => a + n.alloc, 0), N, model: p.model };
+    let R = facThroughput();
+    let bottleneck = fac[0] || null;   // factory-bound → point at a factory schematic
+    for (const e of ext) { const t = extThroughput(e); if (t < R) { R = t; bottleneck = e; } }
+    // Factory "alloc" = the planet-share each schematic uses to sustain R.
+    for (const f of fac) f.alloc = R * f.cost;
+    const nodes = ext.concat(fac);
+    return { nodes, R, bottleneck, used: N, facPlanets: fp, N, model: p.model };
   }
 
   // Spread `total` planets across toons up to each toon's cap, evenly (round-robin).
@@ -792,16 +815,43 @@
   }
 
   async function pullPlanets() {
-    const st = $('#pib-opt-toon-status'); if (st) st.textContent = 'Loading…';
+    const st = $('#pib-opt-toon-status'); if (st) st.textContent = 'Loading planets from ESI…';
     try {
-      const r = await fetch(`${API}/api/pi/planet-capacity`).then((x) => x.json());
+      const res = await fetch(`${API}/api/pi/planet-capacity`);
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try { const j = await res.json(); detail = j.detail || j.error || detail; } catch (_) {}
+        throw new Error(detail);
+      }
+      const r = await res.json();
+      if (r.error) throw new Error(r.error);
       optToons = (r.toons || []).map((t) => ({ ...t, use: t.max_planets || 0 }));
       renderOptToons(); optTotalFromToons();
+      if (!st) return;
+      if (!optToons.length) {
+        st.textContent = 'No authorised PI characters found — add them under PI Characters (the manage_planets login), then Pull again.';
+        return;
+      }
       const reauth = optToons.filter((t) => t.needs_reauth).length;
-      if (st) st.textContent = optToons.length
-        ? `${optToons.length} toon(s), ${r.total_max} planets${reauth ? ` · ${reauth} need re-auth for skills` : ''}`
-        : 'No authed PI toons — add them in the PI Characters section.';
-    } catch (e) { if (st) st.textContent = 'Failed to load planets from ESI.'; }
+      const failed = optToons.filter((t) => t.error);
+      const parts = [`${optToons.length} toon(s), ${r.total_max} planets`];
+      if (reauth) parts.push(`${reauth} need re-auth for skills`);
+      if (failed.length) parts.push(`${failed.length} failed to read from ESI: ${failed.map((t) => `${t.name || t.character_id}: ${t.error}`).join('; ')}`);
+      st.textContent = parts.join(' · ');
+    } catch (e) {
+      // Be explicit about *why*. A network TypeError ("failed to fetch") means
+      // the local sidecar didn't answer — very different from an ESI/auth error.
+      console.error('[pi] pullPlanets failed:', e);
+      if (!st) return;
+      if (typeof isNetworkError === 'function' && isNetworkError(e)) {
+        if (typeof showBackendBanner === 'function') showBackendBanner(true);
+        st.textContent = `Couldn't reach the local backend (${API}) to read PI planets — the sidecar isn't responding. `
+          + `Restart the app; if it persists, another program may be using that port (see sidecar.log).`;
+      } else {
+        st.textContent = `Failed to load planets from ESI: ${e.message || e}. `
+          + `Check your PI characters are authorised (PI Characters section) and try Pull again.`;
+      }
+    }
   }
 
   function updateOptTarget() {
@@ -826,28 +876,35 @@
     const rate = (n) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10).toLocaleString('en-US');
     const ext = res.nodes.filter((n) => n.role === 'extractor').sort((a, b) => tierOf(a.tid) - tierOf(b.tid) || commodityName(a.tid).localeCompare(commodityName(b.tid)));
     const fac = res.nodes.filter((n) => n.role === 'factory').sort((a, b) => tierOf(a.tid) - tierOf(b.tid) || commodityName(a.tid).localeCompare(commodityName(b.tid)));
+    const share = (a) => (a >= 1 ? Math.round(a * 10) / 10 : Math.round(a * 100) / 100);
     const row = (n) => {
       const hi = n === res.bottleneck ? ' pib-opt-bottleneck' : '';
       const stageOut = n.alloc * n.out;
-      let sub;
+      let sub, count;
       if (n.role === 'extractor') {
         const p0 = extractorP0(n, res.model);
         const planets = p0PlanetTypes(p0).join(' · ') || '—';
         sub = res.model === 'ext-p1'
           ? `extracts ${escapeHtml(commodityName(p0))} · ${escapeHtml(planets)}`
           : `${escapeHtml(planets)}`;
+        count = `${n.alloc}×`;
       } else {
-        sub = `P${tierOf(n.tid)} factory planet`;
+        // Factory schematics share planets — n.alloc is a fractional planet-share.
+        sub = `P${tierOf(n.tid)} schematic${n.alloc < 0.995 ? ' · shares a factory planet' : ''}`;
+        count = `${share(n.alloc)}×`;
       }
       return `<div class="pib-opt-row${hi}">
-        <span class="pib-opt-row-n">${n.alloc}×</span>
+        <span class="pib-opt-row-n">${count}</span>
         <span class="pib-opt-row-name">${escapeHtml(commodityName(n.tid))}</span>
         <span class="pib-opt-row-sub muted">${sub}</span>
         <span class="pib-opt-row-out muted">${fmt(stageOut)}/hr</span>
       </div>`;
     };
-    const group = (title, rows) => rows.length
-      ? `<div class="pib-opt-group"><div class="pib-opt-group-h">${title} (${rows.reduce((a, n) => a + n.alloc, 0)} planets)</div>${rows.map(row).join('')}</div>` : '';
+    const group = (title, rows, planets) => {
+      if (!rows.length) return '';
+      const pc = planets != null ? planets : rows.reduce((a, n) => a + n.alloc, 0);
+      return `<div class="pib-opt-group"><div class="pib-opt-group-h">${title} (${pc} planet${pc === 1 ? '' : 's'})</div>${rows.map(row).join('')}</div>`;
+    };
 
     let splitHtml = '';
     const withPlanets = optToons.filter((t) => (t.use || 0) > 0);
@@ -863,7 +920,7 @@
         <b>${escapeHtml(commodityName(calcItem))}</b>: <b>${rate(res.R)}/hr</b> (${fmt(res.R * 24)}/day)
         · ${res.used}/${res.N} planets used
         · bottleneck: <b>${escapeHtml(commodityName(res.bottleneck.tid))}</b></div>
-      <div class="pib-opt-groups">${group('Extractor planets', ext)}${group('Factory planets', fac)}</div>
+      <div class="pib-opt-groups">${group('Extractor planets', ext)}${group(fac.length > 1 ? 'Factory planets (schematics consolidated)' : 'Factory planets', fac, res.facPlanets)}</div>
       ${splitHtml}
       <div id="pib-opt-logi" class="pib-opt-logi"></div>
       <div id="pib-opt-value" class="pib-opt-value"></div>`;
@@ -1239,4 +1296,116 @@
   }
 
   document.querySelector('.tab-btn[data-tab="pi-builder"]')?.addEventListener('click', initTab);
+
+  // ================= PI optimiser slide-out =================
+  // A side panel (opened by the ⚙ PI buttons in the Production/Reaction planners)
+  // that shows this PI commodity's chain + the same optimizer as the full PI
+  // planner, so users can size the colony without leaving the planner.
+  let slideTid = null, slideName = '', slideWired = false;
+
+  function slideEl() { return document.getElementById('pi-slideout'); }
+  function openSlideout() { const s = slideEl(); if (s) { s.hidden = false; requestAnimationFrame(() => s.classList.add('open')); } }
+  function closeSlideout() { const s = slideEl(); if (s) { s.classList.remove('open'); setTimeout(() => { s.hidden = true; }, 220); } }
+
+  function wireSlideout() {
+    if (slideWired) return; slideWired = true;
+    const s = slideEl(); if (!s) return;
+    s.querySelectorAll('[data-pi-close]').forEach((b) => b.addEventListener('click', closeSlideout));
+    const nInput = document.getElementById('pi-slideout-n');
+    let t;
+    nInput?.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => { const N = Math.max(1, parseInt(nInput.value, 10) || 1); renderSlideout(slideTid, slideName, N); }, 300);
+    });
+    document.getElementById('pi-slideout-open')?.addEventListener('click', openFullPlanner);
+    document.addEventListener('keydown', (e) => { const el = slideEl(); if (e.key === 'Escape' && el && !el.hidden) closeSlideout(); });
+  }
+
+  function openFullPlanner() {
+    const N = Math.max(1, parseInt(document.getElementById('pi-slideout-n')?.value, 10) || 12);
+    const tid = slideTid;
+    document.querySelector('.tab-btn[data-tab="pi-builder"]')?.click();
+    // Let initTab load static data + build the optimizer UI, then target it.
+    setTimeout(() => {
+      populateCalc();
+      const sel = $('#pib-calc-item'); if (sel) sel.value = String(tid);
+      setCalcItem(tid);
+      const tot = $('#pib-opt-total'); if (tot) tot.value = String(N);
+      try { optimizeNow(); } catch (_) {}
+      closeSlideout();
+    }, 420);
+  }
+
+  function renderSlideout(typeId, name, N) {
+    const body = document.getElementById('pi-slideout-body');
+    if (!body) return;
+    const tid = Number(typeId);
+    const title = document.getElementById('pi-slideout-title');
+    if (title) title.textContent = name || commodityName(tid);
+    if (!piTypes || !byOutput) { body.innerHTML = '<p class="muted">Loading PI data…</p>'; return; }
+    if (!(tierOf(tid) >= 1) || !byOutput[tid]) {
+      body.innerHTML = `<div class="pis-empty muted">${escapeHtml(name || commodityName(tid))} isn't a Planetary Interaction commodity, so there's nothing to optimise here.</div>`;
+      return;
+    }
+    if (!optParams) optParams = defaultOptParams('ext-p1', 5);
+    let res = runOptimize(tid, N, optParams);
+    // First open below the floor → bump the planet count to the real minimum.
+    if (res.error && res.minPlanets && res.minPlanets > N) {
+      const nInput = document.getElementById('pi-slideout-n');
+      if (nInput) nInput.value = String(res.minPlanets);
+      res = runOptimize(tid, res.minPlanets, optParams);
+      N = res.error ? N : res.minPlanets;
+    }
+
+    // Compact chain: one column per tier (P0 raw → product).
+    const needs = chainNeeds(tid);
+    const byTier = { 0: [], 1: [], 2: [], 3: [], 4: [] };
+    for (const [t2] of needs) { const tr = tierOf(t2); if (byTier[tr]) byTier[tr].push(t2); }
+    const chainCols = [0, 1, 2, 3, 4].filter((t2) => byTier[t2].length).map((t2) => {
+      const items = byTier[t2].sort((a, b) => commodityName(a).localeCompare(commodityName(b)))
+        .map((id) => `<div class="pis-chip${id === tid ? ' pis-chip-product' : ''}">${escapeHtml(commodityName(id))}</div>`).join('');
+      return `<div class="pis-col"><div class="pis-col-h">${t2 === 0 ? 'P0 raw' : 'P' + t2}</div>${items}</div>`;
+    }).join('');
+
+    let optHtml;
+    if (res.error) {
+      optHtml = `<div class="pib-opt-err">${escapeHtml(res.error)}</div>`;
+    } else {
+      const fmt = (n) => Math.round(n).toLocaleString('en-US');
+      const rate = (n) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10).toLocaleString('en-US');
+      const share = (a) => (a >= 1 ? Math.round(a * 10) / 10 : Math.round(a * 100) / 100);
+      const ext = res.nodes.filter((n) => n.role === 'extractor').sort((a, b) => tierOf(a.tid) - tierOf(b.tid) || commodityName(a.tid).localeCompare(commodityName(b.tid)));
+      const fac = res.nodes.filter((n) => n.role === 'factory').sort((a, b) => tierOf(a.tid) - tierOf(b.tid) || commodityName(a.tid).localeCompare(commodityName(b.tid)));
+      const extRow = (n) => {
+        const p0 = extractorP0(n, res.model);
+        const planets = p0PlanetTypes(p0).join(' · ') || '—';
+        return `<div class="pis-row${n === res.bottleneck ? ' pis-bottleneck' : ''}"><span class="pis-n">${n.alloc}×</span> <b>${escapeHtml(commodityName(n.tid))}</b> <span class="muted">${res.model === 'ext-p1' ? `extracts ${escapeHtml(commodityName(p0))} · ` : ''}${escapeHtml(planets)}</span> <span class="pis-out muted">${fmt(n.alloc * n.out)}/hr</span></div>`;
+      };
+      const facRow = (n) => `<div class="pis-row${n === res.bottleneck ? ' pis-bottleneck' : ''}"><span class="pis-n">${share(n.alloc)}×</span> <b>${escapeHtml(commodityName(n.tid))}</b> <span class="muted">P${tierOf(n.tid)} schematic${n.alloc < 0.995 ? ' · shares a planet' : ''}</span> <span class="pis-out muted">${fmt(n.alloc * n.out)}/hr</span></div>`;
+      optHtml = `
+        <div class="pis-summary"><b>${rate(res.R)}/hr</b> (${fmt(res.R * 24)}/day) · <b>${res.used}</b> planets · bottleneck: <b>${escapeHtml(commodityName(res.bottleneck.tid))}</b></div>
+        <div class="pis-group-h">Extractor planets (${ext.length})</div>${ext.map(extRow).join('')}
+        ${fac.length ? `<div class="pis-group-h">Factory planets (${res.facPlanets} · schematics consolidated)</div>${fac.map(facRow).join('')}` : ''}`;
+    }
+
+    body.innerHTML = `
+      <div class="pis-chain"><div class="pis-chain-h muted">Production chain</div><div class="pis-cols">${chainCols}</div></div>
+      <div class="pis-opt">${optHtml}</div>
+      <p class="muted small">Assumptions from the full PI planner (model ${escapeHtml(optParams.model)}, CC ${optParams.cc}). Open the full planner to tune skills, factories & valuation.</p>`;
+  }
+
+  window.openPIOptimizer = async function (typeId, name) {
+    slideTid = Number(typeId); slideName = name || '';
+    wireSlideout();
+    openSlideout();
+    const body = document.getElementById('pi-slideout-body');
+    const title = document.getElementById('pi-slideout-title');
+    if (title) title.textContent = name || `type ${typeId}`;
+    if (body) body.innerHTML = '<p class="muted">Loading PI data…</p>';
+    try { await loadStatic(); } catch (_) { if (body) body.innerHTML = '<p class="muted">Failed to load PI data.</p>'; return; }
+    if (!optParams) optParams = defaultOptParams('ext-p1', 5);
+    const nInput = document.getElementById('pi-slideout-n');
+    const N = Math.max(1, parseInt(nInput && nInput.value, 10) || 12);
+    renderSlideout(slideTid, slideName, N);
+  };
 })();

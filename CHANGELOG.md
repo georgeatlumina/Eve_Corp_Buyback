@@ -4,6 +4,39 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.8.0 — PI-aware planners: categories, self-source & a PI optimiser slide-out
+
+### Production & Reaction planners — item categories
+- Every chain-calculator node and the node blow-up now show the item's **market group**
+  (Mineral, Moon Materials, Ice Product, Refined/Basic/Specialized Commodities, Composite, …),
+  in both planners. Category badges also appear in the production shopping list, gather list and tree.
+- **Fixed:** clicking a raw-material node showed a bare `type 1234` instead of its name — the plan now
+  carries a per-type name+group map, so nodes are always named correctly.
+
+### Production planner — "gather" (self-source) as a third option
+- Raw materials now have **buy / build / gather**. Marking a material **⛏ gather** (mined or made via PI)
+  drops it off the buy shopping list into a separate **Gather / self-source** pane — with its own
+  copy button, unit + ISK-value totals and a **Self-source** summary tile. The choice **persists across
+  restarts**, and building an item supersedes gathering it.
+
+### PI optimiser slide-out
+- PI commodities carry a **⚙ PI** button (in the shopping list, gather list, production tree, chain-flow
+  nodes and node blow-up). It slides out a side panel that reuses the **PI planner's chain calculator +
+  optimiser** for that commodity — production chain (P0→P4), planets needed, extractor planets with
+  planet types, and consolidated factory planets — with an editable planet count and a **Full planner ↗**
+  hand-off.
+
+### PI planet optimiser — realistic minimum planets
+- The auto-optimiser no longer demands **one planet per production step**. Factory schematics **share
+  planets** (multiple schematics per planet), so the floor is one extractor planet per raw material plus a
+  shared factory planet — you can build P4 with far fewer planets than before, and the plan shows the
+  consolidated factory shares.
+
+### Fixes
+- **Pull planets from ESI** now reports *why* it failed — backend unreachable vs. an ESI/auth error vs. a
+  specific character's token — instead of a single generic "Failed to load planets from ESI." The endpoint
+  also returns a readable error rather than a 500.
+
 ## v3.7.0 — Acquisitions Build Finder, version picker & contract polish
 
 ### Acquisitions — Build Finder

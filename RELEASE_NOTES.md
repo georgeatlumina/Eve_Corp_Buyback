@@ -1,26 +1,35 @@
-# v3.7.0 — Acquisitions Build Finder, version picker & contract polish
+# v3.8.0 — PI-aware planners: categories, self-source & a PI optimiser slide-out
 
-## Acquisitions — Build Finder
-- **Analyse Hulls / Analyse Fits** split results into four buckets — **completable from inventory**,
-  **completable with market buys**, **partial builds**, and **out of reach** — with live progress bars.
-- The shopping list shows the **UEXO vs Jita cost delta** per missing item (+ a UEXO qty column), and
-  the **120% Jita contract price** per fit in the completable sections.
-- Results **persist across tab switches**, plus a **Copy inventory** button and **configurable
-  shopping thresholds** (min coverage, max ISK gap). Hangar hull count added to the doctrine stock view.
+## Item categories in both planners
+- Every chain-calculator node and the node blow-up now show the item's **market group** — Mineral,
+  Moon Materials, Ice Product, Refined / Basic / Specialized Commodities, Composite, and so on — in the
+  **Production** and **Reaction** planners. Category badges also appear in the production shopping list,
+  gather list and production tree.
+- **Fixed:** clicking a raw-material node used to show a bare `type 1234` instead of its name. The plan
+  now carries a per-type name + group map, so nodes are always named correctly.
 
-## Contracts
-- **T2 / T3 tech-tier badges** on contract quota bars and doctrine-stock hull bars.
-- **Contract count** shown alongside total value, and **full-fit contract pricing via Janice**.
-- Sold scan handles contracts with a null `date_completed` (falls back to `date_accepted`); new
-  **Copy sold Discord table** button.
+## "Gather" — self-source as a third option (Production)
+- Raw materials now have **buy / build / gather**. Marking a material **⛏ gather** (mined or made via PI)
+  moves it off the buy shopping list into a separate **Gather / self-source** pane — with its own copy
+  button, unit + ISK-value totals, and a **Self-source** summary tile.
+- The choice **persists across restarts**, and building an item supersedes gathering it.
 
-## Settings — app version picker
-- A dropdown at the top of the Settings page lists released versions — **switch to or roll back to any
-  version**. Picking one downloads that installer and runs it, so a bad update is easy to undo.
+## PI optimiser slide-out
+- PI commodities get a **⚙ PI** button (shopping list, gather list, production tree, chain-flow nodes and
+  node blow-up). It slides out a side panel that reuses the **PI planner's chain calculator + optimiser**
+  for that commodity: production chain (P0→P4), planets needed, extractor planets with their planet types,
+  and consolidated factory planets — with an editable planet count and a **Full planner ↗** hand-off.
+
+## Realistic minimum planets in the PI optimiser
+- The auto-optimiser no longer insists on **one planet per production step**. Factory schematics **share
+  planets** (multiple schematics per planet), so the floor is one extractor planet per raw material plus a
+  shared factory planet — you can build P4 with far fewer planets, and the plan shows the consolidated
+  factory shares.
 
 ## Fixes
-- Analyse Hulls no longer writes to a detached DOM after tab switches; shopping-list module names show
-  correctly (were falling back to type IDs); candidates with hull qty < 1 are skipped.
+- **Pull planets from ESI** now reports *why* it failed — backend unreachable vs. an ESI/auth error vs. a
+  specific character's token — instead of a single generic message, and the endpoint returns a readable
+  error rather than a 500.
 
 ---
 

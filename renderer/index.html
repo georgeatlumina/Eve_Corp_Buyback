@@ -608,6 +608,14 @@
           <div id="prod-raw"></div>
         </div>
       </div>
+      <div id="prod-gather-pane" class="prod-pane prod-gather-pane" hidden>
+        <div class="prod-pane-head">
+          <strong>Gather / self-source</strong> <span id="prod-gather-count" class="muted"></span>
+          <span class="muted prod-gather-note">— materials you'll mine or make via PI instead of buying</span>
+          <button id="prod-copy-gather" type="button" class="secondary" title="Copy the self-source list (Name xN per line)">Copy list</button>
+        </div>
+        <div id="prod-gather"></div>
+      </div>
       <div id="prod-tree-pane" class="prod-tree-pane" hidden>
         <div class="prod-pane-head">
           <strong>Production tree</strong> <span id="prod-tree-count" class="muted"></span>
@@ -1454,6 +1462,23 @@
       </div>
     </section>
   </main>
+
+  <!-- PI optimiser slide-out (opened by the ⚙ PI buttons in the planners) -->
+  <div id="pi-slideout" class="pi-slideout" hidden>
+    <div class="pi-slideout-backdrop" data-pi-close></div>
+    <aside class="pi-slideout-panel" role="dialog" aria-label="PI optimiser">
+      <div class="pi-slideout-head">
+        <div class="pi-slideout-titles">
+          <strong id="pi-slideout-title">PI optimiser</strong>
+          <span class="pi-slideout-sub muted">Optimise this Planetary Interaction chain</span>
+        </div>
+        <label class="pi-slideout-planets">Planets <input id="pi-slideout-n" type="number" min="1" step="1" value="12" /></label>
+        <button type="button" id="pi-slideout-open" class="secondary" title="Open the full PI Planner &amp; Builder">Full planner ↗</button>
+        <button type="button" class="pi-slideout-close" data-pi-close aria-label="Close">✕</button>
+      </div>
+      <div id="pi-slideout-body" class="pi-slideout-body"></div>
+    </aside>
+  </div>
 
   <!-- Patch-notes drawer (slides from the left, opened by the 🗒 button by the version) -->
   <div id="notes-overlay" class="side-drawer-overlay" hidden></div>

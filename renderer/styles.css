@@ -1267,6 +1267,13 @@ body.liq-full main { max-width: none; }
 .cfd-copy { background: #23303a; color: #cfe; border: 1px solid #3a5a7a; border-radius: 4px; padding: 0.2em 0.6em; cursor: pointer; }
 .cfd-copy:hover { background: #2f4a66; }
 .cfd-buytoggle { font-size: 0.85em; padding: 0.2em 0.6em; }
+.cfd-gathertoggle { font-size: 0.85em; padding: 0.2em 0.6em; color: #d9c58f; border-color: #6b5a2f; }
+.cfd-pibtn { font-size: 0.85em; padding: 0.2em 0.6em; color: #9fd6c0; border-color: #2f6b57; }
+.cfd-cat { background: #202a26; color: #8fcaa8; border: 1px solid #2f4a3e; border-radius: 3px; padding: 0 0.4em; font-size: 0.72em; }
+/* Category subline on chain-flow nodes + its inline ⚙ PI button */
+.cf-cat { display: flex; align-items: center; gap: 0.3em; font-size: 0.68em; color: #8fae9c; margin: -0.1em 0 0.25em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-pi-btn { flex: 0 0 auto; margin-left: auto; background: #1c2a26; color: #9fd6c0; border: 1px solid #2f6b57; border-radius: 3px; padding: 0 0.35em; font-size: 0.95em; cursor: pointer; line-height: 1.5; }
+.cf-pi-btn:hover { background: #26443a; }
 .cfd-icon { width: 20px; height: 20px; vertical-align: middle; margin-right: 0.35em; }
 .cfd-mats { width: 100%; border-collapse: collapse; font-size: 0.88em; }
 .cfd-mats th, .cfd-mats td { text-align: left; padding: 0.2em 0.5em; border-bottom: 1px solid #242424; }
@@ -1667,6 +1674,44 @@ body.popout-calc .pib-calc > summary { display: none; }
 .prod-toggle.prod-tobuy { opacity: 0.92; white-space: nowrap; color: #cfe; border-color: #3a5a7a; }
 .prod-table tr:hover .prod-toggle.prod-tobuy { opacity: 1; }
 .prod-toggle.prod-tobuy:hover { background: #2f4a66; }
+/* Material market-group label + gather / PI toggles */
+.prod-cat { font-size: 0.74em; color: #7fae95; background: #1b241f; border: 1px solid #2c3d33; border-radius: 3px; padding: 0 0.35em; white-space: nowrap; }
+.prod-toggle.prod-togather { color: #d9c58f; border-color: #6b5a2f; }
+.prod-toggle.prod-togather:hover { background: #3a331c; }
+.prod-toggle.prod-pi { color: #9fd6c0; border-color: #2f6b57; }
+.prod-toggle.prod-pi:hover { background: #21382f; }
+.prod-tile-gather { border-color: #6b5a2f; } .prod-tile-gather .prod-tile-value { color: #d9c58f; }
+.prod-gather-pane { margin-top: 0.9em; }
+.prod-gather-pane .prod-gather-note { font-size: 0.85em; }
+
+/* PI optimiser slide-out (opened by ⚙ PI buttons in the planners) */
+.pi-slideout { position: fixed; inset: 0; z-index: 960; }
+.pi-slideout[hidden] { display: none; }
+.pi-slideout-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.45); opacity: 0; transition: opacity 0.2s ease; }
+.pi-slideout.open .pi-slideout-backdrop { opacity: 1; }
+.pi-slideout-panel { position: absolute; top: 0; right: 0; height: 100%; width: min(600px, 94vw); background: #14161a; border-left: 1px solid #333; box-shadow: -8px 0 24px rgba(0,0,0,0.5); display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.24s ease; }
+.pi-slideout.open .pi-slideout-panel { transform: translateX(0); }
+.pi-slideout-head { display: flex; align-items: center; gap: 0.6em; padding: 0.7em 0.9em; border-bottom: 1px solid #2a2a2a; flex-wrap: wrap; }
+.pi-slideout-titles { display: flex; flex-direction: column; margin-right: auto; min-width: 0; }
+.pi-slideout-titles strong { font-size: 1.02em; color: #dfe; }
+.pi-slideout-sub { font-size: 0.78em; }
+.pi-slideout-planets { font-size: 0.85em; color: #9ab; display: flex; align-items: center; gap: 0.35em; }
+.pi-slideout-planets input { width: 4.5em; background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.15em 0.35em; text-align: right; }
+.pi-slideout-close { background: none; border: 1px solid #3a3a3a; color: #bbb; border-radius: 4px; cursor: pointer; padding: 0.1em 0.5em; font-size: 1em; }
+.pi-slideout-close:hover { background: #2a2a2a; color: #fff; }
+.pi-slideout-body { padding: 0.8em 0.9em; overflow-y: auto; flex: 1 1 auto; }
+.pis-chain-h, .pis-group-h { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: #8aa; margin: 0.6em 0 0.35em; }
+.pis-cols { display: flex; gap: 0.6em; overflow-x: auto; padding-bottom: 0.3em; }
+.pis-col { flex: 0 0 auto; min-width: 96px; }
+.pis-col-h { font-size: 0.72em; color: #789; margin-bottom: 0.3em; text-align: center; }
+.pis-chip { background: #1c1f24; border: 1px solid #2f3540; border-radius: 4px; padding: 0.2em 0.4em; margin-bottom: 0.3em; font-size: 0.8em; color: #cde; white-space: nowrap; }
+.pis-chip-product { border-color: #6fd0a0; color: #9fe6c4; }
+.pis-summary { background: #16211c; border: 1px solid #2f4a3e; border-radius: 6px; padding: 0.5em 0.7em; margin: 0.4em 0; color: #dfe; }
+.pis-row { display: flex; align-items: center; gap: 0.45em; padding: 0.2em 0.1em; border-bottom: 1px solid #20242a; font-size: 0.88em; }
+.pis-row .pis-n { min-width: 2.6em; text-align: right; color: #9fd6c0; font-variant-numeric: tabular-nums; }
+.pis-row .pis-out { margin-left: auto; white-space: nowrap; }
+.pis-bottleneck { background: #26201a; border-radius: 4px; }
+.pis-empty { padding: 1.2em 0.4em; }
 /* Fitting — module grouping */
 .fit-count { font-size: 0.82em; color: #6fd0a0; font-weight: 700; flex: 0 0 auto; }
 .fit-grp-btn { background: none; border: 1px solid #35505c; color: #7f93a0; border-radius: 3px; cursor: pointer; font-size: 0.8em; padding: 0 0.25em; flex: 0 0 auto; line-height: 1.4; }

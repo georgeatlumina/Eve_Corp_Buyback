@@ -652,9 +652,13 @@ def pi_planet_capacity():
     level, read from ESI skills. Powers the optimizer's planet budget. Toons
     authed before the read_skills scope was added are flagged ``needs_reauth`` —
     re-auth them in the PI Characters section to include them."""
-    ua = get_user_agent()
+    try:
+        ua = get_user_agent()
+        scoped = list(_pi_scoped_slots())
+    except Exception as e:  # noqa: BLE001 — surface a readable reason, not a 500
+        return {'toons': [], 'total_max': 0, 'error': f'{type(e).__name__}: {e}'}
     toons, total, seen = [], 0, set()
-    for _slot, token, cid, cname in _pi_scoped_slots():
+    for _slot, token, cid, cname in scoped:
         if cid in seen:
             continue
         seen.add(cid)

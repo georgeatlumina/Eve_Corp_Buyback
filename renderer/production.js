@@ -7,7 +7,27 @@
 // Self-contained IIFE; reuses app.js globals ($, escapeHtml, downloadBlob, API).
 
 (function () {
-  const state = { last: null, loading: false, buyIds: new Set(), flow: null };
+  const state = { last: null, loading: false, buyIds: new Set(), gatherIds: new Set(), flow: null, selTid: null };
+  const GATHER_KEY = 'prod-gather-ids';
+
+  function loadGather() {
+    try { const a = JSON.parse(localStorage.getItem(GATHER_KEY) || '[]'); if (Array.isArray(a)) state.gatherIds = new Set(a.map(Number)); } catch (_) {}
+  }
+  function persistGather() {
+    try { localStorage.setItem(GATHER_KEY, JSON.stringify([...state.gatherIds])); } catch (_) {}
+  }
+  // Per-type name + market group for the plan (set by the backend), so the flow
+  // and node blow-up can name and categorise raw materials that have no recipe.
+  const typeMeta = () => (state.last && state.last.type_meta) || {};
+  const groupFor = (t) => { const m = typeMeta()[String(t)] || typeMeta()[Number(t)]; return (m && m.group) || ''; };
+  const nameForType = (t) => {
+    const m = typeMeta()[String(t)] || typeMeta()[Number(t)];
+    if (m && m.name) return m.name;
+    const j = (state.last && state.last.jobs || []).find((x) => x.type_id === Number(t));
+    if (j) return j.name;
+    const r = (state.last && state.last.raw_materials || []).find((x) => x.type_id === Number(t));
+    return (r && r.name) || `type ${t}`;
+  };
 
   const isk = (n) => (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const iskShort = (n) => {
@@ -161,6 +181,11 @@
     if (inv.job_count) {
       tiles.push(tile(`&nbsp;· invention (${inv.total_attempts} tries)`, isk(t.invention_cost), 'prod-tile-sub'));
     }
+    const gathered = (d.raw_materials || []).filter((r) => state.gatherIds.has(Number(r.type_id)));
+    if (gathered.length) {
+      const gCost = gathered.reduce((s, r) => s + (r.line_cost || 0), 0);
+      tiles.push(tile(`Self-source (${gathered.length})`, iskShort(gCost) + ' ISK', 'prod-tile-gather'));
+    }
     tiles.push(tile('Buy finished', isk(t.buy_cost) + ' ISK', 'prod-tile-buy'));
     tiles.push(tile(cheaper ? 'Build saves' : 'Build costs extra', iskShort(Math.abs(delta)) + ' ISK', cheaper ? 'prod-tile-good' : 'prod-tile-bad'));
     el.innerHTML = tiles.join('');
@@ -201,29 +226,61 @@
       </table>`;
   }
 
+  // One material row. `mode` = 'buy' (shopping list) or 'gather' (self-source),
+  // which decides the third action button (⛏ gather vs 🛒 buy).
+  function rawRowHtml(r, priced, mode) {
+    const grp = groupFor(r.type_id);
+    const buildBtn = r.buildable ? `<button class="prod-toggle" data-build="${r.type_id}" title="Build this instead of buying it">→ build</button>` : '';
+    const flipBtn = mode === 'buy'
+      ? `<button class="prod-toggle prod-togather" data-gather="${r.type_id}" title="Self-source this (PI / mining) — removes it from the buy list">⛏ gather</button>`
+      : `<button class="prod-toggle" data-ungather="${r.type_id}" title="Move back to the buy shopping list">🛒 buy</button>`;
+    const piBtn = (grp && typeof window.cfIsPIGroup === 'function' && window.cfIsPIGroup(grp))
+      ? `<button class="prod-toggle prod-pi" data-pi="${r.type_id}" title="Optimise this PI commodity in the PI planner">⚙ PI</button>` : '';
+    return `
+      <tr${r.invention ? ' class="prod-raw-inv"' : ''}>
+        <td>${escapeHtml(r.name)}${r.invention ? ' <span class="prod-inv-badge">inv</span>' : ''}${grp ? ` <span class="prod-cat muted">${escapeHtml(grp)}</span>` : ''}</td>
+        <td class="num" title="${(r.qty || 0).toLocaleString('en-US')}">${r.qty || 0}</td>
+        ${priced ? `<td class="num">${isk(r.line_cost)}</td>` : ''}
+        <td class="prod-action">${buildBtn}${piBtn}${flipBtn}</td>
+      </tr>`;
+  }
+
   function renderRaw(d) {
     const wrap = $('#prod-raw');
     const count = $('#prod-raw-count');
     if (!wrap) return;
     const raw = d.raw_materials || [];
-    const units = raw.reduce((n, r) => n + (r.qty || 0), 0);
-    if (count) count.textContent = `${raw.length} line(s) · ${units.toLocaleString('en-US')} units`;
-    if (!raw.length) { wrap.innerHTML = '<p class="muted">Nothing to buy.</p>'; return; }
     const priced = d.pricing && d.pricing.priced;
-    const rows = raw.map((r) => {
-      const action = r.buildable ? `<button class="prod-toggle" data-build="${r.type_id}" title="Build this instead of buying it">→ build</button>` : '';
-      return `
-      <tr${r.invention ? ' class="prod-raw-inv"' : ''}>
-        <td>${escapeHtml(r.name)}${r.invention ? ' <span class="prod-inv-badge">inv</span>' : ''}</td>
-        <td class="num" title="${(r.qty || 0).toLocaleString('en-US')}">${r.qty || 0}</td>
-        ${priced ? `<td class="num">${isk(r.line_cost)}</td>` : ''}
-        <td class="prod-action">${action}</td>
-      </tr>`;
-    }).join('');
+    const buyRows = raw.filter((r) => !state.gatherIds.has(Number(r.type_id)));
+    const gatherRows = raw.filter((r) => state.gatherIds.has(Number(r.type_id)));
+    const units = buyRows.reduce((n, r) => n + (r.qty || 0), 0);
+    if (count) count.textContent = `${buyRows.length} line(s) · ${units.toLocaleString('en-US')} units`;
+    if (!buyRows.length) {
+      wrap.innerHTML = `<p class="muted">${gatherRows.length ? 'Everything is built or self-sourced — nothing to buy.' : 'Nothing to buy.'}</p>`;
+    } else {
+      wrap.innerHTML = `
+        <table class="prod-table">
+          <thead><tr><th>Material</th><th class="num">Qty</th>${priced ? '<th class="num">Cost</th>' : ''}<th></th></tr></thead>
+          <tbody>${buyRows.map((r) => rawRowHtml(r, priced, 'buy')).join('')}</tbody>
+        </table>`;
+    }
+    renderGather(gatherRows, priced);
+  }
+
+  function renderGather(gatherRows, priced) {
+    const pane = $('#prod-gather-pane');
+    const wrap = $('#prod-gather');
+    const count = $('#prod-gather-count');
+    if (!pane || !wrap) return;
+    if (!gatherRows.length) { pane.hidden = true; wrap.innerHTML = ''; if (count) count.textContent = ''; return; }
+    pane.hidden = false;
+    const units = gatherRows.reduce((n, r) => n + (r.qty || 0), 0);
+    const value = gatherRows.reduce((n, r) => n + (r.line_cost || 0), 0);
+    if (count) count.textContent = `${gatherRows.length} line(s) · ${units.toLocaleString('en-US')} units${priced ? ` · ~${isk(value)} ISK value` : ''}`;
     wrap.innerHTML = `
       <table class="prod-table">
-        <thead><tr><th>Material</th><th class="num">Qty</th>${priced ? '<th class="num">Cost</th>' : ''}<th></th></tr></thead>
-        <tbody>${rows}</tbody>
+        <thead><tr><th>Material</th><th class="num">Qty</th>${priced ? '<th class="num">Value</th>' : ''}<th></th></tr></thead>
+        <tbody>${gatherRows.map((r) => rawRowHtml(r, priced, 'gather')).join('')}</tbody>
       </table>`;
   }
 
@@ -238,7 +295,11 @@
     if (node.invented) meta.push(`invent ${Math.round((node.probability || 0) * 100)}%`);
     if (node.truncated) meta.push('…truncated');
     const metaHtml = meta.length ? ` <span class="muted">· ${meta.join(' · ')}</span>` : '';
-    const line = `${badge} <strong>${escapeHtml(node.name)}</strong> <span class="prod-tree-qty">×${qty}</span>${metaHtml}`;
+    const grp = groupFor(node.type_id);
+    const catHtml = grp ? ` <span class="prod-cat muted">${escapeHtml(grp)}</span>` : '';
+    const piHtml = (grp && typeof window.cfIsPIGroup === 'function' && window.cfIsPIGroup(grp))
+      ? ` <button class="prod-toggle prod-pi" data-pi="${node.type_id}" title="Optimise this PI commodity in the PI planner">⚙ PI</button>` : '';
+    const line = `${badge} <strong>${escapeHtml(node.name)}</strong> <span class="prod-tree-qty">×${qty}</span>${catHtml}${metaHtml}${piHtml}`;
     const kids = node.children || [];
     if (!kids.length) return `<li class="prod-tree-leaf">${line}</li>`;
     const open = depth < 2 ? ' open' : '';
@@ -280,8 +341,22 @@
 
   function setBuild(typeId, buy) {
     const tid = Number(typeId);
-    if (buy) state.buyIds.add(tid); else state.buyIds.delete(tid);
+    if (buy) { state.buyIds.add(tid); }
+    else { state.buyIds.delete(tid); state.gatherIds.delete(tid); persistGather(); } // building supersedes gathering
     analyze(); // re-explode with the new build/buy split
+  }
+
+  // Gather = self-source (PI / mining), a third state for raw materials: it stays
+  // in the plan but drops off the buy shopping list. Purely presentational (it
+  // doesn't change the BOM), so re-render from state.last without re-exploding.
+  function setGather(typeId, on) {
+    const tid = Number(typeId);
+    if (on) state.gatherIds.add(tid); else state.gatherIds.delete(tid);
+    persistGather();
+    const d = state.last;
+    if (d) { renderSummary(d); renderRaw(d); renderStatus(d); }
+    const detail = $('#prod-node-detail');
+    if (detail && !detail.hidden && state.selTid != null) nodeSelect(state.selTid);
   }
 
   function render() {
@@ -323,6 +398,7 @@
   async function nodeSelect(tid) {
     const el = $('#prod-node-detail');
     if (!el || typeof window.renderNodeDetail !== 'function') return;
+    state.selTid = tid == null ? null : Number(tid);
     if (tid == null) { window.renderNodeDetail(el, null); return; }
     if (assetTotals === null && typeof window.assetTotalsByType === 'function') {
       try { assetTotals = (await window.assetTotalsByType()).totals || {}; } catch (_) { assetTotals = {}; }
@@ -338,7 +414,11 @@
       onToggleBuy: (t) => setBuild(Number(t), !state.buyIds.has(Number(t))),
       onMultiply: (f) => scaleTargetsAndAnalyze(f),
       runsFor: (t) => { const j = jobFor(t); return j ? j.runs : 1; },
-      nameFor: (t) => { const j = jobFor(t); return j ? j.name : `type ${t}`; },
+      nameFor: (t) => nameForType(t),
+      groupFor: (t) => groupFor(t),
+      isGather: (t) => state.gatherIds.has(Number(t)),
+      onToggleGather: (t) => setGather(Number(t), !state.gatherIds.has(Number(t))),
+      onOptimisePI: (t) => { if (typeof window.openPIOptimizer === 'function') window.openPIOptimizer(Number(t), nameForType(t)); },
     });
   }
 
@@ -350,14 +430,35 @@
     if (detail) { detail.hidden = true; detail.innerHTML = ''; } // fresh plan → close the blow-up
     if (!(d.tree || []).length || typeof ChainFlow !== 'function') { pane.hidden = true; return; }
     pane.hidden = false;
-    state.flow = ChainFlow(wrap, d.tree, { onSelect: nodeSelect, onRescale: scaleTargetsAndAnalyze });
+    state.flow = ChainFlow(wrap, d.tree, {
+      onSelect: nodeSelect,
+      onRescale: scaleTargetsAndAnalyze,
+      meta: d.type_meta || {},
+      onOptimisePI: (t) => { if (typeof window.openPIOptimizer === 'function') window.openPIOptimizer(Number(t), nameForType(t)); },
+    });
   }
 
   // In-game Multibuy accepts one "Name xN" per line — this is that exact format,
   // so the copied/downloaded list pastes straight into the Multibuy window.
   function rawMultibuy() {
     const raw = (state.last && state.last.raw_materials) || [];
-    return raw.map((r) => `${r.name} x${r.qty}`).join('\n');
+    return raw.filter((r) => !state.gatherIds.has(Number(r.type_id))).map((r) => `${r.name} x${r.qty}`).join('\n');
+  }
+
+  function gatherMultibuy() {
+    const raw = (state.last && state.last.raw_materials) || [];
+    return raw.filter((r) => state.gatherIds.has(Number(r.type_id))).map((r) => `${r.name} x${r.qty}`).join('\n');
+  }
+
+  async function copyGather() {
+    const text = gatherMultibuy();
+    const status = $('#prod-status');
+    if (!text) { if (status) status.textContent = 'No self-sourced materials to copy.'; return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      const n = (state.last.raw_materials || []).filter((r) => state.gatherIds.has(Number(r.type_id))).length;
+      if (status) status.textContent = `Copied ${n}-line gather list (Name xN per line).`;
+    } catch (_) { if (status) status.textContent = 'Clipboard copy failed.'; }
   }
 
   async function copyRaw() {
@@ -446,19 +547,32 @@
     loadDecryptors().then(() => { if (mem) mem.init(); });
     if (wired) return;
     wired = true;
+    loadGather();
     window.addEventListener('resize', () => { if (state.flow) state.flow.redraw(); });
     if (typeof window.populateAssetsToonSelect === 'function') window.populateAssetsToonSelect($('#prod-assets-toon'), onToonChange);
     $('#prod-analyze')?.addEventListener('click', analyze);
     $('#prod-copy-raw')?.addEventListener('click', copyRaw);
     $('#prod-dl-raw')?.addEventListener('click', downloadRaw);
-    // Delegated build/buy toggles (tables re-render each analyze).
+    $('#prod-copy-gather')?.addEventListener('click', copyGather);
+    const optPI = (t) => { if (typeof window.openPIOptimizer === 'function') window.openPIOptimizer(Number(t), nameForType(t)); };
+    // Delegated build/buy/gather toggles (tables re-render each analyze).
     $('#prod-jobs')?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-buy]');
       if (btn) setBuild(btn.dataset.buy, true);
     });
     $('#prod-raw')?.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-build]');
-      if (btn) setBuild(btn.dataset.build, false);
+      const build = e.target.closest('[data-build]'); if (build) { setBuild(build.dataset.build, false); return; }
+      const gather = e.target.closest('[data-gather]'); if (gather) { setGather(gather.dataset.gather, true); return; }
+      const pi = e.target.closest('[data-pi]'); if (pi) { optPI(pi.dataset.pi); return; }
+    });
+    $('#prod-gather')?.addEventListener('click', (e) => {
+      const ung = e.target.closest('[data-ungather]'); if (ung) { setGather(ung.dataset.ungather, false); return; }
+      const build = e.target.closest('[data-build]'); if (build) { setBuild(build.dataset.build, false); return; }
+      const pi = e.target.closest('[data-pi]'); if (pi) { optPI(pi.dataset.pi); return; }
+    });
+    $('#prod-tree')?.addEventListener('click', (e) => {
+      const pi = e.target.closest('[data-pi]');
+      if (pi) { e.preventDefault(); e.stopPropagation(); optPI(pi.dataset.pi); }
     });
     $('#prod-tree-expand')?.addEventListener('click', () => {
       document.querySelectorAll('#prod-tree details').forEach((el) => { el.open = true; });
