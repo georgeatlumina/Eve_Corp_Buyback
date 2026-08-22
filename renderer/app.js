@@ -5311,7 +5311,6 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
   if (!candidates.length) { el.innerHTML = ''; return; }
   const cards = candidates.map(({ target, gap }) => {
     const itemRows = gap.items.map((it) => {
-      const name = escapeHtml(acqTypeName(it.type_id));
       const uexoPrice = it.price || 0;
       const priceStr = uexoPrice ? Math.round(uexoPrice).toLocaleString() : '—';
       const qtyStr = it.qty.toLocaleString();
@@ -5326,8 +5325,9 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
       } else if (jita != null) {
         jitaDeltaStr = `<span style="color:#8899aa">${Math.round(jita).toLocaleString()}</span>`;
       }
+      const rawName = acqTypeName(it.type_id);
       return `<tr style="border-bottom:1px solid #1e2533;font-size:0.8rem">
-          <td style="padding:0.25rem 0.4rem">${name}</td>
+          <td style="padding:0.25rem 0.4rem"><span class="acq-copy-name" data-name="${escapeHtml(rawName)}" style="cursor:pointer" title="Click to copy">${escapeHtml(rawName)}</span></td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.need}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.have}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right;color:#f87171">${it.short}</td>
@@ -5397,6 +5397,17 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
         } catch { btn.textContent = 'Copy failed'; }
       });
     }
+  }
+
+  for (const span of el.querySelectorAll('.acq-copy-name')) {
+    span.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(span.dataset.name);
+        const orig = span.style.color;
+        span.style.color = '#4ade80';
+        setTimeout(() => { span.style.color = orig; }, 800);
+      } catch { /* silent */ }
+    });
   }
 }
 
