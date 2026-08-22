@@ -1,17 +1,18 @@
-# v3.9.2 — PI optimiser: a System field where you actually optimise
+# v3.9.3 — PI optimiser: the plan now always fits your toons
 
-A usability follow-up to v3.9.1's system-aware PI planner.
+A follow-up fix to the system-aware PI planner.
 
-## What changed
-- The planet optimiser now has its **own System field**, right next to "Available planets", with a
-  live hint that resolves the system's planets as you type
-  (e.g. *"UEXO-Z: 3 Barren · 2 Temperate · 1 Oceanic (6 planets)"*). Previously the system-aware tally
-  only kicked in if you'd filled the separate profit-ranking search box at the top — easy to miss,
-  which made the command-centre tally look like it was ignoring your system.
-- The command-centre header now states which mode you're in — *"in UEXO-Z (6 planets)"* or
-  *"all planets; set a System above…"* — so it's obvious whether the plan is constrained to a system.
-- **Fix:** the "Jita price lookup failed" message is now explicit about the cause (backend unreachable
-  vs. an API error) and notes the plan above is still valid — pricing is a separate step you can retry.
+## Fix
+- The toon split could say **"N won't fit in <system>"** for a plan the optimiser had just declared
+  valid. Two causes, both fixed:
+  1. The optimiser assumed every character could host `planets × characters` colonies — but a toon with
+     a **1-planet budget** can only host one colony in a system. It now uses each toon's **real**
+     in-system capacity, `min(planet budget, system planets)`.
+  2. The split placed the flexible factory planets before the scarce extractor types, which could paint
+     it into a corner. It now places the **most-constrained planet type first** and drops factory
+     planets into whatever slots remain.
+- Factory planets still group onto the fewest toons **where capacity allows** — a system packed exactly
+  full simply has no spare room to keep them together.
 
 ---
 

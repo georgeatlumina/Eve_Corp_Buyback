@@ -4,6 +4,17 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.9.3 — PI optimiser: the plan now always fits your toons
+
+- **Fix:** the toon split could report "N won't fit in <system>" for a plan the optimiser said was
+  valid. Two causes, both fixed: (1) the optimiser assumed every character could host `planets ×
+  characters` colonies, but a toon with a 1-planet budget can only host one colony in a system — it now
+  uses each toon's **real** in-system capacity (`min(planet budget, system planets)`); and (2) the split
+  placed the flexible factory planets before the scarce extractor types, painting itself into a corner —
+  it now places the **most-constrained planet type first** and fills factory planets into what's left.
+- Factory planets still group onto the fewest toons **where capacity allows** (a system packed exactly
+  full has no spare room to group them).
+
 ## v3.9.2 — PI optimiser: a System field where you actually optimise
 
 - The planet optimiser now has its **own System field** (with a live "3 Barren · 2 Temperate · 1

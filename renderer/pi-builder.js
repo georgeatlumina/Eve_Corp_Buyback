@@ -768,10 +768,13 @@
     // the plan is physically deployable and each extractor records which planet
     // types it lands on (`byType`).
     const chars = sysPool ? Math.max(1, sysPool.chars || 1) : 1;
+    const caps = sysPool ? (sysPool.caps && sysPool.caps.length ? sysPool.caps : [sysPool.total]) : [];
     const pool = {};
     if (sysPool) {
       const missing = [];
-      for (const t in sysPool.byType) pool[t] = (sysPool.byType[t] || 0) * chars;
+      // Per-type planet slots = Σ over toons of min(planets of that type, the toon's
+      // in-system capacity): a 1-planet toon adds at most one slot of any type.
+      for (const t in sysPool.byType) pool[t] = caps.reduce((a, c) => a + Math.min(sysPool.byType[t] || 0, c), 0);
       for (const e of ext) {
         const p0 = extractorP0(e, p.model);
         e.compat = p0PlanetTypes(p0).filter((t) => (sysPool.byType[t] || 0) > 0);
@@ -782,7 +785,7 @@
         return { systemInfeasible: true, error: `Can't build this in ${sysPool.system} — no planet there extracts ${[...new Set(missing)].join(', ')}.` };
       }
     }
-    const totalPool = sysPool ? sysPool.total * chars : Infinity;
+    const totalPool = sysPool ? caps.reduce((a, c) => a + c, 0) : Infinity;
     // Consume one free planet slot from `types` (the most-abundant first, so scarce
     // planet types are left for the P0s that can only use them) → its type, or null.
     const consume = (types) => {
@@ -908,17 +911,27 @@
     const caps = toons.filter((t) => (t.use || 0) > 0)
       .map((t) => ({ name: t.name, cap: Math.min(t.use || 0, total || (t.use || 0)), fac: 0, ext: 0, byType: {}, used: 0 }))
       .sort((a, b) => b.cap - a.cap);
-    let fLeft = factory;
-    for (const c of caps) { if (fLeft <= 0) break; const take = Math.min(c.cap - c.used, fLeft); c.fac += take; c.used += take; fLeft -= take; }
+    // Extractors FIRST, most-constrained planet type first (fewest of that type →
+    // needs the most distinct toons), each spread onto the toons with the most
+    // spare capacity. Placing scarce types before the flexible factory planets is
+    // what keeps a feasible plan from failing to fit.
+    const types = Object.keys(tally).filter((t) => !t.startsWith('(')).sort((a, b) => (have[a] || 0) - (have[b] || 0));
     let extUnplaced = 0;
-    for (const [T, needRaw] of Object.entries(tally)) {
-      if (T.startsWith('(')) { extUnplaced += needRaw; continue; }   // "(any)" / "(no planet…)" — not placeable by type
-      let need = needRaw; const cap = have[T] || 0; let progress = true;
+    for (const T of types) {
+      let need = tally[T]; const cap = have[T] || 0; let progress = true;
       while (need > 0 && progress) {
         progress = false;
-        for (const c of caps) { if (need <= 0) break; if (c.used < c.cap && (c.byType[T] || 0) < cap) { c.byType[T] = (c.byType[T] || 0) + 1; c.ext++; c.used++; need--; progress = true; } }
+        const cand = caps.filter((c) => c.used < c.cap && (c.byType[T] || 0) < cap)
+          .sort((a, b) => (b.cap - b.used) - (a.cap - a.used));
+        for (const c of cand) { if (need <= 0) break; c.byType[T] = (c.byType[T] || 0) + 1; c.ext++; c.used++; need--; progress = true; }
       }
       extUnplaced += need;
+    }
+    // Factory planets (any type) LAST, filling the remaining slots — concentrated
+    // on the fewest toons by taking the largest remaining capacity first.
+    let fLeft = factory;
+    for (const c of caps.slice().sort((a, b) => (b.cap - b.used) - (a.cap - a.used))) {
+      if (fLeft <= 0) break; const take = Math.min(c.cap - c.used, fLeft); c.fac += take; c.used += take; fLeft -= take;
     }
     caps.forEach((c) => { c.n = c.used; });
     return { split: caps.filter((c) => c.used > 0), unassigned: fLeft + extUnplaced };
@@ -1017,12 +1030,16 @@
     el.textContent = calcItem ? `Target: ${commodityName(calcItem)}` : 'Target: pick a commodity in the calculator above';
   }
 
-  // Build the system constraint for runOptimize from the chosen system + toon count.
+  // Build the system constraint for runOptimize from the chosen system + toons.
+  // Each toon's in-system capacity is min(its planet budget, the system's planet
+  // count) — a toon with 1 planet can only host one colony here, even if the
+  // system has more planets — so we pass the real per-toon caps, not just a count.
   function currentSysPool() {
     const sys = optSystemPlanets;
     if (!sys || !sys.total || !Object.keys(sys.counts || {}).length) return null;
-    const chars = Math.max(1, optToons.filter((t) => (t.use || 0) > 0).length);
-    return { byType: sys.counts, total: sys.total, chars, system: sys.system };
+    const withPlanets = optToons.filter((t) => (t.use || 0) > 0);
+    const caps = withPlanets.map((t) => Math.min(t.use || 0, sys.total));
+    return { byType: sys.counts, total: sys.total, chars: Math.max(1, caps.length), caps: caps.length ? caps : [sys.total], system: sys.system };
   }
 
   async function optimizeNow() {
@@ -1111,7 +1128,7 @@
       let split, unassigned;
       if (have) ({ split, unassigned } = splitAcrossToonsSystem(cc.tally, cc.factory, sys, optToons));
       else ({ split, unassigned } = splitAcrossToons(res.facPlanets || 0, Math.max(0, res.used - (res.facPlanets || 0)), optToons));
-      const note = have ? '— one colony per planet per character; factory planets kept together' : '— factory planets kept together';
+      const note = have ? '— one colony per planet per character; factory planets grouped where capacity allows' : '— factory planets kept together';
       splitHtml = `<div class="pib-opt-split"><div class="pib-opt-group-h">Suggested split across toons <span class="muted">${note}</span></div>`
         + split.map((s) => `<span class="pib-opt-chip">${escapeHtml(s.name || 'toon')}: ${s.n}${s.fac ? ` <span class="pib-opt-chip-fmark">· ${s.fac} factory</span>` : ''}</span>`).join('')
         + (unassigned > 0 ? `<span class="pib-opt-chip pib-opt-chip-warn">${unassigned} won't fit${have ? ` in ${escapeHtml(sys.system)}` : ''} (add characters${have ? ' or another system' : ''})</span>` : '')
