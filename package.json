@@ -1,6 +1,6 @@
 {
   "name": "naval-defence-management-tool",
-  "version": "3.9.5",
+  "version": "3.9.6",
   "description": "Naval Defence Alliance management tool (buyback, moon, doctrines, readiness, contracts, liquidation, market, stockpile, and the Indy build planner)",
   "author": "SushiandSushi",
   "main": "electron/main.js",
@@ -66,7 +66,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false
     },
     "linux": {
       "target": [

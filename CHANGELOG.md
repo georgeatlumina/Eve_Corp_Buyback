@@ -4,6 +4,12 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.9.6 — Installer: the desktop icon stays gone once you remove it (Windows)
+
+- The Windows desktop shortcut is now created on the **first install only** and is **never recreated
+  on an update**. Delete it once to keep your desktop tidy and it won't come back with each update.
+  (The Start-menu shortcut is always kept, and uninstalling removes the desktop icon.)
+
 ## v3.9.5 — PI optimiser: per-toon command centres, multibuy & saved work
 
 - **Per-toon breakdown**: the split now lists exactly which planet-type command centres each toon

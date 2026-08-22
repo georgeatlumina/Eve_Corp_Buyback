@@ -1,21 +1,15 @@
-# v3.9.5 — PI optimiser: per-toon command centres, multibuy & saved work
+# v3.9.6 — Installer: the desktop icon stays gone once you remove it (Windows)
 
-## Per-toon command-centre breakdown
-- The toon split now spells out **exactly which planet-type command centres each toon deploys** —
-  e.g. `SushiAndSushi — Barren ×3 3f · Oceanic ×1 1f · Temperate ×1 1f — 5 CC · 5 factory` — where
-  `Nf` marks how many of that type are factory planets.
-- Factory planets are now assigned **concrete planet types** (spread across each toon's available
-  planets) instead of a vague "any type", so you know precisely how many of each command centre to buy
-  per character. The aggregate tally folds them in and notes how many run factories.
+A small quality-of-life fix for a user request.
 
-## Copy command-centre multibuy
-- A **🛒 Copy multibuy** button on the command-centre tally copies a ready-to-paste in-game Multibuy
-  list of every command centre the plan needs (`Barren Command Center x16`, `Temperate Command Center
-  x12`, …).
+## What changed
+- On Windows, the **desktop shortcut is created on the first install only** and is **never recreated
+  on an update**. So if you delete the desktop icon to keep your desktop clean, an update won't bring it
+  back each time.
+- The **Start-menu shortcut** is always created/kept, so the app stays easy to launch, and uninstalling
+  removes the desktop icon.
 
-## Work-in-progress persists across restarts
-- The PI optimiser now **auto-saves and restores** your work — chosen system, planet budget, target
-  commodity, assumptions, valuation settings and pulled toons all come back when you reopen the app.
+(No changes to the app itself in this build — macOS/Linux are unaffected.)
 
 ---
 
