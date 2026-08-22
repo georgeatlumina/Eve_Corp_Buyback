@@ -649,11 +649,34 @@
   let optResult = null;
   let optSystemPlanets = { system: null, counts: {}, total: 0 };   // chosen system's planet make-up
 
-  // The planet make-up of the system chosen in the planner (#pi-system), so the
-  // command-centre tally + toon split reflect what that system can actually host
-  // (only its planet types, and one colony per planet per character). Blank = all.
+  // The system the optimizer targets: its own field, falling back to the planner's
+  // profit-ranking system search. Blank = all planets.
+  function optSystemName() { return (($('#pib-opt-system')?.value) || ($('#pi-system')?.value) || '').trim(); }
+
+  // Live feedback under the optimizer's System field so users can see it resolved.
+  let optSysHintTimer = null;
+  function updateOptSysHint() {
+    const hint = $('#pib-opt-sys-hint'); if (!hint) return;
+    const name = (($('#pib-opt-system')?.value) || '').trim();
+    clearTimeout(optSysHintTimer);
+    if (!name) { hint.textContent = 'all planets'; hint.classList.remove('pib-opt-err'); return; }
+    hint.textContent = '…';
+    optSysHintTimer = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/api/pi/system-planets?system=${encodeURIComponent(name)}`);
+        const d = r.ok ? await r.json() : null;
+        if (!d || !d.total) { hint.textContent = `⚠ “${name}” not found — check the spelling`; hint.classList.add('pib-opt-err'); return; }
+        hint.classList.remove('pib-opt-err');
+        hint.textContent = `${d.system}: ${Object.entries(d.counts).sort((a, b) => b[1] - a[1]).map(([t, c]) => `${c} ${t}`).join(' · ')} (${d.total} planets)`;
+      } catch (_) { hint.textContent = ''; }
+    }, 350);
+  }
+
+  // The planet make-up of the chosen system, so the command-centre tally + toon
+  // split reflect what that system can actually host (only its planet types, and
+  // one colony per planet per character). Blank = all.
   async function loadSystemPlanets() {
-    const sysName = (($('#pi-system')?.value) || '').trim();
+    const sysName = optSystemName();
     if (!sysName) { optSystemPlanets = { system: null, counts: {}, total: 0 }; return optSystemPlanets; }
     if (optSystemPlanets.system && optSystemPlanets.system.toLowerCase() === sysName.toLowerCase()) return optSystemPlanets;
     try {
@@ -1076,7 +1099,9 @@
       warns.push(`Limited by ${sys.system}'s planets: this system + ${cc.chars} character${cc.chars === 1 ? '' : 's'} support ${res.used} colon${res.used === 1 ? 'y' : 'ies'} of this chain (you asked for ${res.N}). Add characters or a richer system for more throughput.`);
     }
     if (sys && sys.error) warns.push(`System ${sys.error} — showing all planet types.`);
-    const sysLabel = have ? ` <span class="muted">in ${escapeHtml(sys.system)} (${sys.total} planets)</span>` : '';
+    const sysLabel = have
+      ? ` <span class="muted">in ${escapeHtml(sys.system)} (${sys.total} planets)</span>`
+      : ' <span class="muted">— all planets; set a System above to match a real system’s planets</span>';
     const ccHtml = ccParts.length
       ? `<div class="pib-opt-cc"><div class="pib-opt-group-h">Command centres to deploy (${ccTotal})${sysLabel}</div>${ccParts.join('')}`
         + warns.map((w) => `<div class="pib-opt-warn">⚠ ${escapeHtml(w)}</div>`).join('') + `</div>` : '';
@@ -1177,8 +1202,16 @@
     const box = $('#pib-opt-value'); if (!box) return;
     box.innerHTML = '<span class="muted">Pricing at Jita…</span>';
     let price;
-    try { price = await fetch(`${API}/api/pi/price?type_id=${calcItem}`).then((r) => r.json()); }
-    catch (e) { box.innerHTML = '<span class="pib-opt-err">Jita price lookup failed.</span>'; return; }
+    try {
+      const r = await fetch(`${API}/api/pi/price?type_id=${calcItem}`);
+      if (!r.ok) { let m = `HTTP ${r.status}`; try { m = (await r.json()).detail || m; } catch (_) {} throw new Error(m); }
+      price = await r.json();
+    } catch (e) {
+      console.error('[pi] Jita price lookup failed:', e);
+      const net = typeof isNetworkError === 'function' && isNetworkError(e);
+      box.innerHTML = `<span class="pib-opt-err">Jita price lookup failed${net ? ' — the local backend didn’t respond (sidecar)' : `: ${escapeHtml(String(e.message || e))}`}. The plan above is still valid; retry Optimize for pricing.</span>`;
+      return;
+    }
     if (!optPocoTouched && typeof price.poco_tax_rate === 'number') $('#pib-opt-poco').value = +(price.poco_tax_rate * 100).toFixed(2);
     optLastPocoBase = (typeof price.poco_tax_base === 'number') ? price.poco_tax_base : null;
     if (!price.priced || !price.buy) { box.innerHTML = `<span class="muted">${escapeHtml(price.note || 'No Jita buy price available for this item.')}</span>`; return; }
@@ -1277,7 +1310,7 @@
   // each buildable commodity runs the optimizer with your planet budget so the
   // ranking reflects what you can actually make with N planets (ISK/day), with
   // per-unit profit alongside.
-  function optSuggestSystem() { const el = $('#pi-system'); return (el && el.value || '').trim(); }
+  function optSuggestSystem() { return optSystemName(); }
 
   async function computeSuggestions() {
     const out = $('#pib-opt-suggest-out'); if (!out) return;
@@ -1420,6 +1453,15 @@
     $('#pib-opt-pull').addEventListener('click', pullPlanets);
     $('#pib-opt-run').addEventListener('click', optimizeNow);
     $('#pib-opt-total').addEventListener('input', () => { /* manual override; used as-is on Optimize */ });
+    // Optimizer's own System field: seed from the planner's search, then keep the
+    // resolved-planets hint fresh as the user types.
+    const optSysEl = $('#pib-opt-system');
+    if (optSysEl) {
+      if (!optSysEl.value && $('#pi-system')?.value) optSysEl.value = $('#pi-system').value.trim();
+      optSysEl.addEventListener('input', updateOptSysHint);
+      $('#pi-system')?.addEventListener('input', () => { if (!optSysEl.value.trim()) updateOptSysHint(); });
+      updateOptSysHint();
+    }
     // model / CC change rebuilds the (recomputed) assumption defaults
     $('#pib-opt-params').addEventListener('change', (e) => {
       if (e.target.id === 'pib-opt-model' || e.target.id === 'pib-opt-cc') {

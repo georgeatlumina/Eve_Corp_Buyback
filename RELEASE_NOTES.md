@@ -1,17 +1,17 @@
-# v3.9.1 — PI optimiser: command-centre tally is now physically deployable
+# v3.9.2 — PI optimiser: a System field where you actually optimise
 
-A follow-up fix to the system-aware PI planner from v3.9.0.
+A usability follow-up to v3.9.1's system-aware PI planner.
 
-## Fix
-- With a system chosen, the optimiser could tally **more colonies of a planet type than the system
-  physically has** — e.g. "×28 Oceanic" in a system with a single Oceanic planet. The plan is now
-  **constrained by the chosen system**: it models a shared pool of `planets × characters` slots (one
-  colony per planet per character), extractors consume real planet slots, and each P0 is spread
-  across all its compatible in-system planet types. The command-centre tally can no longer exceed
-  what the system actually holds.
-- Chains a system can't extract are reported plainly (*"Can't build this in UEXO-Z — no planet there
-  extracts Reactive Gas, Felsic Magma…"*), and when the system caps throughput below the requested
-  planet budget, the plan says so.
+## What changed
+- The planet optimiser now has its **own System field**, right next to "Available planets", with a
+  live hint that resolves the system's planets as you type
+  (e.g. *"UEXO-Z: 3 Barren · 2 Temperate · 1 Oceanic (6 planets)"*). Previously the system-aware tally
+  only kicked in if you'd filled the separate profit-ranking search box at the top — easy to miss,
+  which made the command-centre tally look like it was ignoring your system.
+- The command-centre header now states which mode you're in — *"in UEXO-Z (6 planets)"* or
+  *"all planets; set a System above…"* — so it's obvious whether the plan is constrained to a system.
+- **Fix:** the "Jita price lookup failed" message is now explicit about the cause (backend unreachable
+  vs. an API error) and notes the plan above is still valid — pricing is a separate step you can retry.
 
 ---
 

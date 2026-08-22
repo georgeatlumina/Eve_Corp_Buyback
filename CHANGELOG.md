@@ -4,6 +4,15 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.9.2 — PI optimiser: a System field where you actually optimise
+
+- The planet optimiser now has its **own System field** (with a live "3 Barren · 2 Temperate · 1
+  Oceanic (6 planets)" hint), so the system-aware tally from v3.9.1 no longer depends on the separate
+  profit-ranking search box up top being filled in. Leave it blank for all planets; the command-centre
+  header spells out which mode you're in.
+- **Fix:** "Jita price lookup failed" is now explicit about *why* (backend unreachable vs. an API
+  error) and notes the plan itself is still valid — the pricing step is independent of the plan.
+
 ## v3.9.1 — PI optimiser: command-centre tally is now physically deployable
 
 - **Fix:** with a system chosen, the optimiser could tally more colonies of a planet type than
