@@ -1324,6 +1324,14 @@ body.liq-full main { max-width: none; }
 .pib-opt-split { margin-top: 0.7em; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; }
 .pib-opt-chip { background: #1a1f24; border: 1px solid #2c3a44; border-radius: 12px; padding: 0.15em 0.6em; font-size: 0.82em; color: #cfe6da; }
 .pib-opt-chip-warn { border-color: #e0a34a; color: #e0a34a; }
+.pib-opt-chip-cc { border-color: #3a5a7a; color: #bcd6ef; }
+.pib-opt-chip-fac { border-color: #6b5a2f; color: #d9c58f; }
+.pib-opt-chip-fmark { color: #d9c58f; font-size: 0.92em; }
+.pib-opt-cc { margin-top: 0.7em; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; }
+.pib-opt-warn { flex-basis: 100%; color: #e0a34a; font-size: 0.82em; margin-top: 0.15em; }
+.pis-ccs { display: flex; flex-wrap: wrap; gap: 0.35em; margin-bottom: 0.2em; }
+.pis-cc { background: #16202b; border: 1px solid #2f4a66; border-radius: 10px; padding: 0.1em 0.5em; font-size: 0.82em; color: #bcd6ef; }
+.pis-cc-fac { border-color: #6b5a2f; color: #d9c58f; }
 /* saved plans bar */
 .pib-opt-plans { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; margin-top: 0.6em; }
 .pib-opt-plans input, .pib-opt-plans select { background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 0.3em; }
@@ -1879,3 +1887,62 @@ body.popout-calc .pib-calc > summary { display: none; }
 .zk-flag-solo { color: #8fc; background: #143026; }
 .zk-flag-npc { color: #9cd; background: #16283a; }
 .zk-flag-awox { color: #e59a9a; background: #3a1a1a; }
+
+/* ===================== Native Maps tab ===================== */
+#tab-dotlan.maptab.active { display: flex; flex-direction: column; gap: 0.5em; }
+.map-toolbar { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
+.map-region { background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.3em 0.5em; max-width: 260px; }
+.map-search-wrap input, .map-route-bar input { background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.3em 0.5em; }
+.map-search-wrap input { width: 180px; }
+.map-overlays { display: inline-flex; border: 1px solid #333; border-radius: 5px; overflow: hidden; }
+.map-ov { background: #1c1c1c; color: #bbb; border: 0; border-left: 1px solid #333; padding: 0.32em 0.7em; cursor: pointer; font-size: 0.86em; }
+.map-ov:first-child { border-left: 0; }
+.map-ov:hover { background: #262626; color: #eee; }
+.map-ov.on { background: #4a8; color: #111; font-weight: 600; }
+.map-status.map-err { color: #e88; }
+.map-route-bar { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; padding: 0.4em 0.5em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.map-route-bar[hidden] { display: none; }
+.map-route-arrow { color: #789; }
+.map-route-bar select { background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.28em 0.4em; }
+
+.map-stage { display: flex; gap: 0.6em; height: 72vh; min-height: 460px; }
+.map-canvas { flex: 1 1 auto; position: relative; background: #0d0f12; border: 1px solid #262626; border-radius: 6px; overflow: hidden; cursor: grab; touch-action: none; }
+.map-canvas:active { cursor: grabbing; }
+#map-svg { width: 100%; height: 100%; display: block; }
+.me { stroke: #39414b; stroke-width: 0.9; }
+.mr { stroke: #f0c040; stroke-width: 2.6; opacity: 0.92; stroke-linecap: round; }
+.mn-box { stroke: rgba(0,0,0,0.45); stroke-width: 0.4; cursor: pointer; transition: filter 0.08s; }
+.mn:hover .mn-box { filter: brightness(1.15); }
+.mn-t { fill: #0e0e0e; font-size: 8px; font-weight: 700; pointer-events: none; font-family: "Segoe UI", system-ui, sans-serif; }
+.mn.foreign { opacity: 0.42; }
+.mn.foreign .mn-t { font-style: italic; }
+.mn.sel .mn-box { stroke: #fff; stroke-width: 1.8; }
+.mn.on-route .mn-box { stroke: #f0c040; stroke-width: 1.4; }
+.mn.mn-hot .mn-t { fill: #fff; }
+
+.map-legend { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 0.6em; flex-wrap: wrap; background: rgba(12,14,18,0.82); border: 1px solid #262626; border-radius: 5px; padding: 0.25em 0.5em; font-size: 0.76em; color: #aab; pointer-events: none; }
+.map-leg-i { display: inline-flex; align-items: center; gap: 0.3em; }
+.map-leg-i i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+
+.map-detail { flex: 0 0 300px; background: #14161a; border: 1px solid #262626; border-radius: 6px; padding: 0.6em 0.7em; overflow-y: auto; }
+.map-detail[hidden] { display: none; }
+.map-detail-head { display: flex; align-items: center; gap: 0.5em; }
+.map-detail-head strong { font-size: 1.05em; }
+.map-sec { font-weight: 700; font-variant-numeric: tabular-nums; }
+.map-detail-close { margin-left: auto; background: none; border: 1px solid #3a3a3a; color: #bbb; border-radius: 4px; cursor: pointer; padding: 0 0.4em; }
+.map-detail-close:hover { background: #2a2a2a; color: #fff; }
+.map-detail-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3em 0.6em; margin: 0.6em 0; }
+.map-detail-stats > div { display: flex; flex-direction: column; background: #1b1e23; border-radius: 4px; padding: 0.3em 0.5em; }
+.map-detail-stats .muted { font-size: 0.74em; }
+.map-detail-stats b { font-size: 0.98em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-detail-adj-h { margin: 0.4em 0 0.3em; }
+.map-detail-adj { display: flex; flex-direction: column; gap: 0.2em; }
+.map-route-list { max-height: none; }
+.map-adj { display: flex; align-items: center; gap: 0.4em; background: #1a1d22; border: 1px solid #2a2f36; border-radius: 4px; color: #cde; padding: 0.25em 0.45em; cursor: pointer; text-align: left; font-size: 0.86em; }
+.map-adj:hover { background: #232a31; }
+.map-adj i { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+.map-detail-actions { display: flex; gap: 0.4em; flex-wrap: wrap; margin-top: 0.6em; }
+.map-foot { margin-top: 0.2em; }
+.map-foot .linklike { background: none; border: 0; color: #7fb3d5; cursor: pointer; padding: 0; font-size: inherit; }
+.map-foot .linklike:hover { text-decoration: underline; }
+@media (max-width: 780px) { .map-stage { flex-direction: column; height: auto; } .map-canvas { height: 56vh; } .map-detail { flex: 0 0 auto; } }

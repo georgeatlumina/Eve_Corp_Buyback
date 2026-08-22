@@ -26,7 +26,7 @@
           <button class="tab-btn" data-tab="module-sorter">Module Sorter</button>
           <button class="tab-btn" data-tab="plex-value">PLEX Value</button>
           <button class="tab-btn" data-tab="market">Market</button>
-          <button class="tab-btn" data-tab="dotlan">Dotlan Maps</button>
+          <button class="tab-btn" data-tab="dotlan">Maps</button>
           <button class="tab-btn" data-tab="zkill">zKillboard</button>
           <button class="tab-btn" data-tab="assets">My Assets</button>
         </div>
@@ -825,33 +825,46 @@
       <div id="dscan-summary" class="dscan-summary"></div>
     </section>
 
-    <section id="tab-dotlan" class="tab webtab">
-      <div class="webtab-bar">
-        <div class="webtab-navbtns">
-          <button id="dotlan-back" class="webtab-btn" type="button" title="Back" disabled>‹</button>
-          <button id="dotlan-fwd" class="webtab-btn" type="button" title="Forward" disabled>›</button>
-          <button id="dotlan-reload" class="webtab-btn" type="button" title="Reload">↻</button>
-          <button id="dotlan-home" class="webtab-btn" type="button" title="Home">⌂</button>
+    <section id="tab-dotlan" class="tab maptab">
+      <div class="map-toolbar">
+        <select id="map-region" class="map-region" title="Region"></select>
+        <div class="map-search-wrap">
+          <input id="map-search" list="map-syslist" type="text" placeholder="Jump to system…" spellcheck="false" autocomplete="off" />
+          <datalist id="map-syslist"></datalist>
         </div>
-        <div class="webtab-links">
-          <button class="webtab-link" data-path="/map" type="button">Universe</button>
-          <button class="webtab-link" data-path="/jump" type="button">Jump Planner</button>
-          <button class="webtab-link" data-path="/route" type="button">Route</button>
-          <button class="webtab-link" data-path="/range" type="button">Range</button>
-          <button class="webtab-link" data-path="/sovereignty" type="button">Sovereignty</button>
-          <button class="webtab-link" data-path="/alliances" type="button">Alliances</button>
-          <button class="webtab-link" data-path="/factionwarfare" type="button">Faction&nbsp;War</button>
+        <div class="map-overlays" role="group" aria-label="Live overlay">
+          <button class="map-ov on" type="button" data-ov="none" title="No overlay — colour by security">None</button>
+          <button class="map-ov" type="button" data-ov="jumps" title="Ship jumps in the last hour">Jumps</button>
+          <button class="map-ov" type="button" data-ov="kills" title="Ship + pod kills in the last hour">Kills</button>
+          <button class="map-ov" type="button" data-ov="npc" title="NPC kills in the last hour (rat activity)">NPC</button>
+          <button class="map-ov" type="button" data-ov="sov" title="Sovereignty holder">Sov</button>
         </div>
-        <form id="dotlan-search-form" class="webtab-search">
-          <input id="dotlan-search" type="text" placeholder="Search system / region / alliance…" spellcheck="false" autocomplete="off" />
-        </form>
-        <span id="dotlan-url" class="webtab-url muted"></span>
-        <button id="dotlan-external" class="webtab-btn" type="button" title="Open the current page in your external browser">⇱</button>
+        <button id="map-route-btn" class="secondary" type="button" title="Plan a stargate route">Route…</button>
+        <button id="map-refresh" class="secondary" type="button" title="Refresh live jumps / kills / sovereignty">↻ Live</button>
+        <span id="map-status" class="muted small"></span>
       </div>
-      <div class="webtab-viewwrap">
-        <webview id="dotlan-view" class="webtab-view" src="about:blank" partition="persist:dotlan"></webview>
+      <div id="map-route-bar" class="map-route-bar" hidden>
+        <input id="map-route-from" list="map-syslist" type="text" placeholder="From system" spellcheck="false" autocomplete="off" />
+        <span class="map-route-arrow">→</span>
+        <input id="map-route-to" list="map-syslist" type="text" placeholder="To system" spellcheck="false" autocomplete="off" />
+        <select id="map-route-pref" title="Routing preference">
+          <option value="shortest">Shortest</option>
+          <option value="safe">Prefer high-sec</option>
+          <option value="unsafe">Prefer low / null</option>
+        </select>
+        <button id="map-route-go" type="button">Route</button>
+        <button id="map-route-clear" class="secondary" type="button">Clear</button>
+        <span id="map-route-info" class="muted small"></span>
       </div>
-      <p class="webtab-foot muted small">Live view of <a href="https://evemaps.dotlan.net" data-ext-link>evemaps.dotlan.net</a> — a third-party EVE maps site by Wollari. Log in there for Favorites &amp; jump beacons; your session is kept between visits.</p>
+      <div class="map-stage">
+        <div id="map-canvas" class="map-canvas">
+          <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"><g id="map-root"></g></svg>
+          <div id="map-legend" class="map-legend"></div>
+        </div>
+        <aside id="map-detail" class="map-detail" hidden></aside>
+      </div>
+      <p class="map-foot muted small">Native map — region layouts © <a href="https://evemaps.dotlan.net" data-ext-link>Wollari &amp; CCP (Dotlan)</a>; topology &amp; live jumps / kills / sovereignty from ESI.
+        <button id="map-open-dotlan" class="linklike" type="button" title="Open this view on the Dotlan website">Open in Dotlan ↗</button></p>
     </section>
 
     <section id="tab-zkill" class="tab">
@@ -1580,7 +1593,7 @@
   <script src="plex-value.js"></script>
   <script src="panels.js"></script>
   <script src="dscan.js"></script>
-  <script src="dotlan.js"></script>
+  <script src="map.js"></script>
   <script src="zkill.js"></script>
   <script src="assets.js"></script>
   <script src="pi.js"></script>

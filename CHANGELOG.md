@@ -4,6 +4,29 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.9.0 — Native Maps + a system-aware PI colony planner
+
+### Maps — now native (no more embedded Dotlan)
+- The **Maps** tab is a native EVE map: pan/zoom region maps with systems coloured by
+  security and stargate links, using Dotlan's familiar layout coordinates (© Wollari & CCP).
+- **Live overlays** from ESI (last hour): ship **Jumps**, ship+pod **Kills**, **NPC** kills, and
+  **Sovereignty** (each system coloured by its holding alliance, names resolved).
+- **Stargate route planner** between any two systems — Shortest, prefer high-sec, or prefer
+  low/null — drawn on the map and listed in the panel.
+- **System detail panel**: security, region, live jumps/kills, sov holder, and clickable connected
+  systems. Search jumps straight to any system; border systems link to their neighbouring region.
+- Topology (5,485 systems / 6,989 gates) is bundled offline; jumps/kills/sov are fetched live.
+
+### PI optimiser — command centres & system-aware planning
+- New **"Command centres to deploy"** summary: how many command centres of **each planet type**
+  the plan needs (extractors greedily consolidated onto the fewest distinct types).
+- **System-aware**: pick a system in the planner and the tally uses **only that system's planet
+  types**, shows how many of each the system has, and warns when a P0 can't be extracted there or
+  when demand exceeds `planets × characters`.
+- **One colony per planet per character** is respected in the suggested toon split (per-type,
+  per-toon caps), and **factory planets are kept together** on the fewest toons instead of scattered.
+- The ⚙ PI slide-out shows the command-centre tally too.
+
 ## v3.8.0 — PI-aware planners: categories, self-source & a PI optimiser slide-out
 
 ### Production & Reaction planners — item categories

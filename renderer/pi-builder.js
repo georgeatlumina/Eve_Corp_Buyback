@@ -647,6 +647,22 @@
   let optToons = [];                  // /api/pi/planet-capacity toons (+ editable `use`)
   let optParams = null;               // {model, cc, facBasic, facAdv, facHi, extP1, extP0}
   let optResult = null;
+  let optSystemPlanets = { system: null, counts: {}, total: 0 };   // chosen system's planet make-up
+
+  // The planet make-up of the system chosen in the planner (#pi-system), so the
+  // command-centre tally + toon split reflect what that system can actually host
+  // (only its planet types, and one colony per planet per character). Blank = all.
+  async function loadSystemPlanets() {
+    const sysName = (($('#pi-system')?.value) || '').trim();
+    if (!sysName) { optSystemPlanets = { system: null, counts: {}, total: 0 }; return optSystemPlanets; }
+    if (optSystemPlanets.system && optSystemPlanets.system.toLowerCase() === sysName.toLowerCase()) return optSystemPlanets;
+    try {
+      const r = await fetch(`${API}/api/pi/system-planets?system=${encodeURIComponent(sysName)}`);
+      if (r.ok) { const d = await r.json(); optSystemPlanets = { system: d.system || sysName, counts: d.counts || {}, total: d.total || 0 }; }
+      else { optSystemPlanets = { system: null, counts: {}, total: 0, error: `“${sysName}” not found` }; }
+    } catch (_) { optSystemPlanets = { system: null, counts: {}, total: 0 }; }
+    return optSystemPlanets;
+  }
 
   // per-factory hourly output for a tier, straight from the schematic data
   function tierUnitPerHour(tier) {
@@ -755,15 +771,81 @@
     return { nodes, R, bottleneck, used: N, facPlanets: fp, N, model: p.model };
   }
 
-  // Spread `total` planets across toons up to each toon's cap, evenly (round-robin).
-  function splitAcrossToons(total, toons) {
-    const caps = toons.filter((t) => (t.use || 0) > 0).map((t) => ({ name: t.name, max: t.use || 0, n: 0 }));
-    let left = total, progress = true;
-    while (left > 0 && progress) {
+  // Split planets across toons, keeping the shared factory planets together on as
+  // few toons as possible (fill the largest toons with factory planets first),
+  // then spread the extractor planets round-robin over the remaining capacity.
+  function splitAcrossToons(facPlanets, extPlanets, toons) {
+    const caps = toons.filter((t) => (t.use || 0) > 0)
+      .map((t) => ({ name: t.name, max: t.use || 0, fac: 0, ext: 0 }))
+      .sort((a, b) => b.max - a.max);   // biggest toons first → factories concentrate
+    let fLeft = facPlanets;
+    for (const c of caps) { if (fLeft <= 0) break; const take = Math.min(c.max, fLeft); c.fac = take; fLeft -= take; }
+    let eLeft = extPlanets, progress = true;
+    while (eLeft > 0 && progress) {
       progress = false;
-      for (const c of caps) { if (left <= 0) break; if (c.n < c.max) { c.n++; left--; progress = true; } }
+      for (const c of caps) { if (eLeft <= 0) break; if (c.fac + c.ext < c.max) { c.ext++; eLeft--; progress = true; } }
     }
-    return { split: caps.filter((c) => c.n > 0), unassigned: left };
+    caps.forEach((c) => { c.n = c.fac + c.ext; });
+    return { split: caps.filter((c) => c.n > 0), unassigned: fLeft + eLeft };
+  }
+
+  // Which planet types the extractors need a command centre on, and how many of
+  // each. When a system is chosen (`sys.counts` non-empty) only its planet types
+  // are eligible — a P0 with no matching planet in that system is a shortfall —
+  // and assignment spreads toward the types the system has most of. With no
+  // system, it greedily reuses an already-chosen type to minimise CC variety.
+  function commandCentreTally(res, sys, chars) {
+    const have = (sys && sys.counts && Object.keys(sys.counts).length) ? sys.counts : null;
+    const C = Math.max(1, chars || 1);
+    const demands = res.nodes.filter((n) => n.role === 'extractor')
+      .map((n) => { const p0 = extractorP0(n, res.model); return { p0, alloc: n.alloc, types: p0PlanetTypes(p0) }; })
+      .sort((a, b) => a.types.length - b.types.length);   // most-constrained P0s first
+    const tally = {};
+    const shortfalls = [];
+    for (const d of demands) {
+      let cand = d.types;
+      if (have) cand = d.types.filter((t) => (have[t] || 0) > 0);
+      if (!cand.length) {
+        if (have) { shortfalls.push({ p0: d.p0, types: d.types, alloc: d.alloc }); tally['(no planet in system)'] = (tally['(no planet in system)'] || 0) + d.alloc; }
+        else tally['(any)'] = (tally['(any)'] || 0) + d.alloc;
+        continue;
+      }
+      let best = cand[0], bestScore = -Infinity;
+      for (const t of cand) {
+        // With a system: most remaining planet capacity (have×chars − assigned).
+        // Without: most-used, to consolidate onto fewer distinct command centres.
+        const score = have ? (have[t] || 0) * C - (tally[t] || 0) : (tally[t] || 0);
+        if (score > bestScore) { bestScore = score; best = t; }
+      }
+      tally[best] = (tally[best] || 0) + d.alloc;
+    }
+    return { tally, factory: res.facPlanets || 0, shortfalls, have, chars: C, total: (sys && sys.total) || 0 };
+  }
+
+  // System-aware toon split: each character may hold at most one colony per planet
+  // — so per toon, extractor colonies of a type are capped at the system's count of
+  // that type, and total colonies at min(the toon's planet budget, the system's
+  // planet count). Factory planets (any type) are still concentrated on the fewest
+  // toons. `tally` = per-type extractor counts from commandCentreTally.
+  function splitAcrossToonsSystem(tally, factory, sys, toons) {
+    const have = sys.counts, total = sys.total || 0;
+    const caps = toons.filter((t) => (t.use || 0) > 0)
+      .map((t) => ({ name: t.name, cap: Math.min(t.use || 0, total || (t.use || 0)), fac: 0, ext: 0, byType: {}, used: 0 }))
+      .sort((a, b) => b.cap - a.cap);
+    let fLeft = factory;
+    for (const c of caps) { if (fLeft <= 0) break; const take = Math.min(c.cap - c.used, fLeft); c.fac += take; c.used += take; fLeft -= take; }
+    let extUnplaced = 0;
+    for (const [T, needRaw] of Object.entries(tally)) {
+      if (T.startsWith('(')) { extUnplaced += needRaw; continue; }   // "(any)" / "(no planet…)" — not placeable by type
+      let need = needRaw; const cap = have[T] || 0; let progress = true;
+      while (need > 0 && progress) {
+        progress = false;
+        for (const c of caps) { if (need <= 0) break; if (c.used < c.cap && (c.byType[T] || 0) < cap) { c.byType[T] = (c.byType[T] || 0) + 1; c.ext++; c.used++; need--; progress = true; } }
+      }
+      extUnplaced += need;
+    }
+    caps.forEach((c) => { c.n = c.used; });
+    return { split: caps.filter((c) => c.used > 0), unassigned: fLeft + extUnplaced };
   }
 
   // The P0 an extractor planet pulls (ext-p1: the P1's raw input; else the node itself).
@@ -859,11 +941,12 @@
     el.textContent = calcItem ? `Target: ${commodityName(calcItem)}` : 'Target: pick a commodity in the calculator above';
   }
 
-  function optimizeNow() {
+  async function optimizeNow() {
     const out = $('#pib-opt-out'); if (!out) return;
     if (!calcItem) { out.innerHTML = '<div class="pib-opt-err">Pick a commodity in the calculator above first.</div>'; return; }
     readOptParams();
     const N = Math.max(1, parseInt($('#pib-opt-total').value, 10) || 1);
+    await loadSystemPlanets();   // so the CC tally + split reflect the chosen system
     optResult = runOptimize(calcItem, N, optParams);
     renderOptResult(optResult);
     if (!optResult.error) fillValue(optResult);
@@ -906,13 +989,49 @@
       return `<div class="pib-opt-group"><div class="pib-opt-group-h">${title} (${pc} planet${pc === 1 ? '' : 's'})</div>${rows.map(row).join('')}</div>`;
     };
 
-    let splitHtml = '';
+    // Command centres needed, tallied by planet type (+ any-type factory planets),
+    // relevant to the chosen system's planets and the one-colony-per-planet rule.
     const withPlanets = optToons.filter((t) => (t.use || 0) > 0);
+    const charCount = withPlanets.length || 1;
+    const sys = optSystemPlanets;
+    const cc = commandCentreTally(res, sys, charCount);
+    const have = cc.have;
+    const ccChip = (t, c) => {
+      if (t.startsWith('(')) return `<span class="pib-opt-chip pib-opt-chip-warn">${escapeHtml(t === '(any)' ? `×${c} (any type)` : `${c} extractor(s) — ${t}`)}</span>`;
+      const inSys = have ? (have[t] || 0) : null;
+      const short = have && c > inSys * cc.chars;   // not enough of this planet even across all chars
+      const note = have ? ` <span class="muted">· ${inSys} in system${cc.chars > 1 ? ` × ${cc.chars} chars` : ''}</span>` : '';
+      return `<span class="pib-opt-chip ${short ? 'pib-opt-chip-warn' : 'pib-opt-chip-cc'}">${escapeHtml(t)} CC ×${c}${note}</span>`;
+    };
+    const ccParts = Object.entries(cc.tally).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t, c]) => ccChip(t, c));
+    if (cc.factory) {
+      const facNote = have ? ` <span class="muted">· any of ${sys.total} planets</span>` : ` <span class="muted">· any type</span>`;
+      ccParts.push(`<span class="pib-opt-chip pib-opt-chip-fac">Factory planet ×${cc.factory}${facNote}</span>`);
+    }
+    const ccTotal = Object.values(cc.tally).reduce((a, b) => a + b, 0) + cc.factory;
+    // system-level warnings
+    const warns = [];
+    if (have && cc.shortfalls.length) {
+      warns.push(`${sys.system} has no planet to extract ${[...new Set(cc.shortfalls.map((s) => commodityName(s.p0)))].join(', ')} — this chain isn't fully buildable there.`);
+    }
+    if (have && ccTotal > sys.total * cc.chars) {
+      warns.push(`Needs ${ccTotal} colonies but ${sys.system} has only ${sys.total} planet(s) × ${cc.chars} char(s) = ${sys.total * cc.chars} max (one colony per planet per character).`);
+    }
+    if (sys.error) warns.push(`System ${sys.error} — showing all planet types.`);
+    const sysLabel = have ? ` <span class="muted">in ${escapeHtml(sys.system)} (${sys.total} planets)</span>` : '';
+    const ccHtml = ccParts.length
+      ? `<div class="pib-opt-cc"><div class="pib-opt-group-h">Command centres to deploy (${ccTotal})${sysLabel}</div>${ccParts.join('')}`
+        + warns.map((w) => `<div class="pib-opt-warn">⚠ ${escapeHtml(w)}</div>`).join('') + `</div>` : '';
+
+    let splitHtml = '';
     if (withPlanets.length) {
-      const { split, unassigned } = splitAcrossToons(res.used, optToons);
-      splitHtml = `<div class="pib-opt-split"><div class="pib-opt-group-h">Suggested split across toons</div>`
-        + split.map((s) => `<span class="pib-opt-chip">${escapeHtml(s.name || 'toon')}: ${s.n}</span>`).join('')
-        + (unassigned > 0 ? `<span class="pib-opt-chip pib-opt-chip-warn">${unassigned} unassigned (raise a toon's cap)</span>` : '')
+      let split, unassigned;
+      if (have) ({ split, unassigned } = splitAcrossToonsSystem(cc.tally, cc.factory, sys, optToons));
+      else ({ split, unassigned } = splitAcrossToons(res.facPlanets || 0, Math.max(0, res.used - (res.facPlanets || 0)), optToons));
+      const note = have ? '— one colony per planet per character; factory planets kept together' : '— factory planets kept together';
+      splitHtml = `<div class="pib-opt-split"><div class="pib-opt-group-h">Suggested split across toons <span class="muted">${note}</span></div>`
+        + split.map((s) => `<span class="pib-opt-chip">${escapeHtml(s.name || 'toon')}: ${s.n}${s.fac ? ` <span class="pib-opt-chip-fmark">· ${s.fac} factory</span>` : ''}</span>`).join('')
+        + (unassigned > 0 ? `<span class="pib-opt-chip pib-opt-chip-warn">${unassigned} won't fit${have ? ` in ${escapeHtml(sys.system)}` : ''} (add characters${have ? ' or another system' : ''})</span>` : '')
         + `</div>`;
     }
 
@@ -921,6 +1040,7 @@
         · ${res.used}/${res.N} planets used
         · bottleneck: <b>${escapeHtml(commodityName(res.bottleneck.tid))}</b></div>
       <div class="pib-opt-groups">${group('Extractor planets', ext)}${group(fac.length > 1 ? 'Factory planets (schematics consolidated)' : 'Factory planets', fac, res.facPlanets)}</div>
+      ${ccHtml}
       ${splitHtml}
       <div id="pib-opt-logi" class="pib-opt-logi"></div>
       <div id="pib-opt-value" class="pib-opt-value"></div>`;
@@ -1382,8 +1502,13 @@
         return `<div class="pis-row${n === res.bottleneck ? ' pis-bottleneck' : ''}"><span class="pis-n">${n.alloc}×</span> <b>${escapeHtml(commodityName(n.tid))}</b> <span class="muted">${res.model === 'ext-p1' ? `extracts ${escapeHtml(commodityName(p0))} · ` : ''}${escapeHtml(planets)}</span> <span class="pis-out muted">${fmt(n.alloc * n.out)}/hr</span></div>`;
       };
       const facRow = (n) => `<div class="pis-row${n === res.bottleneck ? ' pis-bottleneck' : ''}"><span class="pis-n">${share(n.alloc)}×</span> <b>${escapeHtml(commodityName(n.tid))}</b> <span class="muted">P${tierOf(n.tid)} schematic${n.alloc < 0.995 ? ' · shares a planet' : ''}</span> <span class="pis-out muted">${fmt(n.alloc * n.out)}/hr</span></div>`;
+      const { tally, factory } = commandCentreTally(res);
+      const ccParts = Object.entries(tally).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([t, c]) => `<span class="pis-cc">${escapeHtml(t)} CC ×${c}</span>`);
+      if (factory) ccParts.push(`<span class="pis-cc pis-cc-fac">Factory ×${factory} · any type</span>`);
       optHtml = `
         <div class="pis-summary"><b>${rate(res.R)}/hr</b> (${fmt(res.R * 24)}/day) · <b>${res.used}</b> planets · bottleneck: <b>${escapeHtml(commodityName(res.bottleneck.tid))}</b></div>
+        <div class="pis-group-h">Command centres to deploy</div><div class="pis-ccs">${ccParts.join('')}</div>
         <div class="pis-group-h">Extractor planets (${ext.length})</div>${ext.map(extRow).join('')}
         ${fac.length ? `<div class="pis-group-h">Factory planets (${res.facPlanets} · schematics consolidated)</div>${fac.map(facRow).join('')}` : ''}`;
     }

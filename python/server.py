@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 import requests
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -107,6 +107,7 @@ from janice import (
     items_from_appraisal,
 )
 import builds
+import eve_map
 import industry
 import liquidation
 import pi as pi_planner
@@ -266,6 +267,26 @@ def pi_systems():
         with open(path, encoding='utf-8') as f:
             _eve_systems_cache = json.load(f)
     return {'systems': _eve_systems_cache}
+
+
+@app.get('/api/pi/system-planets')
+def pi_system_planets(system: str = ''):
+    """The planet-type make-up of one solar system: ``{system, counts:{type:n},
+    total}``. Powers the optimizer's per-system command-centre tally (only planet
+    types actually present, and how many of each). Blank system → empty."""
+    if not system.strip():
+        return {'system': None, 'counts': {}, 'total': 0}
+    ua = get_user_agent()
+    data = pi_planner.load_pi_data()
+    res = _pi_resolve_system(system, ua, data)
+    if not res:
+        raise HTTPException(404, f'System not found: {system!r}')
+    counts: dict = {}
+    for pl in res['planets']:
+        pt = pl.get('planet_type')
+        if pt:
+            counts[pt] = counts.get(pt, 0) + 1
+    return {'system': res['name'], 'counts': counts, 'total': sum(counts.values())}
 
 
 def _pi_resolve_system(system_name, ua, data):
@@ -687,6 +708,100 @@ def pi_planet_capacity():
     toons.sort(key=lambda t: (t.get('name') or '').lower())
     return {'toons': toons, 'total_max': total,
             'skill_id': INTERPLANETARY_CONSOLIDATION_SKILL_ID}
+
+
+# ======================= Native EVE map (Maps tab) =======================
+
+@app.get('/api/map/regions')
+def map_regions():
+    """All k-space regions with their system counts, for the region picker."""
+    d = eve_map.load_map()
+    return {'regions': eve_map.regions(), 'generated': d.get('generated'),
+            'attribution': d.get('attribution')}
+
+
+@app.get('/api/map/systems')
+def map_systems():
+    """Lightweight index of every system (id, name, region, sec) — the renderer
+    caches this once for search and route-input resolution."""
+    d = eve_map.load_map()
+    out = [{'id': int(sid), 'name': r['name'], 'region': r.get('region'), 'sec': r.get('sec')}
+           for sid, r in d['systems'].items()]
+    out.sort(key=lambda s: s['name'])
+    return {'systems': out}
+
+
+@app.get('/api/map/region/{name}')
+def map_region(name: str):
+    """A region's positioned systems (home + border adjacents) and jump lines."""
+    lay = eve_map.region_layout(name)
+    if not lay:
+        raise HTTPException(404, f'Unknown region: {name!r}')
+    return lay
+
+
+@app.get('/api/map/system/{sid}')
+def map_system(sid: int):
+    """A system + its directly connected neighbours (detail panel)."""
+    det = eve_map.system_detail(sid)
+    if not det:
+        raise HTTPException(404, f'Unknown system id {sid}')
+    return det
+
+
+@app.get('/api/map/route')
+def map_route(src: str = Query(..., alias='from'), dst: str = Query(..., alias='to'),
+              prefer: str = 'shortest'):
+    """Stargate route between two systems (names or ids). prefer: shortest | safe | unsafe."""
+    if prefer not in ('shortest', 'safe', 'unsafe'):
+        prefer = 'shortest'
+    return eve_map.route(src, dst, prefer)
+
+
+_map_live_cache: dict = {'ts': 0.0, 'data': None}
+_MAP_LIVE_TTL = 60  # ESI jump/kill counts refresh hourly; 60s is plenty
+
+
+@app.get('/api/map/live')
+def map_live():
+    """Merged live layers for the map overlays: per-system ship jumps, kills
+    (ship/npc/pod) and sovereignty holder. Cached briefly and resilient — a
+    failing layer reports an ``*_error`` field rather than sinking the whole call."""
+    now = time.time()
+    if _map_live_cache['data'] and now - _map_live_cache['ts'] < _MAP_LIVE_TTL:
+        return _map_live_cache['data']
+    ua = get_user_agent()
+    out: dict = {'jumps': {}, 'kills': {}, 'sov': {}, 'ts': int(now)}
+    try:
+        for j in fetch_system_jumps(ua):
+            out['jumps'][str(j['system_id'])] = j.get('ship_jumps', 0)
+    except Exception as e:  # noqa: BLE001
+        out['jumps_error'] = f'{type(e).__name__}: {e}'
+    try:
+        for k in fetch_system_kills(ua):
+            out['kills'][str(k['system_id'])] = {'ship': k.get('ship_kills', 0),
+                                                 'npc': k.get('npc_kills', 0),
+                                                 'pod': k.get('pod_kills', 0)}
+    except Exception as e:  # noqa: BLE001
+        out['kills_error'] = f'{type(e).__name__}: {e}'
+    try:
+        sov = fetch_sovereignty_map(ua)
+        ids = sorted({s['alliance_id'] for s in sov if s.get('alliance_id')}
+                     | {s['faction_id'] for s in sov if s.get('faction_id') and not s.get('alliance_id')})
+        try:
+            names = resolve_names(ids, ua) if ids else {}
+        except Exception:  # noqa: BLE001 — names are best-effort
+            names = {}
+        for s in sov:
+            aid, fid = s.get('alliance_id'), s.get('faction_id')
+            if aid:
+                out['sov'][str(s['system_id'])] = {'alliance_id': aid, 'name': names.get(aid)}
+            elif fid:
+                out['sov'][str(s['system_id'])] = {'faction_id': fid, 'name': names.get(fid)}
+    except Exception as e:  # noqa: BLE001
+        out['sov_error'] = f'{type(e).__name__}: {e}'
+    _map_live_cache.update(ts=now, data=out)
+    return out
 
 
 _pi_price_cache: dict[int, dict] = {}
