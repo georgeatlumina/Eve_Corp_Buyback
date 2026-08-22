@@ -118,6 +118,7 @@ const DIVISION_LABELS = {
 };
 const BUYBACK_DIVISION = 3;
 const MOON_DIVISION = 6;
+const JITA_CONTRACT_MULTIPLIER = 1.2;
 
 const lastResults = { buyback: [], moon: [] };
 const filterState = { buyback: 'all', moon: 'all' };
@@ -3792,6 +3793,7 @@ $('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
 $('#btn-contracts-export-discord')?.addEventListener('click', exportForDiscord);
 $('#btn-contracts-export-csv')?.addEventListener('click', exportGapCsv);
 $('#btn-contracts-export-text')?.addEventListener('click', copyShoppingList);
+$('#btn-contracts-copy-sold')?.addEventListener('click', copySoldDiscord);
 
 // Show a status message when the user clicks/hovers a disabled scan button.
 const _SCAN_BUSY_MSG = 'A scan is already running — please wait for it to finish.';
@@ -3989,6 +3991,37 @@ async function runSold30dScan() {
             }
           }
         }
+        const suspicious = evt.payload?.suspicious_contracts || [];
+        const suspEl = $('#contracts-suspicious');
+        if (suspEl) {
+          if (!suspicious.length) {
+            suspEl.innerHTML = '';
+          } else {
+            const rows = suspicious
+              .sort((a, b) => (b.date_accepted || '').localeCompare(a.date_accepted || ''))
+              .map((c) => {
+                const when = c.date_accepted ? new Date(c.date_accepted).toLocaleString() : '—';
+                const price = c.price ? c.price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0';
+                return `<tr>
+                  <td>${escapeHtml(String(c.contract_id))}</td>
+                  <td>${escapeHtml(c.title || '—')}</td>
+                  <td class="muted">${when}</td>
+                  <td class="muted" style="text-align:right">${price} ISK</td>
+                </tr>`;
+              }).join('');
+            suspEl.innerHTML = `<details style="margin-top:1.5rem">
+              <summary class="muted" style="cursor:pointer;font-size:0.85em">
+                ⚠ ${suspicious.length} finished contract(s) with no <code>date_completed</code> — not counted in sold total
+              </summary>
+              <table style="width:100%;border-collapse:collapse;font-size:0.82em;margin-top:0.5rem">
+                <thead><tr style="text-align:left;border-bottom:1px solid #333">
+                  <th>Contract ID</th><th>Title</th><th>Accepted</th><th style="text-align:right">Price</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </details>`;
+          }
+        }
         step.textContent = 'done';
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);
@@ -4118,7 +4151,7 @@ async function prefetchHullPrices(quotas) {
       const res = await fetch(`${API}/api/market/jita-sell?type_id=${typeId}`);
       const data = await res.json();
       if (data.min_sell != null && bar.dataset.price === '') {
-        bar.dataset.price = data.min_sell * 1.2;
+        bar.dataset.price = data.min_sell * JITA_CONTRACT_MULTIPLIER;
         if ($('#contracts-sort')?.value === 'value') sortQuotaDashboard();
       }
     } catch (_) {}
@@ -4161,6 +4194,55 @@ function sortQuotaDashboard() {
 
 $('#contracts-sort')?.addEventListener('change', sortQuotaDashboard);
 
+// Returns 'T2', 'T3', or null. Name-based — covers all EVE T2/T3 hulls.
+const _T3_SHIPS = new Set([
+  'confessor','hecate','jackdaw','svipul',                          // T3 destroyers
+  'legion','loki','proteus','tengu',                                // T3 strategic cruisers
+  'drekavac','kikimora','nergal','vedmak',                          // Triglavian (T2/T3)
+]);
+const _T2_SHIPS = new Set([
+  // assault frigates
+  'retribution','vengeance','hawk','harpy','enyo','ishkur','wolf','jaguar',
+  // interceptors
+  'crusader','malediction','stiletto','ares','taranis','crow','raptor',
+  // covert ops
+  'anathema','helios','buzzard','cheetah',
+  // electronic attack
+  'sentinel','keres','kitsune','hyena',
+  // logistics frigates
+  'deacon','inquisitor','thalia','scalpel',
+  // interdictors
+  'heretic','flycatcher','eris','sabre',
+  // heavy assault cruisers
+  'sacrilege','zealot','muninn','vagabond','ishtar','deimos','cerberus','eagle',
+  // recon
+  'pilgrim','curse','arazu','lachesis','rapier','huginn','falcon','rook',
+  // logistics cruisers
+  'guardian','oneiros','scimitar','basilisk',
+  // command ships
+  'damnation','absolution','eos','astarte','sleipnir','claymore',
+  // heavy interdictors
+  'devoter','phobos','broadsword','onyx',
+  // strategic cruisers (T3C)
+  'legion','loki','proteus','tengu',
+  // black ops
+  'redeemer','sin','panther','widow',
+  // marauders
+  'paladin','kronos','golem','vargur',
+  // jump freighters — skip, not relevant
+  // command destroyers
+  'bifrost','magus','stork','pontifex',
+  // tactical destroyers (T3D)
+  'confessor','hecate','jackdaw','svipul',
+]);
+
+function shipTechTier(shipName) {
+  const n = (shipName || '').toLowerCase();
+  if (_T3_SHIPS.has(n)) return 'T3';
+  if (_T2_SHIPS.has(n)) return 'T2';
+  return null;
+}
+
 function renderQuotaBar(q, priority = 0, hullCount = 0) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
@@ -4176,9 +4258,15 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
   div.dataset.missing = missing;
   div.dataset.missingPct = required > 0 ? (available / required) * 100 : 0;
   div.dataset.price = '';
+  const tier = shipTechTier(q.ship_name || q.name);
+  const tierBadge = tier === 'T3'
+    ? `<span style="font-size:0.7rem;font-weight:700;color:#a78bfa;border:1px solid #a78bfa;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T3</span>`
+    : tier === 'T2'
+    ? `<span style="font-size:0.7rem;font-weight:700;color:#38bdf8;border:1px solid #38bdf8;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T2</span>`
+    : '';
   div.innerHTML = `
     <div class="quota-bar-head">
-      <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>
+      <strong>${escapeHtml(q.ship_name || q.name || `type ${q.ship_type_id}`)}</strong>${tierBadge}
       <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
       <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
       <span class="quota-expand-caret" style="margin-left:auto">▸</span>
@@ -4186,7 +4274,7 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
     <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
     <div class="quota-expand-panel">
       <div class="quota-expand-row">
-        <span class="quota-expand-label">Contract price (120% Jita sell)</span>
+        <span class="quota-expand-label">Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell)</span>
         <span class="quota-amarr-price muted">—</span>
         <button type="button" class="quota-price-refresh" title="Refresh price" hidden>↻</button>
       </div>
@@ -4246,30 +4334,25 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
 
       if (contractPricingItems?.length) {
         priceEl.textContent = 'pricing…';
-        const uniqueIds = [...new Set(contractPricingItems.map((i) => i.typeId))];
-        const priceResults = await Promise.all(
-          uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
-          )
-        );
-        const priceMap = new Map();
-        priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
-        if (priceResults.find((p) => p?.source)?.source === 'esi') markEsi();
-        let total = 0;
-        const unpriced = [];
-        for (const item of contractPricingItems) {
-          const p = priceMap.get(item.typeId);
-          if (p != null) total += p * item.qty;
-          else unpriced.push({ name: item.name, qty: item.qty });
-        }
-        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · from contracts)';
-        if (total > 0) {
-          div.dataset.price = total * 1.2;
-          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
-          priceEl.classList.remove('muted');
-          if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
-        } else {
-          priceEl.textContent = 'no Jita prices found for contract items';
+        const paste = contractPricingItems.map((i) => `${i.name} x${i.qty}`).join('\n');
+        try {
+          const apprRes = await fetch(`${API}/api/appraise`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paste_text: paste, persist: false }),
+          });
+          const apprData = apprRes.ok ? await apprRes.json() : null;
+          const total = apprData?.janice?.prices_immediate?.sell_total ?? apprData?.janice?.prices_effective?.sell_total ?? 0;
+          if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · from contracts)`;
+          if (total > 0) {
+            div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
+            priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
+            priceEl.classList.remove('muted');
+          } else {
+            priceEl.textContent = 'no Janice prices found for contract items';
+          }
+        } catch (e) {
+          priceEl.textContent = `Janice error: ${e}`;
         }
         return;
       }
@@ -4328,33 +4411,25 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
       if (fitDetail?.items?.length) {
         // Price everything in the buy-all list: hull, modules, ammo, scripts, nanite paste
         const pricingItems = fitDetail.items.map((i) => ({ typeId: i.typeId || null, name: i.name, qty: i.qty }));
-
-        const uniqueIds = [...new Set(pricingItems.filter((i) => i.typeId).map((i) => i.typeId))];
-        const priceResults = await Promise.all(
-          uniqueIds.map((tid) =>
-            fetch(`${API}/api/market/jita-sell?type_id=${tid}${bustParam}`).then((r) => r.json()).catch(() => null)
-          )
-        );
-        const priceMap = new Map();
-        priceResults.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
-        if (priceResults.find((p) => p?.source)?.source === 'esi') markEsi();
-
-        let total = 0;
-        const unpriced = [];
-        for (const item of pricingItems) {
-          const p = item.typeId ? priceMap.get(item.typeId) : null;
-          if (p != null) total += p * item.qty;
-          else unpriced.push({ name: item.name, qty: item.qty });
-        }
-
-        if (labelEl) labelEl.textContent = 'Contract price (120% Jita sell · full fit)';
-        if (total > 0) {
-          div.dataset.price = total * 1.2;
-          priceEl.textContent = `${fmtM(total * 1.2)}  (base: ${fmt(total)})`;
-          priceEl.classList.remove('muted');
-          if (unpriced.length) renderUnpricedToggle(priceEl, unpriced);
-        } else {
-          priceEl.textContent = 'no Jita prices found for fit items';
+        const paste = pricingItems.filter((i) => i.name).map((i) => `${i.name} x${i.qty}`).join('\n');
+        try {
+          const apprRes = await fetch(`${API}/api/appraise`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paste_text: paste, persist: false }),
+          });
+          const apprData = apprRes.ok ? await apprRes.json() : null;
+          const total = apprData?.janice?.prices_immediate?.sell_total ?? apprData?.janice?.prices_effective?.sell_total ?? 0;
+          if (labelEl) labelEl.textContent = `Contract price (${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell · full fit)`;
+          if (total > 0) {
+            div.dataset.price = total * JITA_CONTRACT_MULTIPLIER;
+            priceEl.textContent = `${fmtM(total * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(total)})`;
+            priceEl.classList.remove('muted');
+          } else {
+            priceEl.textContent = 'no Janice prices found for fit items';
+          }
+        } catch (e) {
+          priceEl.textContent = `Janice error: ${e}`;
         }
       } else {
         priceEl.textContent = 'loading…';
@@ -4363,7 +4438,7 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
         const shipLabel = q.ship_name || q.name || 'this ship';
         if (_fitIndexByType.size === 0) {
           // No Auth fit data at all — not logged in or Auth unreachable.
-          if (labelEl) labelEl.textContent = 'Alliance Auth not connected · 120% Jita sell (hull only)';
+          if (labelEl) labelEl.textContent = `Alliance Auth not connected · ${Math.round(JITA_CONTRACT_MULTIPLIER * 100)}% Jita sell (hull only)`;
         } else if (fitFoundOnAuth) {
           // A fit matched but exposes no buy list to price against.
           const fitName = fitDetail?.name;
@@ -4390,8 +4465,8 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
         }
         if (data.min_sell != null) {
           if (data.source === 'esi') markEsi();
-          div.dataset.price = data.min_sell * 1.2;
-          priceEl.textContent = `${fmtM(data.min_sell * 1.2)}  (base: ${fmt(data.min_sell)})`;
+          div.dataset.price = data.min_sell * JITA_CONTRACT_MULTIPLIER;
+          priceEl.textContent = `${fmtM(data.min_sell * JITA_CONTRACT_MULTIPLIER)}  (base: ${fmt(data.min_sell)})`;
           priceEl.classList.remove('muted');
         } else {
           priceEl.textContent = 'no sell orders in Jita';
@@ -4571,6 +4646,38 @@ function exportGapCsv() {
   downloadBlob('quota-gap.csv', 'text/csv', csv);
 }
 
+async function copySoldDiscord() {
+  const root = $('#contracts-quota-dashboard');
+  const bars = root ? [...root.querySelectorAll('.quota-bar[data-sold]')] : [];
+  const rows = bars
+    .map((bar) => ({
+      ship: bar.dataset.shipName || '',
+      fit: bar.querySelector('.quota-bar-head .muted')?.textContent?.split('·')[0]?.trim() || '',
+      sold: bar.dataset.sold !== '' && bar.dataset.sold != null ? Number(bar.dataset.sold) : null,
+    }))
+    .filter((r) => r.sold !== null)
+    .sort((a, b) => b.sold - a.sold);
+
+  if (!rows.length) {
+    $('#contracts-status').textContent = 'No sold data — run "Sold 30 days" first.';
+    return;
+  }
+
+  const shipW = Math.max(4, ...rows.map((r) => r.ship.length));
+  const fitW  = Math.max(3, ...rows.map((r) => r.fit.length));
+  const header = `${'Hull'.padEnd(shipW)}  ${'Fit'.padEnd(fitW)}  Sold (30d)`;
+  const sep    = `${'-'.repeat(shipW)}  ${'-'.repeat(fitW)}  ----------`;
+  const lines  = rows.map((r) => `${r.ship.padEnd(shipW)}  ${r.fit.padEnd(fitW)}  ${String(r.sold).padStart(10)}`);
+  const text   = '```\n' + [header, sep, ...lines].join('\n') + '\n```';
+
+  try {
+    await navigator.clipboard.writeText(text);
+    $('#contracts-status').textContent = `Copied ${rows.length} row(s) to clipboard.`;
+  } catch (_) {
+    $('#contracts-status').textContent = 'Clipboard copy failed.';
+  }
+}
+
 async function copyShoppingList() {
   if (!lastContractsScan) {
     alert('Run a scan first.');
@@ -4733,7 +4840,7 @@ function acqUpdateFinderAvailability(root) {
   }
 }
 
-function renderAcqFinderResults(el, result) {
+function renderAcqFinderResults(el, result, mode) {
   const { builds, blocked } = result;
   if (!builds.length && !blocked.length) {
     el.innerHTML = '<p class="muted" style="font-size:0.875rem">No quota gaps to evaluate.</p>';
@@ -4757,7 +4864,14 @@ function renderAcqFinderResults(el, result) {
   const note = unevaluatable.length
     ? `<p class="muted" style="font-size:0.8rem;margin-top:0.4rem">${unevaluatable.length} fit(s) could not be evaluated — a module in Auth has no resolved type.</p>`
     : '';
+  const modeNote = mode === ACQ_MODES.FITS_NO_HULL
+    ? `<p style="font-size:0.8rem;color:#94a3b8;margin:0 0 0.5rem 0">
+        These fits have <strong style="color:#e2e8f0">every module in inventory</strong> but
+        <strong style="color:#f87171">no hull in stock</strong>. Buy a hull and they're ready to build.
+       </p>`
+    : '';
   el.innerHTML = `
+    ${modeNote}
     <table style="width:100%;border-collapse:collapse;font-size:0.875rem;margin-top:0.5rem">
       <thead>
         <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
@@ -4782,6 +4896,89 @@ function acqProgressSet(bar, fill, step, indeterminate) {
   bar.querySelector('.progress-bar').classList.toggle('indeterminate', !!indeterminate);
 }
 
+// True if `runId` is still the current acqRunHullAnalysis run — false if a
+// newer run has superseded it (a re-click after the caller's last await).
+// Call this after every await in acqRunHullAnalysis; a stale run must not
+// touch the DOM or overwrite acqHullAnalysisResult with outdated data.
+function acqCheckRunLive(runId, where) {
+  if (runId === acqHullAnalysisRunId) return true;
+  appLog(`analyse-hulls: superseded by a newer run, abandoning (${where})`);
+  return false;
+}
+
+// renderAcquisitionsTab() rebuilds #acquisitions-root's children on every tab
+// visit, orphaning any node references captured before an await. root itself
+// is never replaced, so re-query through it to land on whatever is live now,
+// and re-render section 1 (already computed, just needs to reach the current
+// nodes) — sections 2-4 are rendered fresh by their callers regardless.
+function acqReacquireLiveNodes(root, fullResult, neededMap = new Map()) {
+  const progressBar = root.querySelector('#acq-analysis-progress');
+  const s1 = root.querySelector('#acq-section-inventory');
+  const s2 = root.querySelector('#acq-section-market');
+  const s3 = root.querySelector('#acq-section-shopping');
+  const s4 = root.querySelector('#acq-section-outofreach');
+  const statusEl = root.querySelector('#acq-find-status');
+  progressBar.hidden = false;
+  renderAcqSection1(s1, fullResult, new Map(), neededMap);
+  s1.hidden = false;
+  return { progressBar, s1, s2, s3, s4, statusEl };
+}
+
+// Fetches Jita sell prices for every type_id missing across `builds`, for the
+// UEXO-vs-Jita cost comparison in section 2. Best-effort: a type whose fetch
+// fails or has no Jita sell order is simply left out of the returned map.
+async function acqFetchJitaPrices(builds) {
+  const uniqueIds = [...new Set(builds.flatMap((b) => (b.missing || []).map((m) => m.type_id)))];
+  if (!uniqueIds.length) return new Map();
+  const results = await Promise.all(
+    uniqueIds.map((tid) =>
+      fetch(`${API}/api/market/jita-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+    )
+  );
+  const priceMap = new Map();
+  results.forEach((p, i) => { if (p?.min_sell != null) priceMap.set(uniqueIds[i], p.min_sell); });
+  return priceMap;
+}
+
+async function acqFetchJaniceFitPrices(targets) {
+  const unique = targets.filter((t) => !t.unevaluatable && t.shipTypeId);
+  const deduped = new Map();
+  for (const t of unique) {
+    const key = `${t.shipTypeId}||${t.fitName || ''}`;
+    if (!deduped.has(key)) deduped.set(key, t);
+  }
+  if (!deduped.size) return new Map();
+
+  const results = await Promise.all(
+    [...deduped.entries()].map(async ([key, t]) => {
+      const lines = [`${t.shipName} x1`];
+      for (const [tid, qty] of t.units) {
+        lines.push(`${acqTypeName(tid)} x${qty}`);
+      }
+      try {
+        const res = await fetch(`${API}/api/appraise`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paste_text: lines.join('\n'), persist: false }),
+        });
+        if (!res.ok) return [key, null];
+        const data = await res.json();
+        const sell = data?.janice?.prices_immediate?.sell_total ?? data?.janice?.prices_effective?.sell_total ?? null;
+        return [key, sell];
+      } catch (_) {
+        return [key, null];
+      }
+    })
+  );
+
+  const priceMap = new Map();
+  for (const [key, price] of results) {
+    if (price != null) priceMap.set(key, price);
+  }
+  return priceMap;
+}
+
+
 async function acqRunHullAnalysis(root, statusEl) {
   const inputs = acqFinderInputs();
   if (inputs.error) {
@@ -4790,6 +4987,14 @@ async function acqRunHullAnalysis(root, statusEl) {
   }
   const runId = ++acqHullAnalysisRunId;
   appLog(`analyse-hulls: start, ${inputs.targets.length} target(s)`);
+
+  // Build a map of quota-needed counts for display, then uncap targets so the
+  // analysis shows how many can actually be built, not just the gap.
+  const neededMap = new Map(
+    inputs.targets.map((t) => [`${t.shipTypeId}||${t.fitName || ''}`, t.needed])
+  );
+  const uncappedTargets = inputs.targets.map((t) => ({ ...t, needed: 999 }));
+  inputs.targets = uncappedTargets;
 
   let progressBar = root.querySelector('#acq-analysis-progress');
   let s1 = root.querySelector('#acq-section-inventory');
@@ -4805,7 +5010,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   const fullResult = planAcquisitions({
     pool: inputs.pool, targets: inputs.targets, mode: ACQ_MODES.FULL,
   });
-  renderAcqSection1(s1, fullResult);
+  renderAcqSection1(s1, fullResult, new Map(), neededMap);
   s1.hidden = false;
   appLog(`analyse-hulls: section 1 done, ${fullResult.builds.length} build(s) from inventory`);
 
@@ -4856,31 +5061,11 @@ async function acqRunHullAnalysis(root, statusEl) {
     appLog(`analyse-hulls: reusing cached market, ${Object.keys(market.by_type || {}).length} type(s)`);
   }
 
-  // The only await above this point is loadMarket(); a click on a re-rendered
-  // Analyse Hulls button (after a tab switch mid-run, or a plain double-click)
-  // bumps acqHullAnalysisRunId before this point is reached. Everything below
-  // is synchronous, so one check here covers the rest of the function.
-  if (runId !== acqHullAnalysisRunId) {
-    appLog('analyse-hulls: superseded by a newer run, abandoning');
-    return;
-  }
-
-  // Nobody re-ran the analysis, but the tab may still have been switched away
-  // and back while we awaited — renderAcquisitionsTab() rebuilds #acquisitions-root's
-  // children on every visit, orphaning the nodes captured above. root itself
-  // is never replaced, so re-query through it to land on whatever is live now.
-  progressBar = root.querySelector('#acq-analysis-progress');
-  s1 = root.querySelector('#acq-section-inventory');
-  s2 = root.querySelector('#acq-section-market');
-  s3 = root.querySelector('#acq-section-shopping');
-  s4 = root.querySelector('#acq-section-outofreach');
-  statusEl = root.querySelector('#acq-find-status') || statusEl;
-  // Section 1 was already rendered into the (now possibly orphaned) old s1
-  // above; re-render it into whichever node is live now. Sections 2-4 are
-  // rendered fresh below regardless, so they don't need the same treatment.
-  progressBar.hidden = false;
-  renderAcqSection1(s1, fullResult);
-  s1.hidden = false;
+  // A click on a re-rendered Analyse Hulls button (after a tab switch mid-run,
+  // or a plain double-click) bumps acqHullAnalysisRunId before this point is
+  // reached. Call after every await in this function — see acqCheckRunLive.
+  if (!acqCheckRunLive(runId, 'after market load')) return;
+  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult, neededMap));
 
   if (aaState.marketError || !market?.by_type) {
     statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. `
@@ -4901,7 +5086,16 @@ async function acqRunHullAnalysis(root, statusEl) {
     (b) => !satisfiedByInventory.has(`${b.shipTypeId}||${b.fitName || ''}`)
   );
 
-  renderAcqSection2(s2, marketBuilds, ageMin, market);
+  acqProgressSet(progressBar, 70, 'Pricing fits via Janice…', false);
+  const [jitaPrices, janiceFitPrices] = await Promise.all([
+    acqFetchJitaPrices(marketBuilds),
+    acqFetchJaniceFitPrices(inputs.targets),
+  ]);
+  if (!acqCheckRunLive(runId, 'after Jita pricing')) return;
+  ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult, neededMap));
+
+  renderAcqSection1(s1, fullResult, janiceFitPrices, neededMap);
+  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices, janiceFitPrices);
   s2.hidden = false;
   appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
 
@@ -4964,7 +5158,18 @@ async function acqRunHullAnalysis(root, statusEl) {
   appLog(`analyse-hulls: shopping-gap pass done in ${Math.round(performance.now() - gapStart)}ms, `
     + `candidates=${candidates.length} outOfReach=${outOfReach.length}`);
 
-  renderAcqSection3(s3, candidates, market);
+  const jitaPriceMap = new Map();
+  if (candidates.length) {
+    const uniqueTypeIds = [...new Set(candidates.flatMap(({ gap }) => gap.items.map((it) => it.type_id)))];
+    const jitaResults = await Promise.all(
+      uniqueTypeIds.map((tid) =>
+        fetch(`${API}/api/market/jita-sell?type_id=${tid}`).then((r) => r.json()).catch(() => null)
+      )
+    );
+    jitaResults.forEach((p, i) => { if (p?.min_sell != null) jitaPriceMap.set(uniqueTypeIds[i], p.min_sell); });
+  }
+
+  renderAcqSection3(s3, candidates, market, jitaPriceMap);
   s3.hidden = candidates.length === 0;
   renderAcqSection4(s4, outOfReach);
   s4.hidden = outOfReach.length === 0;
@@ -4986,18 +5191,29 @@ async function acqRunHullAnalysis(root, statusEl) {
   setTimeout(() => { progressBar.hidden = true; }, 400);
 }
 
-function renderAcqSection1(el, result) {
+function renderAcqSection1(el, result, janiceFitPrices = new Map(), neededMap = new Map()) {
   const counts = new Map();
   for (const b of result.builds) {
-    const key = `${b.shipName}||${b.fitName || ''}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const key = `${b.shipTypeId}||${b.fitName || ''}`;
+    const entry = counts.get(key) || { n: 0, shipName: b.shipName, fitName: b.fitName || '', shipTypeId: b.shipTypeId };
+    entry.n += 1;
+    counts.set(key, entry);
   }
-  const rows = [...counts.entries()].map(([key, n]) => {
-    const [ship, fit] = key.split('||');
+  const pct = Math.round(JITA_CONTRACT_MULTIPLIER * 100);
+  const rows = [...counts.entries()].map(([key, e]) => {
+    const fitPrice = janiceFitPrices.get(key);
+    const contractPrice = fitPrice != null
+      ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
+      : `<span style="color:#4b5563">—</span>`;
+    const needed = neededMap.get(`${e.shipTypeId}||${e.fitName}`);
+    const neededNote = (needed != null && e.n > needed)
+      ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed} needed)</span>`
+      : '';
     return `<tr style="border-bottom:1px solid #1e2533">
-        <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
-        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
-        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
+        <td style="padding:0.3rem 0.5rem">${escapeHtml(e.shipName)}</td>
+        <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(e.fitName)}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${e.n}${neededNote}</td>
+        <td style="padding:0.3rem 0.5rem;text-align:right;font-size:0.82rem" title="Janice Jita sell × ${pct}%">${contractPrice}</td>
       </tr>`;
   }).join('');
 
@@ -5015,6 +5231,7 @@ function renderAcqSection1(el, result) {
                 <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
                 <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
                 <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">${pct}% Jita sell / fit</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table>`
@@ -5023,18 +5240,45 @@ function renderAcqSection1(el, result) {
     </div>`;
 }
 
-function renderAcqSection2(el, builds, ageMin, market) {
-  const counts = new Map();
+function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPrices = new Map()) {
+  const byType = market?.by_type || {};
+  const groups = new Map();
   for (const b of builds) {
     const key = `${b.shipName}||${b.fitName || ''}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const g = groups.get(key) || { n: 0, uexoCost: 0, jitaCost: 0, jitaComplete: true, shipTypeId: b.shipTypeId, fitName: b.fitName || '' };
+    g.n += 1;
+    for (const m of b.missing || []) {
+      const entry = byType[m.type_id] || byType[Number(m.type_id)] || {};
+      g.uexoCost += (entry.min_price || 0) * m.qty;
+      const jp = jitaPrices?.get(m.type_id) ?? jitaPrices?.get(Number(m.type_id));
+      if (jp != null) g.jitaCost += jp * m.qty;
+      else g.jitaComplete = false;
+    }
+    groups.set(key, g);
   }
-  const rows = [...counts.entries()].map(([key, n]) => {
+  const pct = Math.round(JITA_CONTRACT_MULTIPLIER * 100);
+  const rows = [...groups.entries()].map(([key, g]) => {
     const [ship, fit] = key.split('||');
+    const uexoStr = fmtIskShort(g.uexoCost);
+    const jitaStr = g.jitaComplete ? fmtIskShort(g.jitaCost) : '—';
+    let deltaHtml = '';
+    if (g.jitaComplete && g.jitaCost > 0) {
+      const deltaPct = Math.round(((g.uexoCost - g.jitaCost) / g.jitaCost) * 100);
+      const sign = deltaPct > 0 ? '+' : '';
+      const color = deltaPct <= 0 ? '#4ade80' : '#f87171';
+      deltaHtml = ` <span style="color:${color}">(${sign}${deltaPct}%)</span>`;
+    }
+    const fitPriceKey = `${g.shipTypeId}||${g.fitName}`;
+    const fitPrice = janiceFitPrices.get(fitPriceKey);
+    const contractPrice = fitPrice != null
+      ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
+      : `<span style="color:#4b5563">—</span>`;
     return `<tr style="border-bottom:1px solid #1e2533">
         <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
         <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
-        <td style="padding:0.3rem 0.75rem;text-align:right">${n}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${g.n}</td>
+        <td style="padding:0.3rem 0.5rem;text-align:right">${uexoStr} vs ${jitaStr}${deltaHtml}</td>
+        <td style="padding:0.3rem 0.5rem;text-align:right;font-size:0.82rem" title="Janice Jita sell × ${pct}%">${contractPrice}</td>
       </tr>`;
   }).join('');
 
@@ -5053,6 +5297,8 @@ function renderAcqSection2(el, builds, ageMin, market) {
                 <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
                 <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
                 <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">UEXO vs Jita (missing items)</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">${pct}% Jita sell / fit</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table>`
@@ -5061,18 +5307,33 @@ function renderAcqSection2(el, builds, ageMin, market) {
     </div>`;
 }
 
-function renderAcqSection3(el, candidates, market) {
+function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
   if (!candidates.length) { el.innerHTML = ''; return; }
   const cards = candidates.map(({ target, gap }) => {
     const itemRows = gap.items.map((it) => {
       const name = escapeHtml(acqTypeName(it.type_id));
-      const priceStr = it.price ? Math.round(it.price).toLocaleString() : '—';
+      const uexoPrice = it.price || 0;
+      const priceStr = uexoPrice ? Math.round(uexoPrice).toLocaleString() : '—';
+      const qtyStr = it.qty.toLocaleString();
+      const jita = jitaPriceMap.get(it.type_id);
+      let jitaDeltaStr = '—';
+      if (uexoPrice && jita != null) {
+        const delta = uexoPrice - jita;
+        const pct = Math.round((delta / jita) * 100);
+        const sign = delta >= 0 ? '+' : '';
+        const color = delta <= 0 ? '#4ade80' : '#f87171';
+        jitaDeltaStr = `<span style="color:${color}">${sign}${pct}%</span>`;
+      } else if (jita != null) {
+        jitaDeltaStr = `<span style="color:#8899aa">${Math.round(jita).toLocaleString()}</span>`;
+      }
       return `<tr style="border-bottom:1px solid #1e2533;font-size:0.8rem">
           <td style="padding:0.25rem 0.4rem">${name}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.need}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.have}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right;color:#f87171">${it.short}</td>
+          <td style="padding:0.25rem 0.4rem;text-align:right">${qtyStr}</td>
           <td style="padding:0.25rem 0.5rem;text-align:right">${priceStr}</td>
+          <td style="padding:0.25rem 0.5rem;text-align:right">${jitaDeltaStr}</td>
         </tr>`;
     }).join('');
 
@@ -5101,7 +5362,9 @@ function renderAcqSection3(el, candidates, market) {
             <th style="padding:0.25rem 0.4rem;text-align:right">Need</th>
             <th style="padding:0.25rem 0.4rem;text-align:right">Have</th>
             <th style="padding:0.25rem 0.4rem;text-align:right">Short</th>
+            <th style="padding:0.25rem 0.4rem;text-align:right">UEXO qty</th>
             <th style="padding:0.25rem 0.5rem;text-align:right">UEXO price</th>
+            <th style="padding:0.25rem 0.5rem;text-align:right">vs Jita</th>
           </tr></thead>
           <tbody>${itemRows}</tbody>
         </table>
@@ -5164,7 +5427,7 @@ async function acqRunFinder(mode, resultsEl, statusEl, progressBar) {
   acqProgressSet(progressBar, 0, 'Analysing fits…', false);
   await new Promise((r) => setTimeout(r, 0));
   const result = planAcquisitions({ pool: inputs.pool, targets: inputs.targets, mode });
-  renderAcqFinderResults(resultsEl, result);
+  renderAcqFinderResults(resultsEl, result, mode);
   statusEl.textContent = `${result.builds.length} build(s) found.`;
   acqProgressSet(progressBar, 100, '', false);
   setTimeout(() => { progressBar.hidden = true; }, 300);
@@ -5309,16 +5572,20 @@ function renderAcquisitionsTab() {
   const root = $('#acquisitions-root');
   if (!root) return;
   root.innerHTML = `
-    <h2>Acquisitions Inventory <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <h2>Acquisitions Inventory</h2>
     <div id="acq-updated-at" class="muted" style="font-size:0.8rem;margin-top:-0.5rem"></div>
     <p class="muted">Paste inventory (hulls and modules together) in EVE clipboard format
     — Name, tab, quantity, one line per item. Hulls and modules are split automatically.
     <strong>Add to inventory</strong> sums the paste into what's already stored; <strong>Replace inventory</strong> discards the current inventory first.</p>
+    <p class="muted"><strong>Copy inventory</strong> copies the stored inventory to your clipboard in Janice format.
+    <strong>Analyse Hulls</strong> checks which doctrine fits can be completed from inventory (or with UEXO market help), and shows a shopping list for fits that are close.
+    <strong>Analyse Fits</strong> finds fits where every module is in stock but the hull is missing — buy a hull and they're ready to build.</p>
     <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
       placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
     <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
       <button id="acq-add" class="btn">Add to inventory</button>
       <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
+      <button id="acq-copy-inventory" class="btn" title="Copy full inventory as Janice-format text">Copy inventory</button>
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
@@ -5414,6 +5681,14 @@ function renderAcquisitionsTab() {
   addBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'add'));
   replaceBtn.addEventListener('click', () => acquisitionsParse(textarea, hullsEl, itemsEl, statusEl, 'replace'));
   clearBtn.addEventListener('click', () => acquisitionsClear(textarea, hullsEl, itemsEl, statusEl));
+  root.querySelector('#acq-copy-inventory').addEventListener('click', () => {
+    const text = formatJaniceExport(acquisitionsHulls, acquisitionsItems);
+    if (!text) { statusEl.textContent = 'Inventory is empty.'; return; }
+    navigator.clipboard.writeText(text).then(() => {
+      statusEl.textContent = 'Copied to clipboard.';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    });
+  });
   // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -5736,7 +6011,7 @@ function renderHaulxTab() {
       !hasReadiness && '<li>Run a <strong>Market Readiness</strong> scan (Market Readiness tab → Scan doctrines &amp; fits)</li>',
     ].filter(Boolean).join('');
     root.innerHTML = `
-      <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+      <h2>HaulX</h2>
       <p class="muted">Before you can plan a haul, complete the following:</p>
       <ul style="color:#e0e8f0;line-height:2">${items}</ul>`;
     return;
@@ -5745,7 +6020,7 @@ function renderHaulxTab() {
   const quotas = lastContractsScan.quotas || [];
 
   root.innerHTML = `
-    <h2>HaulX <span style="font-size:0.6em;font-weight:400;color:#f59e0b;vertical-align:middle;border:1px solid #f59e0b;border-radius:3px;padding:1px 6px">experimental</span></h2>
+    <h2>HaulX</h2>
     <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Jita to UEXO. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Rows use the same sort order as the <strong>Contracts</strong> page — change the sort there and re-open this tab to reorder them. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
     <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
       <span style="font-weight:600">HaulX</span>

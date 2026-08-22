@@ -30,12 +30,12 @@
   function visibleQuotas() {
     const snap = dsState.data[dsState.alliance];
     let rows = (snap && Array.isArray(snap.quotas)) ? snap.quotas.slice() : [];
-    if (dsState.hideOk) rows = rows.filter((q) => quotaState(q) !== 'ok');
+    if (dsState.hideOk) rows = rows.filter((q) => effectiveMissing(q) > 0 && (Number(q.required) || 0) > 0);
     if (dsState.sort === 'priority') return rows;
     rows.sort((a, b) => {
       if (dsState.sort === 'under-quota') {
-        const am = Number(a.missing) || 0;
-        const bm = Number(b.missing) || 0;
+        const am = effectiveMissing(a);
+        const bm = effectiveMissing(b);
         if (am !== bm) return bm - am;
         return (a.ship_name || a.name || '').localeCompare(b.ship_name || b.name || '');
       }
@@ -44,19 +44,41 @@
     return rows;
   }
 
+  function hangarQty(shipTypeId) {
+    if (!shipTypeId || typeof acquisitionsHulls === 'undefined') return 0;
+    const key = String(shipTypeId);
+    const row = acquisitionsHulls.find((h) => String(h.type_id) === key);
+    return row ? (Number(row.quantity) || 0) : 0;
+  }
+
+  function effectiveMissing(q) {
+    const required = Number(q.required) || 0;
+    const available = Number(q.available) || 0;
+    const hangar = hangarQty(q.ship_type_id);
+    return Math.max(0, required - available - hangar);
+  }
+
   function renderBar(q) {
     const required = Number(q.required) || 0;
     const available = Number(q.available) || 0;
-    const missing = Number(q.missing) || Math.max(0, required - available);
-    const pct = required > 0 ? Math.min(100, Math.round((available / required) * 100)) : 0;
-    const state = quotaState(q);
+    const hangar = hangarQty(q.ship_type_id);
+    const missing = effectiveMissing(q);
+    const pct = required > 0 ? Math.min(100, Math.round(((available + hangar) / required) * 100)) : 0;
+    const state = (available + hangar) >= required ? 'ok' : (available + hangar) > 0 ? 'partial' : quotaState(q);
     const shipName = q.ship_name || q.name || `type ${q.ship_type_id}`;
+    const hangarStr = hangar > 0 ? ` · <span style="color:#60a5fa">${hangar} in hangar</span>` : '';
+    const tier = typeof shipTechTier === 'function' ? shipTechTier(shipName) : null;
+    const tierBadge = tier === 'T3'
+      ? `<span style="font-size:0.7rem;font-weight:700;color:#a78bfa;border:1px solid #a78bfa;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T3</span>`
+      : tier === 'T2'
+      ? `<span style="font-size:0.7rem;font-weight:700;color:#38bdf8;border:1px solid #38bdf8;border-radius:3px;padding:0 4px;margin-left:0.35rem;vertical-align:middle">T2</span>`
+      : '';
     return `
       <div class="quota-bar quota-${state} ds-bar">
         <div class="quota-bar-head">
-          <strong>${escapeHtml(shipName)}</strong>
+          <strong>${escapeHtml(shipName)}</strong>${tierBadge}
           <span class="muted">${escapeHtml(q.name || '')}${q.title_filter ? ` · "${escapeHtml(q.title_filter)}"` : ''}</span>
-          <span class="quota-counts">${available} / ${required} ${missing ? `· missing ${missing}` : ''}</span>
+          <span class="quota-counts">${available} / ${required} on contract${hangarStr}${missing ? ` · missing ${missing}` : ''}</span>
         </div>
         <div class="quota-bar-track"><div class="quota-bar-fill" style="width:${pct}%"></div></div>
       </div>`;
@@ -81,7 +103,7 @@
     const src = snap.storage === 'github' ? 'live from GitHub'
       : snap.storage === 'local' ? (snap.stale ? 'cached (GitHub unreachable)' : 'cached locally') : snap.storage;
     const total = (snap.quotas || []).length;
-    const short = (snap.quotas || []).filter((q) => quotaState(q) !== 'ok' && (Number(q.required) || 0) > 0).length;
+    const short = (snap.quotas || []).filter((q) => effectiveMissing(q) > 0 && (Number(q.required) || 0) > 0).length;
     status.textContent = `${ALLIANCE_LABEL[dsState.alliance] || dsState.alliance} · ${total} hull(s), ${short} short · updated ${when} · ${src}`;
   }
 
@@ -120,25 +142,26 @@
   }
 
   function exportGapCsv() {
-    const rows = visibleQuotas().filter((q) => (Number(q.missing) || 0) > 0);
+    const rows = visibleQuotas().filter((q) => effectiveMissing(q) > 0);
     if (!rows.length) { $('#doctrine-stock-status').textContent = 'No gaps to export.'; return; }
-    const header = 'ship_name,ship_type_id,required,available,missing,title_filter';
+    const header = 'ship_name,ship_type_id,required,available,in_hangar,missing,title_filter';
     const body = rows.map((q) => [
       `"${(q.ship_name || q.name || '').replace(/"/g, '""')}"`,
       q.ship_type_id || '',
       Number(q.required) || 0,
       Number(q.available) || 0,
-      Number(q.missing) || 0,
+      hangarQty(q.ship_type_id),
+      effectiveMissing(q),
       `"${(q.title_filter || '').replace(/"/g, '""')}"`,
     ].join(',')).join('\n');
     downloadBlob(`doctrine-gaps-${dsState.alliance}.csv`, 'text/csv', `${header}\n${body}\n`);
   }
 
   async function copyShoppingList() {
-    const rows = visibleQuotas().filter((q) => (Number(q.missing) || 0) > 0);
+    const rows = visibleQuotas().filter((q) => effectiveMissing(q) > 0);
     const status = $('#doctrine-stock-status');
     if (!rows.length) { if (status) status.textContent = 'No gaps — nothing to copy.'; return; }
-    const text = rows.map((q) => `${q.ship_name || q.name} x${Number(q.missing) || 0}`).join('\n');
+    const text = rows.map((q) => `${q.ship_name || q.name} x${effectiveMissing(q)}`).join('\n');
     try {
       await navigator.clipboard.writeText(text);
       if (status) status.textContent = `Copied ${rows.length} short hull(s) to clipboard.`;

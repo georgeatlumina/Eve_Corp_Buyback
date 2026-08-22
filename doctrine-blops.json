@@ -1,0 +1,82 @@
+{
+  "refreshedAt": "2026-08-08T20:29:41.461045+00:00",
+  "categories": [
+    "BLOPs"
+  ],
+  "doctrines": [
+    {
+      "id": 19,
+      "name": "BLOPs",
+      "category": "BLOPs",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/19/"
+    }
+  ],
+  "fits": [
+    {
+      "id": 75,
+      "doctrine": "BLOPs",
+      "doctrine_id": 19,
+      "category": "BLOPs",
+      "name": "Stealth Bridge Mk3",
+      "hull": "Redeemer",
+      "hull_type_id": 22428,
+      "url": "https://auth.navaldefence.org/fittings/fit/75/",
+      "eft": "[Redeemer,  Stealth Bridge Mk3]\n\nDamage Control II\nCoreli A-Type Multispectrum Coating\nCoreli A-Type Multispectrum Coating\nTrue Sansha Heat Sink\nTrue Sansha Heat Sink\nImperial Navy 1600mm Steel Plates\nImperial Navy 1600mm Steel Plates\n\n500MN Y-T8 Compact Microwarpdrive\nTrue Sansha Warp Scrambler\nHeavy Capacitor Booster II\nLarge Micro Jump Drive\n\nLarge Coaxial Compact Remote Armor Repairer\nCaldari Navy Cloaking Device\nDual Heavy Pulse Laser II\nDual Heavy Pulse Laser II\nDual Heavy Pulse Laser II\nDual Heavy Pulse Laser II\nDual Heavy Pulse Laser II\nDual Heavy Pulse Laser II\n\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\n\n\n\n\n\nGecko x2\nOgre II x1\n\n\nBlood Radio L x6\nNavy Cap Booster 800 x20\nConflagration L x12\nScorch L x18\nBlood Standard L x6\nBlood Multifrequency L x6\nNanite Repair Paste x250\nCovert Jump Portal Generator I x1"
+    },
+    {
+      "id": 77,
+      "doctrine": "BLOPs",
+      "doctrine_id": 19,
+      "category": "BLOPs",
+      "name": "Stealth Bridge Mk3",
+      "hull": "Sin",
+      "hull_type_id": 22430,
+      "url": "https://auth.navaldefence.org/fittings/fit/77/",
+      "eft": "[Sin,  Stealth Bridge Mk3]\n\nDamage Control II\nCoreli A-Type Multispectrum Coating\nCoreli A-Type Multispectrum Coating\nImperial Navy 1600mm Steel Plates\nImperial Navy 1600mm Steel Plates\nDrone Damage Amplifier II\n\n500MN Y-T8 Compact Microwarpdrive\nTrue Sansha Warp Scrambler\nOmnidirectional Tracking Link II\nHeavy Capacitor Booster II\nTrue Sansha Stasis Webifier\nLarge Micro Jump Drive\n\nLarge Solace Scoped Remote Armor Repairer\nLarge Solace Scoped Remote Armor Repairer\nElectron Blaster Cannon II\nElectron Blaster Cannon II\nElectron Blaster Cannon II\nElectron Blaster Cannon II\nCaldari Navy Cloaking Device\n\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\n\n\n\n\n\nWarrior II x5\nGecko x2\nHornet EC-300 x5\nOgre II x5\nBerserker II x5\n\n\nCaldari Navy Thorium Charge L x2000\nOptimal Range Script x1\nTracking Speed Script x1\nCaldari Navy Lead Charge L x2000\nCaldari Navy Antimatter Charge L x2000\nCaldari Navy Iron Charge L x2000\nNavy Cap Booster 800 x17\nNull L x2000\nNanite Repair Paste x250\nCovert Jump Portal Generator I x1"
+    },
+    {
+      "id": 78,
+      "doctrine": "BLOPs",
+      "doctrine_id": 19,
+      "category": "BLOPs",
+      "name": "Stealth Bridge Mk3",
+      "hull": "Panther",
+      "hull_type_id": 22440,
+      "url": "https://auth.navaldefence.org/fittings/fit/78/",
+      "eft": "[Panther,  Stealth Bridge Mk3]\n\nDamage Control II\nImperial Navy 1600mm Steel Plates\nImperial Navy 1600mm Steel Plates\nCoreli A-Type Multispectrum Coating\nCoreli A-Type Multispectrum Coating\nRepublic Fleet Gyrostabilizer\n\n500MN Y-T8 Compact Microwarpdrive\nTrue Sansha Warp Scrambler\nHeavy Capacitor Booster II\nTrue Sansha Stasis Webifier\nLarge Micro Jump Drive\n\nLarge Solace Scoped Remote Armor Repairer\nLarge Solace Scoped Remote Armor Repairer\nDual 650mm Repeating Cannon II\nDual 650mm Repeating Cannon II\nDual 650mm Repeating Cannon II\nDual 650mm Repeating Cannon II\nDual 650mm Repeating Cannon II\nCaldari Navy Cloaking Device\n\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\n\n\n\n\n\nHobgoblin II x1\nHammerhead II x2\nHornet EC-300 x5\nAcolyte II x5\nGecko x2\n\n\nRepublic Fleet EMP L x2000\nBarrage L x2000\nHail L x2000\nNavy Cap Booster 800 x18\nRepublic Fleet Titanium Sabot L x2000\nRepublic Fleet Fusion L x2000\nNanite Repair Paste x250\nCovert Jump Portal Generator I x1"
+    },
+    {
+      "id": 76,
+      "doctrine": "BLOPs",
+      "doctrine_id": 19,
+      "category": "BLOPs",
+      "name": "Stealth EWar Mk3",
+      "hull": "Widow",
+      "hull_type_id": 22436,
+      "url": "https://auth.navaldefence.org/fittings/fit/76/",
+      "eft": "[Widow,  Stealth EWar Mk3]\n\nDamage Control II\nCorpii A-Type Multispectrum Coating\nCorpii A-Type Multispectrum Coating\nImperial Navy 1600mm Steel Plates\n\nTrue Sansha Warp Disruptor\nDread Guristas Multispectral ECM\nDread Guristas Multispectral ECM\nDread Guristas Multispectral ECM\nDread Guristas Multispectral ECM\n500MN Y-T8 Compact Microwarpdrive\nHeavy Capacitor Booster II\nLarge Micro Jump Drive\n\nLarge Solace Scoped Remote Armor Repairer\nRapid Heavy Missile Launcher II\nRapid Heavy Missile Launcher II\nRapid Heavy Missile Launcher II\nRapid Heavy Missile Launcher II\nRapid Heavy Missile Launcher II\nCaldari Navy Cloaking Device\n\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\n\n\n\n\n\nHammerhead II x5\nAcolyte II x5\n\n\nCaldari Navy Mjolnir Heavy Missile x1000\nNanite Repair Paste x250\nNavy Cap Booster 800 x16\nGravimetric ECM II x4\nRadar ECM II x4\nMagnetometric ECM II x4\nCovert Jump Portal Generator I x1\nLadar ECM II x4"
+    },
+    {
+      "id": 79,
+      "doctrine": "BLOPs",
+      "doctrine_id": 19,
+      "category": "BLOPs",
+      "name": "Stealth Logi Mk3",
+      "hull": "Loki",
+      "hull_type_id": 29990,
+      "url": "https://auth.navaldefence.org/fittings/fit/79/",
+      "eft": "[Loki,    Stealth Logi Mk3]\n\nDamage Control II\n1600mm Rolled Tungsten Compact Plates\nCorpum A-Type Explosive Energized Membrane\nDark Blood Multispectrum Energized Membrane\nDark Blood Multispectrum Energized Membrane\nCorpum A-Type Kinetic Energized Membrane\n\nThukker Large Cap Battery\nImperial Navy Cap Recharger\n50MN Quad LiF Restrained Microwarpdrive\n\nCorelum B-Type Medium Remote Armor Repairer\nCorelum B-Type Medium Remote Armor Repairer\nCorelum B-Type Medium Remote Armor Repairer\nCorelum B-Type Medium Remote Armor Repairer\nCorelum B-Type Medium Remote Armor Repairer\nCovert Ops Cloaking Device II\nArmor Command Burst II\n\nMedium Remote Repair Augmentor II\nMedium Ancillary Current Router II\nMedium Ancillary Current Router II\n\n\n\n\n\nValkyrie II x5\n\n\nLoki Core - Augmented Nuclear Reactor x1\nLoki Defensive - Covert Reconfiguration x1\nLoki Offensive - Support Processor x1\nLoki Propulsion - Intercalated Nanofibers x1\nArmor Energizing Charge x300\nArmor Reinforcement Charge x300\nRapid Repair Charge x300\nEvasive Maneuvers Charge x300\nInterdiction Maneuvers Charge x300\nRapid Deployment Charge x300\nSkirmish Command Burst II x2"
+    },
+    {
+      "id": 80,
+      "doctrine": "BLOPs",
+      "doctrine_id": 19,
+      "category": "BLOPs",
+      "name": "Stealth Logi Mk3",
+      "hull": "Proteus",
+      "hull_type_id": 29988,
+      "url": "https://auth.navaldefence.org/fittings/fit/80/",
+      "eft": "[Proteus,   Stealth Logi Mk3]\n\nFederation Navy 1600mm Steel Plates\nTrue Sansha Power Diagnostic System\nCorpum A-Type Explosive Energized Membrane\nDark Blood Multispectrum Energized Membrane\nDark Blood Multispectrum Energized Membrane\n\n50MN Quad LiF Restrained Microwarpdrive\nThukker Large Cap Battery\nDark Blood Cap Recharger\nSmall Capacitor Booster II\n\nArmor Command Burst II\nArmor Command Burst II\nCentum A-Type Medium Remote Armor Repairer\nCentum A-Type Medium Remote Armor Repairer\nCentum A-Type Medium Remote Armor Repairer\nCentum A-Type Medium Remote Armor Repairer\nCentum A-Type Medium Remote Armor Repairer\nCovert Ops Cloaking Device II\n\nMedium Command Processor I\nMedium Remote Repair Augmentor II\nMedium Ancillary Current Router II\n\n\n\n\n\nWarrior II x5\nVespa EC-600 x5\n\n\nProteus Core - Augmented Fusion Reactor x1\nProteus Defensive - Covert Reconfiguration x1\nProteus Offensive - Support Processor x1\nProteus Propulsion - Localized Injectors x1\nArmor Energizing Charge x900\nArmor Reinforcement Charge x300\nRapid Repair Charge x600\nNavy Cap Booster 400 x21\nStandard Mindflood Booster x4\nArmored Command Mindlink x1\nDark Blood Cap Recharger x1\n10MN Afterburner II x1"
+    }
+  ]
+}

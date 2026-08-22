@@ -1,0 +1,733 @@
+{
+  "refreshedAt": "2026-08-08T20:29:41.461045+00:00",
+  "categories": [
+    "Home Defense",
+    "New Player Friendly",
+    "Strategic Op"
+  ],
+  "doctrines": [
+    {
+      "id": 11,
+      "name": "PNI/Guardians",
+      "category": "Strategic Op",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/11/"
+    },
+    {
+      "id": 22,
+      "name": "Black Bird",
+      "category": "Strategic Op",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/22/"
+    },
+    {
+      "id": 33,
+      "name": "Machariel",
+      "category": "Strategic Op",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/33/"
+    },
+    {
+      "id": 26,
+      "name": "Moonwalkers",
+      "category": "BLOPs",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/26/"
+    },
+    {
+      "id": 5,
+      "name": "Tackle Frigs",
+      "category": "New Player Friendly",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/5/"
+    },
+    {
+      "id": 9,
+      "name": "Jackdaws/Hookbills",
+      "category": "Home Defense",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/9/"
+    },
+    {
+      "id": 12,
+      "name": "Retribution/Deacon",
+      "category": "Home Defense",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/12/"
+    },
+    {
+      "id": 15,
+      "name": "Electronic War Ships",
+      "category": "New Player Friendly",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/15/"
+    },
+    {
+      "id": 17,
+      "name": "Tornado",
+      "category": "Home Defense",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/17/"
+    },
+    {
+      "id": 34,
+      "name": "Navy Skirmish",
+      "category": "Home Defense",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/34/"
+    },
+    {
+      "id": 35,
+      "name": "NAVY QRF",
+      "category": "Home Defense",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/35/"
+    },
+    {
+      "id": 36,
+      "name": "NAVY ESS Response",
+      "category": "Home Defense",
+      "url": "https://auth.navaldefence.org/fittings/doctrine/36/"
+    }
+  ],
+  "fits": [
+    {
+      "id": 123,
+      "doctrine": "Moonwalkers",
+      "doctrine_id": 26,
+      "category": "BLOPs",
+      "name": "ARTY BLAPS DPS",
+      "hull": "Loki",
+      "hull_type_id": 29990,
+      "url": "https://auth.navaldefence.org/fittings/fit/123/",
+      "eft": "[Loki,  ARTY BLAPS DPS]\n\nGyrostabilizer II\nGyrostabilizer II\n\nMultispectrum Shield Hardener II\nMultispectrum Shield Hardener II\nDread Guristas Warp Disruptor\n50MN Quad LiF Restrained Microwarpdrive\nDread Guristas Stasis Webifier\nRepublic Fleet Large Shield Extender\nRepublic Fleet Large Shield Extender\n\n720mm Howitzer Artillery II\n720mm Howitzer Artillery II\n720mm Howitzer Artillery II\n720mm Howitzer Artillery II\n720mm Howitzer Artillery II\nCovert Ops Cloaking Device II\nExpanded Probe Launcher II\n\nMedium Ancillary Current Router II\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\n\n\n\n\n\nWarrior II x5\n\n\nLoki Core - Immobility Drivers x1\nLoki Defensive - Covert Reconfiguration x1\nLoki Offensive - Projectile Scoping Array x1\nLoki Propulsion - Wake Limiter x1\nTremor M x1980\nNanite Repair Paste x200\nRepublic Fleet Depleted Uranium M x5040\nRepublic Fleet EMP M x2000\nRepublic Fleet Fusion M x2000\nRepublic Fleet Phased Plasma M x5000\nRepublic Fleet Proton M x2000\nSisters Combat Scanner Probe x16\nSisters Core Scanner Probe x16\nMobile Depot x1\nSynth Crash Booster x2\nSynth Mindflood Booster x2\nNanofiber Internal Structure II x1\n10MN Afterburner II x1\nTarget Painter II x1\nWarp Scrambler II x1"
+    },
+    {
+      "id": 124,
+      "doctrine": "Moonwalkers",
+      "doctrine_id": 26,
+      "category": "BLOPs",
+      "name": "BLAPS LOGI",
+      "hull": "Loki",
+      "hull_type_id": 29990,
+      "url": "https://auth.navaldefence.org/fittings/fit/124/",
+      "eft": "[Loki,  BLAPS LOGI]\n\nDamage Control II\nDark Blood Capacitor Power Relay\nDark Blood Capacitor Power Relay\nDark Blood Capacitor Power Relay\n\nRepublic Fleet Large Cap Battery\nMultispectrum Shield Hardener II\n50MN Quad LiF Restrained Microwarpdrive\nMultispectrum Shield Hardener II\nRepublic Fleet Large Shield Extender\n\nShield Command Burst II\nPithum C-Type Medium Remote Shield Booster\nPithum C-Type Medium Remote Shield Booster\nPithum C-Type Medium Remote Shield Booster\nPithum C-Type Medium Remote Shield Booster\nPithum C-Type Medium Remote Shield Booster\nCovert Ops Cloaking Device II\nMedium Ancillary Remote Shield Booster\n\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\n\n\n\n\n\nAcolyte II x5\nWarrior II x5\n\n\nLoki Core - Augmented Nuclear Reactor x1\nLoki Defensive - Covert Reconfiguration x1\nLoki Offensive - Support Processor x1\nLoki Propulsion - Wake Limiter x1\nNavy Cap Booster 50 x50\nElectronic Hardening Charge x300\nElectronic Superiority Charge x300\nSensor Optimization Charge x300\nActive Shielding Charge x600\nShield Extension Charge x300\nShield Harmonizing Charge x300\nEvasive Maneuvers Charge x600\nInterdiction Maneuvers Charge x300\nRapid Deployment Charge x300\nMobile Depot x1\nImproved Mindflood Booster x4\nInherent Implants &#x27;Squire&#x27; Capacitor Systems Operation EO-603 x1\nInformation Command Burst II x1\nShield Command Burst II x1\nSkirmish Command Burst II x1\nNanofiber Internal Structure II x1\n10MN Afterburner II x1"
+    },
+    {
+      "id": 125,
+      "doctrine": "Moonwalkers",
+      "doctrine_id": 26,
+      "category": "BLOPs",
+      "name": "Loki Support",
+      "hull": "Arazu",
+      "hull_type_id": 11969,
+      "url": "https://auth.navaldefence.org/fittings/fit/125/",
+      "eft": "[Arazu,  Loki Support]\n\nDamage Control II\nPower Diagnostic System II\nPower Diagnostic System II\nSignal Amplifier II\n\n50MN Quad LiF Restrained Microwarpdrive\nRepublic Fleet Large Shield Extender\nRepublic Fleet Large Shield Extender\nMultispectrum Shield Hardener II\nWarp Disruptor II\nWarp Disruptor II\n\nCovert Cynosural Field Generator I\nCovert Ops Cloaking Device II\nCynosural Field Generator I\n\nMedium EM Shield Reinforcer II\nMedium Core Defense Field Extender II\n\n\n\n\n\nHornet EC-300 x3"
+    },
+    {
+      "id": 126,
+      "doctrine": "Moonwalkers",
+      "doctrine_id": 26,
+      "category": "BLOPs",
+      "name": "Loki support",
+      "hull": "Rapier",
+      "hull_type_id": 11963,
+      "url": "https://auth.navaldefence.org/fittings/fit/126/",
+      "eft": "[Rapier,  Loki support]\n\nSignal Amplifier II\nPower Diagnostic System II\nDamage Control II\nPower Diagnostic System II\n\n50MN Quad LiF Restrained Microwarpdrive\nDomination Target Painter\nMultispectrum Shield Hardener II\nRepublic Fleet Large Shield Extender\nRepublic Fleet Large Shield Extender\nShadow Serpentis Stasis Webifier\n\nCovert Ops Cloaking Device II\nCynosural Field Generator I\nCovert Cynosural Field Generator I\n\nMedium Capacitor Control Circuit II\nMedium EM Shield Reinforcer II\n\n\n\n\n\nHammerhead II x1\nInfiltrator II x3"
+    },
+    {
+      "id": 74,
+      "doctrine": "Jackdaws/Hookbills",
+      "doctrine_id": 9,
+      "category": "Home Defense",
+      "name": "Hookbill Navy Damage Mk3",
+      "hull": "Caldari Navy Hookbill",
+      "hull_type_id": 17619,
+      "url": "https://auth.navaldefence.org/fittings/fit/74/",
+      "eft": "[Caldari Navy Hookbill,  Hookbill Navy Damage Mk3]\n\nNanofiber Internal Structure II\nNanofiber Internal Structure II\n\nSensor Booster II\nSensor Booster II\n5MN Quad LiF Restrained Microwarpdrive\nMissile Guidance Computer II\nMissile Guidance Computer II\n\nLight Missile Launcher II\nLight Missile Launcher II\nLight Missile Launcher II\n\nSmall Capacitor Control Circuit I\nSmall Hydraulic Bay Thrusters II\nSmall Rocket Fuel Cache Partition II\n\n\n\n\n\n\n\nCaldari Navy Inferno Light Missile x1000\nCaldari Navy Mjolnir Light Missile x1000\nCaldari Navy Nova Light Missile x1000\nCaldari Navy Scourge Light Missile x1000\nMissile Range Script x2\nTargeting Range Script x2"
+    },
+    {
+      "id": 34,
+      "doctrine": "Jackdaws/Hookbills",
+      "doctrine_id": 9,
+      "category": "Home Defense",
+      "name": "Navy Damage Mk2",
+      "hull": "Jackdaw",
+      "hull_type_id": 34828,
+      "url": "https://auth.navaldefence.org/fittings/fit/34/",
+      "eft": "[Jackdaw,  Navy Damage Mk2]\n\nNanofiber Internal Structure II\nBallistic Control System II\nBallistic Control System II\n\nMedium F-S9 Regolith Compact Shield Extender\nMissile Guidance Computer II\nMissile Guidance Computer II\n5MN Y-T8 Compact Microwarpdrive\nEM Shield Amplifier II\n\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\n\nSmall Hydraulic Bay Thrusters II\nSmall Rocket Fuel Cache Partition II\nSmall EM Shield Reinforcer II\n\n\n\n\n\n\n\nCaldari Navy Scourge Light Missile x1000\nMissile Range Script x2\nCaldari Navy Mjolnir Light Missile x1000\nCaldari Navy Nova Light Missile x1000\nCaldari Navy Inferno Light Missile x1000"
+    },
+    {
+      "id": 33,
+      "doctrine": "Jackdaws/Hookbills",
+      "doctrine_id": 9,
+      "category": "Home Defense",
+      "name": "Navy Damage Mk3",
+      "hull": "Jackdaw",
+      "hull_type_id": 34828,
+      "url": "https://auth.navaldefence.org/fittings/fit/33/",
+      "eft": "[Jackdaw,  Navy Damage Mk3]\n\nNanofiber Internal Structure II\nBallistic Control System II\nBallistic Control System II\n\nMedium F-S9 Regolith Compact Shield Extender\nMissile Guidance Computer II\nMissile Guidance Computer II\n5MN Y-T8 Compact Microwarpdrive\nEM Shield Amplifier II\n\nLight Missile Launcher II\nLight Missile Launcher II\nLight Missile Launcher II\nLight Missile Launcher II\nLight Missile Launcher II\n\nSmall Hydraulic Bay Thrusters II\nSmall Rocket Fuel Cache Partition II\nSmall EM Shield Reinforcer II\n\n\n\n\n\n\n\nCaldari Navy Scourge Light Missile x1000\nCaldari Navy Inferno Light Missile x1000\nMissile Range Script x2\nInferno Fury Light Missile x1000\nCaldari Navy Nova Light Missile x1000\nCaldari Navy Mjolnir Light Missile x1000"
+    },
+    {
+      "id": 180,
+      "doctrine": "NAVY ESS Response",
+      "doctrine_id": 36,
+      "category": "Home Defense",
+      "name": "NAVY ESS Damage Mk1",
+      "hull": "Bellicose",
+      "hull_type_id": 630,
+      "url": "https://auth.navaldefence.org/fittings/fit/180/",
+      "eft": "[Bellicose, NAVY ESS Damage Mk1]\n\nReactor Control Unit II\nBallistic Control System II\nBallistic Control System II\nDamage Control II\n\nLarge Shield Extender II\nLarge Shield Extender II\nEM Shield Amplifier II\nMultispectrum Shield Hardener II\n100MN Monopropellant Enduring Afterburner\n\n&#x27;Arbalest&#x27; Heavy Missile Launcher\n&#x27;Arbalest&#x27; Heavy Missile Launcher\n&#x27;Arbalest&#x27; Heavy Missile Launcher\n&#x27;Arbalest&#x27; Heavy Missile Launcher\n\nMedium Ancillary Current Router I\nMedium Core Defense Field Extender I\nMedium Core Defense Field Extender I\n\n\n\n\n\nHammerhead I x5\n\n\nCaldari Navy Scourge Heavy Missile x1000\nCaldari Navy Mjolnir Heavy Missile x1000\nNanite Repair Paste x250\nCaldari Navy Nova Heavy Missile x1000\nCaldari Navy Inferno Heavy Missile x1000"
+    },
+    {
+      "id": 179,
+      "doctrine": "NAVY ESS Response",
+      "doctrine_id": 36,
+      "category": "Home Defense",
+      "name": "NAVY ESS Damage Mk3",
+      "hull": "Muninn",
+      "hull_type_id": 12015,
+      "url": "https://auth.navaldefence.org/fittings/fit/179/",
+      "eft": "[Muninn, NAVY ESS Damage Mk3]\n\nAssault Damage Control II\nBallistic Control System II\nBallistic Control System II\nNanofiber Internal Structure II\nNanofiber Internal Structure II\nMark I Compact Power Diagnostic System\n\n100MN Y-S8 Compact Afterburner\nCaldari Navy Large Shield Extender\nCaldari Navy Large Shield Extender\nMultispectrum Shield Hardener II\n\nHeavy Missile Launcher II\nHeavy Missile Launcher II\nHeavy Missile Launcher II\nHeavy Missile Launcher II\nHeavy Missile Launcher II\n\nMedium Kinetic Shield Reinforcer II\nMedium Bay Loading Accelerator II\n\n\n\n\n\nAcolyte II x5\n\n\nScourge Fury Heavy Missile x1500\nCaldari Navy Mjolnir Heavy Missile x2000\nMjolnir Fury Heavy Missile x1500\nCaldari Navy Scourge Heavy Missile x2000\nCaldari Navy Inferno Heavy Missile x2000\nNova Fury Heavy Missile x1500\nNanite Repair Paste x150\nCaldari Navy Nova Heavy Missile x2000\nInferno Fury Heavy Missile x1500"
+    },
+    {
+      "id": 178,
+      "doctrine": "NAVY ESS Response",
+      "doctrine_id": 36,
+      "category": "Home Defense",
+      "name": "NAVY ESS Logi Mk3",
+      "hull": "Scimitar",
+      "hull_type_id": 11978,
+      "url": "https://auth.navaldefence.org/fittings/fit/178/",
+      "eft": "[Scimitar, NAVY ESS Logi Mk3]\n\nDamage Control II\nPower Diagnostic System II\nPower Diagnostic System II\nReactor Control Unit II\n\n100MN Y-S8 Compact Afterburner\nMedium Capacitor Booster II\nLarge Shield Extender II\nMultispectrum Shield Hardener II\nLarge Shield Extender II\n\nMedium Asymmetric Enduring Remote Shield Booster\nMedium Asymmetric Enduring Remote Shield Booster\nMedium Asymmetric Enduring Remote Shield Booster\nMedium Asymmetric Enduring Remote Shield Booster\n\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\n\n\n\n\n\nHobgoblin II x1\nHammerhead II x4\n\n\nNanite Repair Paste x100\nNavy Cap Booster 800 x15"
+    },
+    {
+      "id": 177,
+      "doctrine": "NAVY ESS Response",
+      "doctrine_id": 36,
+      "category": "Home Defense",
+      "name": "NAVY ESS Webs",
+      "hull": "Huginn",
+      "hull_type_id": 11961,
+      "url": "https://auth.navaldefence.org/fittings/fit/177/",
+      "eft": "[Huginn, NAVY ESS Webs]\n\nOverdrive Injector System II\nNanofiber Internal Structure II\nNanofiber Internal Structure II\nDamage Control II\n\nCaldari Navy Large Shield Extender\nCaldari Navy Large Shield Extender\nMultispectrum Shield Hardener II\nFederation Navy Stasis Webifier\nFederation Navy Stasis Webifier\n100MN Monopropellant Enduring Afterburner\n\nAuto Targeting System II\nDrone Link Augmentor II\n\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\n\n\n\n\n\nValkyrie II x4\n\n\nNanite Repair Paste x250"
+    },
+    {
+      "id": 172,
+      "doctrine": "NAVY QRF",
+      "doctrine_id": 35,
+      "category": "Home Defense",
+      "name": "NAVY QRF DREK",
+      "hull": "Drekavac",
+      "hull_type_id": 49711,
+      "url": "https://auth.navaldefence.org/fittings/fit/172/",
+      "eft": "[Drekavac, NAVY QRF DREK]\n\nDamage Control II\nMultispectrum Energized Membrane II\nMultispectrum Coating II\nCentii A-Type Explosive Coating\nReactive Armor Hardener\nEntropic Radiation Sink II\nNanofiber Internal Structure II\n\nMedium F-RX Compact Capacitor Booster\n50MN Quad LiF Restrained Microwarpdrive\nMedium Micro Jump Drive\nWarp Scrambler II\n\nMedium Remote Armor Repairer II\nMedium Ancillary Remote Armor Repairer\nHeavy Entropic Disintegrator II\nArmor Command Burst II\n\nMedium Trimark Armor Pump II\nMedium Trimark Armor Pump II\nMedium Trimark Armor Pump II\n\n\n\n\n\nHammerhead II x5\nHornet EC-300 x5\nHammerhead II x5\nHornet EC-300 x5\n\n\nSensor Optimization Charge x300\nElectronic Superiority Charge x300\nElectronic Hardening Charge x300\nEvasive Maneuvers Charge x300\nInterdiction Maneuvers Charge x300\nRapid Deployment Charge x300\nNanite Repair Paste x500\nInformation Command Burst II x1\nSkirmish Command Burst II x1\nStasis Webifier II x1\nNavy Cap Booster 800 x15\nArmor Energizing Charge x300\nRapid Repair Charge x300\nArmor Reinforcement Charge x300\nSensor Optimization Charge x300\nElectronic Superiority Charge x300\nElectronic Hardening Charge x300\nEvasive Maneuvers Charge x300\nInterdiction Maneuvers Charge x300\nRapid Deployment Charge x300\nOccult M x1000\nMystic M x1000\nMeson Exotic Plasma M x1000\nNanite Repair Paste x200\nArmor Command Burst II x1\nMedium Remote Armor Repairer II x1\nInformation Command Burst II x1\nSkirmish Command Burst II x1\nStasis Webifier II x1"
+    },
+    {
+      "id": 168,
+      "doctrine": "NAVY QRF",
+      "doctrine_id": 35,
+      "category": "Home Defense",
+      "name": "NAVY QRF ENI",
+      "hull": "Exequror Navy Issue",
+      "hull_type_id": 29344,
+      "url": "https://auth.navaldefence.org/fittings/fit/168/",
+      "eft": "[Exequror Navy Issue, NAVY QRF ENI]\n\n1600mm Rolled Tungsten Compact Plates\nDamage Control II\nMagnetic Field Stabilizer II\nMultispectrum Energized Membrane II\nMultispectrum Energized Membrane II\nReactive Armor Hardener\n\n50MN Y-T8 Compact Microwarpdrive\nWarp Scrambler II\nSmall Capacitor Booster II\nStasis Webifier II\n\nMedium Gremlin Compact Energy Neutralizer\nHeavy Neutron Blaster II\nHeavy Neutron Blaster II\nHeavy Neutron Blaster II\nHeavy Neutron Blaster II\n\nMedium Trimark Armor Pump I\nMedium Ancillary Current Router II\nMedium Trimark Armor Pump I\n\n\n\n\n\nHobgoblin II x5\n\n\nCaldari Navy Antimatter Charge M x1000\nNanite Repair Paste x250\nVoid M x1500\nNavy Cap Booster 400 x15\nNull M x1500"
+    },
+    {
+      "id": 175,
+      "doctrine": "NAVY QRF",
+      "doctrine_id": 35,
+      "category": "Home Defense",
+      "name": "Navy Bubble Mk2",
+      "hull": "Heretic",
+      "hull_type_id": 22452,
+      "url": "https://auth.navaldefence.org/fittings/fit/175/",
+      "eft": "[Heretic, Navy Bubble Mk2]\n\nDamage Control II\nMultispectrum Energized Membrane II\n400mm Rolled Tungsten Compact Plates\n\n5MN Y-T8 Compact Microwarpdrive\nFleeting Compact Stasis Webifier\nInitiated Compact Warp Scrambler\n\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nArbalest Compact Light Missile Launcher\nInterdiction Sphere Launcher I\n\nSmall Trimark Armor Pump II\nSmall Trimark Armor Pump II\n\n\n\n\n\n\n\nCaldari Navy Scourge Light Missile x400\nCaldari Navy Inferno Light Missile x400\nStasis Webification Probe x6\nSurgical Warp Disrupt Probe x6\nCaldari Navy Nova Light Missile x400\nWarp Disrupt Probe x24\nCaldari Navy Mjolnir Light Missile x400\nNanite Repair Paste x100"
+    },
+    {
+      "id": 17,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Damage Mk2",
+      "hull": "Osprey Navy Issue",
+      "hull_type_id": 29340,
+      "url": "https://auth.navaldefence.org/fittings/fit/17/",
+      "eft": "[Osprey Navy Issue, Navy Skirmish Damage Mk2]\n\nNanofiber Internal Structure II\nBallistic Control System II\nBallistic Control System II\nDamage Control II\n\n50MN Cold-Gas Enduring Microwarpdrive\nMedium F-RX Compact Capacitor Booster\nLarge Shield Extender II\nLarge Shield Extender II\nMultispectrum Shield Hardener II\nMultispectrum Shield Hardener II\n\nPrototype &#x27;Arbalest&#x27; Rapid Light Missile Launcher\nPrototype &#x27;Arbalest&#x27; Rapid Light Missile Launcher\nPrototype &#x27;Arbalest&#x27; Rapid Light Missile Launcher\nMedium Gremlin Compact Energy Neutralizer\nSmall Infectious Scoped Energy Neutralizer\n\nMedium EM Shield Reinforcer I\nMedium EM Shield Reinforcer I\nMedium Polycarbon Engine Housing I\n\n\n\n\n\nWarrior I x5\n\n\nNavy Cap Booster 800 x13\nCaldari Navy Inferno Light Missile x1200\nCaldari Navy Mjolnir Light Missile x1200\nCaldari Navy Nova Light Missile x1200\nCaldari Navy Scourge Light Missile x1200\nNanite Repair Paste x100"
+    },
+    {
+      "id": 16,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Damage Mk3",
+      "hull": "Osprey Navy Issue",
+      "hull_type_id": 29340,
+      "url": "https://auth.navaldefence.org/fittings/fit/16/",
+      "eft": "[Osprey Navy Issue, Navy Skirmish Damage Mk3]\n\nNanofiber Internal Structure II\nBallistic Control System II\nBallistic Control System II\nDamage Control II\n\n50MN Cold-Gas Enduring Microwarpdrive\nMedium F-RX Compact Capacitor Booster\nLarge Shield Extender II\nLarge Shield Extender II\nMultispectrum Shield Hardener II\nMultispectrum Shield Hardener II\n\nRapid Light Missile Launcher II\nRapid Light Missile Launcher II\nRapid Light Missile Launcher II\nMedium Gremlin Compact Energy Neutralizer\nSmall Energy Neutralizer II\n\nMedium EM Shield Reinforcer I\nMedium EM Shield Reinforcer I\nMedium Polycarbon Engine Housing I\n\n\n\n\n\nWarrior II x5\n\n\nInferno Fury Light Missile x600\nMjolnir Fury Light Missile x600\nNova Fury Light Missile x600\nScourge Fury Light Missile x600\nNavy Cap Booster 800 x13\nCaldari Navy Inferno Light Missile x1200\nCaldari Navy Mjolnir Light Missile x1200\nCaldari Navy Nova Light Missile x1200\nCaldari Navy Scourge Light Missile x1200\nNanite Repair Paste x100"
+    },
+    {
+      "id": 166,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Damage Mk3",
+      "hull": "Vagabond",
+      "hull_type_id": 11999,
+      "url": "https://auth.navaldefence.org/fittings/fit/166/",
+      "eft": "[Vagabond, Navy Skirmish Damage Mk3]\n\nAssault Damage Control II\nNanofiber Internal Structure II\nGyrostabilizer II\nGyrostabilizer II\nGyrostabilizer II\n\n50MN Cold-Gas Enduring Microwarpdrive\nWarp Scrambler II\nCaldari Navy Large Shield Extender\nMultispectrum Shield Hardener II\n\n425mm AutoCannon II\n425mm AutoCannon II\n425mm AutoCannon II\nMedium Knave Scoped Energy Nosferatu\n425mm AutoCannon II\n425mm AutoCannon II\n\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\n\n\n\n\n\nHobgoblin II x5\n\n\nBarrage M x1500\nHail M x1500\nNanite Repair Paste x250\nRepublic Fleet EMP M x1500\nRepublic Fleet Phased Plasma M x1500"
+    },
+    {
+      "id": 160,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Dictor Mk3",
+      "hull": "Flycatcher",
+      "hull_type_id": 22464,
+      "url": "https://auth.navaldefence.org/fittings/fit/160/",
+      "eft": "[Flycatcher, Navy Skirmish Dictor Mk3]\n\nDamage Control II\n\n5MN Y-T8 Compact Microwarpdrive\nWarp Scrambler II\nRepublic Fleet Medium Shield Extender\nRepublic Fleet Medium Shield Extender\nPithum C-Type EM Shield Amplifier\n\nInterdiction Sphere Launcher I\nRocket Launcher II\nRocket Launcher II\nRocket Launcher II\nRocket Launcher II\nRocket Launcher II\n\nSmall Core Defense Field Extender II\nSmall EM Shield Reinforcer II\n\n\n\n\n\n\n\nScourge Rage Rocket x1200\nWarp Disrupt Probe x24\nNanite Repair Paste x150"
+    },
+    {
+      "id": 164,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Links Mk3",
+      "hull": "Bifrost",
+      "hull_type_id": 37480,
+      "url": "https://auth.navaldefence.org/fittings/fit/164/",
+      "eft": "[Bifrost, Navy Skirmish Links Mk3]\n\nDamage Control II\nPower Diagnostic System II\nNanofiber Internal Structure II\n\nMicro Jump Field Generator\n5MN Quad LiF Restrained Microwarpdrive\nMultispectrum Shield Hardener II\nRepublic Fleet Medium Shield Extender\nRepublic Fleet Medium Shield Extender\n\nShield Command Burst II\nSkirmish Command Burst II\n\nSmall Command Processor I\nSmall Core Defense Field Extender II\n\n\n\n\n\n\n\nNanite Repair Paste x250\nActive Shielding Charge x300\nShield Extension Charge x300\nShield Harmonizing Charge x300\nEvasive Maneuvers Charge x300\nInterdiction Maneuvers Charge x300\nRapid Deployment Charge x300\nShield Command Burst II x1\nSkirmish Command Burst II x1"
+    },
+    {
+      "id": 163,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Logi Mk2",
+      "hull": "Scythe",
+      "hull_type_id": 631,
+      "url": "https://auth.navaldefence.org/fittings/fit/163/",
+      "eft": "[Scythe, Navy Skirmish Logi Mk2]\n\nDamage Control II\nCapacitor Power Relay II\nCapacitor Power Relay II\nCapacitor Power Relay II\nCapacitor Power Relay II\n\nLarge Shield Extender II\nMultispectrum Shield Hardener II\n50MN Quad LiF Restrained Microwarpdrive\nCap Recharger II\nEM Shield Amplifier II\n\nMedium Murky Compact Remote Shield Booster\nMedium Murky Compact Remote Shield Booster\nMedium Murky Compact Remote Shield Booster\n\nMedium Core Defense Field Extender I\nMedium Core Defense Field Extender I\nMedium Semiconductor Memory Cell I\n\n\n\n\n\nWarrior II x4\nLight Armor Maintenance Bot I x3\nLight Hull Maintenance Bot I x2\n\n\nNanite Repair Paste x50\nAgency &#x27;Overclocker&#x27; SB3 Dose I x1"
+    },
+    {
+      "id": 162,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Logi Mk3",
+      "hull": "Scimitar",
+      "hull_type_id": 11978,
+      "url": "https://auth.navaldefence.org/fittings/fit/162/",
+      "eft": "[Scimitar, Navy Skirmish Logi Mk3]\n\nDamage Control II\nPower Diagnostic System II\nPower Diagnostic System II\nPower Diagnostic System II\n\nMedium Capacitor Booster II\nMultispectrum Shield Hardener II\nCaldari Navy Large Shield Extender\n50MN Quad LiF Restrained Microwarpdrive\nCaldari Navy Large Shield Extender\n\nMedium Asymmetric Enduring Remote Shield Booster\nMedium Asymmetric Enduring Remote Shield Booster\nLarge Asymmetric Enduring Remote Shield Booster\nLarge Asymmetric Enduring Remote Shield Booster\n\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\n\n\n\n\n\nHobgoblin II x1\nHammerhead II x4\n\n\nNavy Cap Booster 800 x15\nNanite Repair Paste x250\nStandard Mindflood Booster x1"
+    },
+    {
+      "id": 161,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Tackle Mk3",
+      "hull": "Jaguar",
+      "hull_type_id": 11400,
+      "url": "https://auth.navaldefence.org/fittings/fit/161/",
+      "eft": "[Jaguar, Navy Skirmish Tackle Mk3]\n\nOverdrive Injector System II\nOverdrive Injector System II\nAssault Damage Control II\n\nRepublic Fleet Medium Shield Extender\nMultispectrum Shield Hardener II\nWarp Scrambler II\nStasis Webifier II\n5MN Y-T8 Compact Microwarpdrive\n\nSmall Ghoul Compact Energy Nosferatu\n\nSmall Core Defense Field Extender II\nSmall Core Defense Field Extender II\n\n\n\n\n\nHornet EC-300 x4\n\n\nNanite Repair Paste x150"
+    },
+    {
+      "id": 165,
+      "doctrine": "Navy Skirmish",
+      "doctrine_id": 34,
+      "category": "Home Defense",
+      "name": "Navy Skirmish Webs Mk3",
+      "hull": "Rapier",
+      "hull_type_id": 11963,
+      "url": "https://auth.navaldefence.org/fittings/fit/165/",
+      "eft": "[Rapier, Navy Skirmish Webs Mk3]\n\nDamage Control II\nNanofiber Internal Structure II\nBallistic Control System II\nBallistic Control System II\n\nFederation Navy Stasis Webifier\nFederation Navy Stasis Webifier\nMedium Capacitor Booster II\nCaldari Navy Large Shield Extender\nMultispectrum Shield Hardener II\n50MN Quad LiF Restrained Microwarpdrive\n\nCovert Ops Cloaking Device II\nRapid Light Missile Launcher II\nRapid Light Missile Launcher II\nRapid Light Missile Launcher II\n\nMedium Core Defense Field Extender II\nMedium Core Defense Field Extender II\n\n\n\n\n\nHobgoblin II x2\nHammerhead II x3\n\n\nInferno Fury Light Missile x1060\nMjolnir Fury Light Missile x1000\nNavy Cap Booster 800 x10\nCaldari Navy Inferno Light Missile x1000\nNanite Repair Paste x250"
+    },
+    {
+      "id": 52,
+      "doctrine": "Retribution/Deacon",
+      "doctrine_id": 12,
+      "category": "Home Defense",
+      "name": "Navy Damage Mk2",
+      "hull": "Retribution",
+      "hull_type_id": 11393,
+      "url": "https://auth.navaldefence.org/fittings/fit/52/",
+      "eft": "[Retribution,  Navy Damage Mk2]\n\nCoreli A-Type EM Coating\nCoreli A-Type Thermal Coating\nAssault Damage Control II\nMultispectrum Coating II\nHeat Sink II\n\n5MN Y-T8 Compact Microwarpdrive\nInitiated Compact Warp Disruptor\n\nSmall Focused Modulated Energy Beam I\nSmall Focused Modulated Energy Beam I\nSmall Focused Modulated Energy Beam I\nSmall Focused Modulated Energy Beam I\n\nSmall Energy Collision Accelerator II\nSmall Energy Locus Coordinator I\n\n\n\n\n\n\n\nImperial Navy Multifrequency S x4\nImperial Navy Standard S x4\nImperial Navy Xray S x4\nNanite Repair Paste x50"
+    },
+    {
+      "id": 53,
+      "doctrine": "Retribution/Deacon",
+      "doctrine_id": 12,
+      "category": "Home Defense",
+      "name": "Navy Damage Mk3",
+      "hull": "Retribution",
+      "hull_type_id": 11393,
+      "url": "https://auth.navaldefence.org/fittings/fit/53/",
+      "eft": "[Retribution,  Navy Damage Mk3]\n\nCoreli A-Type EM Coating\nCoreli A-Type Thermal Coating\nAssault Damage Control II\nMultispectrum Coating II\nHeat Sink II\n\n5MN Y-T8 Compact Microwarpdrive\nInitiated Compact Warp Disruptor\n\nSmall Focused Beam Laser II\nSmall Focused Beam Laser II\nSmall Focused Beam Laser II\nSmall Focused Beam Laser II\n\nSmall Energy Collision Accelerator II\nSmall Energy Locus Coordinator I\n\n\n\n\n\n\n\nAurora S x4\nGleam S x4\nImperial Navy Multifrequency S x4\nImperial Navy Standard S x4\nImperial Navy Xray S x4\nNanite Repair Paste x50"
+    },
+    {
+      "id": 70,
+      "doctrine": "Retribution/Deacon",
+      "doctrine_id": 12,
+      "category": "Home Defense",
+      "name": "Navy Links Mk3",
+      "hull": "Pontifex",
+      "hull_type_id": 37481,
+      "url": "https://auth.navaldefence.org/fittings/fit/70/",
+      "eft": "[Pontifex,  Navy Links Mk3]\n\nCorpii A-Type Kinetic Coating\nMultispectrum Energized Membrane II\nCorpii A-Type Thermal Coating\n400mm Rolled Tungsten Compact Plates\nIFFA Compact Damage Control\n\nMicro Jump Field Generator\n5MN Quad LiF Restrained Microwarpdrive\nInitiated Compact Warp Scrambler\n\nArmor Command Burst II\nArmor Command Burst II\n125mm Gatling AutoCannon II\n125mm Gatling AutoCannon II\n125mm Gatling AutoCannon II\n\nSmall Trimark Armor Pump II\nSmall Command Processor I\n\n\n\n\n\nWarrior II x15\n\n\nRepublic Fleet Phased Plasma S x1600\nArmor Energizing Charge x1000\nRapid Repair Charge x1000\nArmor Reinforcement Charge x1000\nSensor Optimization Charge x1000\nElectronic Superiority Charge x1000\nElectronic Hardening Charge x1000\nNanite Repair Paste x100\nInformation Command Burst II x2"
+    },
+    {
+      "id": 56,
+      "doctrine": "Retribution/Deacon",
+      "doctrine_id": 12,
+      "category": "Home Defense",
+      "name": "Navy Logi Mk2",
+      "hull": "Deacon",
+      "hull_type_id": 37457,
+      "url": "https://auth.navaldefence.org/fittings/fit/56/",
+      "eft": "[Deacon,  Navy Logi Mk2]\n\nMultispectrum Energized Membrane II\nMultispectrum Energized Membrane II\n400mm Rolled Tungsten Compact Plates\nIFFA Compact Damage Control\nMultispectrum Coating II\n\nSmall Capacitor Booster II\n5MN Y-T8 Compact Microwarpdrive\n\nSmall Solace Scoped Remote Armor Repairer\nSmall Solace Scoped Remote Armor Repairer\nSmall Solace Scoped Remote Armor Repairer\n\nSmall Trimark Armor Pump II\nSmall Trimark Armor Pump II\n\n\n\n\n\nWarrior I x1\n\n\nNavy Cap Booster 200 x35\nNanite Repair Paste x100"
+    },
+    {
+      "id": 55,
+      "doctrine": "Retribution/Deacon",
+      "doctrine_id": 12,
+      "category": "Home Defense",
+      "name": "Navy Logi Mk3",
+      "hull": "Deacon",
+      "hull_type_id": 37457,
+      "url": "https://auth.navaldefence.org/fittings/fit/55/",
+      "eft": "[Deacon,  Navy Logi Mk3]\n\nMultispectrum Energized Membrane II\nMultispectrum Energized Membrane II\n400mm Rolled Tungsten Compact Plates\nIFFA Compact Damage Control\nMultispectrum Coating II\n\nSmall Capacitor Booster II\n5MN Y-T8 Compact Microwarpdrive\n\nSmall Remote Armor Repairer II\nSmall Remote Armor Repairer II\nSmall Solace Scoped Remote Armor Repairer\n\nSmall Trimark Armor Pump II\nSmall Trimark Armor Pump II\n\n\n\n\n\nWarrior II x1\n\n\nNanite Repair Paste x100\nNavy Cap Booster 200 x35"
+    },
+    {
+      "id": 69,
+      "doctrine": "Tornado",
+      "doctrine_id": 17,
+      "category": "Home Defense",
+      "name": "Insta-Lock Tornado Mk2",
+      "hull": "Tornado",
+      "hull_type_id": 4310,
+      "url": "https://auth.navaldefence.org/fittings/fit/69/",
+      "eft": "[Tornado,  Insta-Lock Tornado Mk2]\n\nGyrostabilizer II\nReactor Control Unit II\nInertial Stabilizers II\nInertial Stabilizers II\n\nSensor Booster II\nSensor Booster II\nTracking Computer II\nTracking Computer II\nMedium Micro Jump Drive\n\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n\nMedium Projectile Collision Accelerator I\nMedium Hyperspatial Velocity Optimizer I\nMedium Hyperspatial Velocity Optimizer I\n\n\n\n\n\n\n\nRepublic Fleet EMP L x800\nRepublic Fleet Fusion L x800\nRepublic Fleet Phased Plasma L x800\nRepublic Fleet Proton L x800\nScan Resolution Script x2\nTargeting Range Script x2\nOptimal Range Script x2\nTracking Speed Script x2"
+    },
+    {
+      "id": 9,
+      "doctrine": "Tornado",
+      "doctrine_id": 17,
+      "category": "Home Defense",
+      "name": "Navy Bubble Mk2",
+      "hull": "Sabre",
+      "hull_type_id": 22456,
+      "url": "https://auth.navaldefence.org/fittings/fit/9/",
+      "eft": "[Sabre,  Navy Bubble Mk2]\n\nNanofiber Internal Structure II\nIFFA Compact Damage Control\n\nInitiated Compact Warp Scrambler\nMedium Shield Extender II\nMedium Shield Extender II\n5MN Quad LiF Restrained Microwarpdrive\n\nPrototype Cloaking Device I\n125mm Light &#x27;Scout&#x27; Autocannon I\n125mm Light &#x27;Scout&#x27; Autocannon I\n125mm Light &#x27;Scout&#x27; Autocannon I\n125mm Light &#x27;Scout&#x27; Autocannon I\n125mm Light &#x27;Scout&#x27; Autocannon I\n125mm Light &#x27;Scout&#x27; Autocannon I\nInterdiction Sphere Launcher I\n\nSmall Hyperspatial Velocity Optimizer II\nSmall Hyperspatial Velocity Optimizer II\n\n\n\n\n\n\n\nRepublic Fleet EMP S x2000\nWarp Disrupt Probe x60"
+    },
+    {
+      "id": 8,
+      "doctrine": "Tornado",
+      "doctrine_id": 17,
+      "category": "Home Defense",
+      "name": "Navy Bubble Mk3",
+      "hull": "Sabre",
+      "hull_type_id": 22456,
+      "url": "https://auth.navaldefence.org/fittings/fit/8/",
+      "eft": "[Sabre,  Navy Bubble Mk3]\n\nNanofiber Internal Structure II\nIFFA Compact Damage Control\n\nInitiated Compact Warp Scrambler\n5MN Quad LiF Restrained Microwarpdrive\nMedium Shield Extender II\nMedium Shield Extender II\n\nPrototype Cloaking Device I\n125mm Gatling AutoCannon II\n125mm Gatling AutoCannon II\n125mm Gatling AutoCannon II\n125mm Gatling AutoCannon II\n125mm Gatling AutoCannon II\n125mm Gatling AutoCannon II\nInterdiction Sphere Launcher I\n\nSmall Hyperspatial Velocity Optimizer II\nSmall Hyperspatial Velocity Optimizer II\n\n\n\n\n\n\n\nWarp Disrupt Probe x60\nRepublic Fleet EMP S x2000"
+    },
+    {
+      "id": 60,
+      "doctrine": "Electronic War Ships",
+      "doctrine_id": 15,
+      "category": "New Player Friendly",
+      "name": "Navy EWar Mk1",
+      "hull": "Griffin",
+      "hull_type_id": 584,
+      "url": "https://auth.navaldefence.org/fittings/fit/60/",
+      "eft": "[Griffin,  Navy EWar Mk1]\n\nDamage Control I\nType-D Restrained Nanofiber Structure\n\n5MN Cold-Gas Enduring Microwarpdrive\nEnfeebling Scoped Ladar ECM\nBZ-5 Scoped Gravimetric ECM\nUmbra Scoped Radar ECM\nSmall Shield Extender I\n\nSmall Particle Dispersion Projector I\nSmall Particle Dispersion Projector I\nSmall Particle Dispersion Projector I\n\n\n\n\n\nWarrior I x1\n\n\nCompulsive Scoped Multispectral ECM x1\nEnfeebling Scoped Ladar ECM x2\nHypnos Scoped Magnetometric ECM x3\nUmbra Scoped Radar ECM x2"
+    },
+    {
+      "id": 62,
+      "doctrine": "Electronic War Ships",
+      "doctrine_id": 15,
+      "category": "New Player Friendly",
+      "name": "Navy EWar Mk1",
+      "hull": "Vigil",
+      "hull_type_id": 3766,
+      "url": "https://auth.navaldefence.org/fittings/fit/62/",
+      "eft": "[Vigil,  Navy EWar Mk1]\n\nNanofiber Internal Structure I\nDamage Control I\n\nParallel Enduring Target Painter\nParallel Enduring Target Painter\nParallel Enduring Target Painter\n5MN Cold-Gas Enduring Microwarpdrive\nSmall Shield Extender I\n\nSmall Particle Dispersion Projector I\nSmall Particle Dispersion Projector I\nSmall Ionic Field Projector I\n\n\n\n\n\nWarrior I x1"
+    },
+    {
+      "id": 63,
+      "doctrine": "Electronic War Ships",
+      "doctrine_id": 15,
+      "category": "New Player Friendly",
+      "name": "Navy EWar Mk1",
+      "hull": "Maulus",
+      "hull_type_id": 609,
+      "url": "https://auth.navaldefence.org/fittings/fit/63/",
+      "eft": "[Maulus,  Navy EWar Mk1]\n\nNanofiber Internal Structure I\nNanofiber Internal Structure I\nDamage Control I\n\nSmall Azeotropic Restrained Shield Extender\n5MN Y-T8 Compact Microwarpdrive\nPhased Muon Scoped Sensor Dampener\nPhased Muon Scoped Sensor Dampener\n\nSmall Particle Dispersion Projector I\nSmall Particle Dispersion Projector I\nSmall Ionic Field Projector I\n\n\n\n\n\nWarrior I x6\n\n\nScan Resolution Dampening Script x2\nTargeting Range Dampening Script x2"
+    },
+    {
+      "id": 27,
+      "doctrine": "Tackle Frigs",
+      "doctrine_id": 5,
+      "category": "New Player Friendly",
+      "name": "Navy Damage Mk1",
+      "hull": "Kestrel",
+      "hull_type_id": 602,
+      "url": "https://auth.navaldefence.org/fittings/fit/27/",
+      "eft": "[Kestrel,  Navy Damage Mk1]\n\nCrosslink Compact Ballistic Control System\nDamage Control I\n\n5MN Y-T8 Compact Microwarpdrive\nMedium F-S9 Regolith Compact Shield Extender\nFaint Epsilon Scoped Warp Scrambler\nCompact EM Shield Amplifier\n\n&#x27;Arbalest&#x27; Rocket Launcher I\n&#x27;Arbalest&#x27; Rocket Launcher I\n&#x27;Arbalest&#x27; Rocket Launcher I\n&#x27;Arbalest&#x27; Rocket Launcher I\n\nSmall Thermal Shield Reinforcer I\nSmall Bay Loading Accelerator I\nSmall Core Defense Field Extender I\n\n\n\n\n\n\n\nCaldari Navy Mjolnir Rocket x1000\nCaldari Navy Scourge Rocket x1000\nCaldari Navy Nova Rocket x1000"
+    },
+    {
+      "id": 25,
+      "doctrine": "Tackle Frigs",
+      "doctrine_id": 5,
+      "category": "New Player Friendly",
+      "name": "Navy Damage Mk1",
+      "hull": "Punisher",
+      "hull_type_id": 597,
+      "url": "https://auth.navaldefence.org/fittings/fit/25/",
+      "eft": "[Punisher,  Navy Damage Mk1]\n\nDamage Control I\n400mm Rolled Tungsten Compact Plates\nUpgraded Multispectrum Coating I\nUpgraded Multispectrum Coating I\nHeat Sink I\n\nInitiated Compact Warp Scrambler\n5MN Y-T8 Compact Microwarpdrive\n\nSmall Focused Modulated Pulse Energy Beam I\nSmall Focused Modulated Pulse Energy Beam I\nSmall Focused Modulated Pulse Energy Beam I\nSmall Focused Modulated Pulse Energy Beam I\n\nSmall Trimark Armor Pump I\nSmall Trimark Armor Pump I\nSmall Ancillary Current Router I\n\n\n\n\n\n\n\nImperial Navy Multifrequency S x4\nImperial Navy Radio S x4\nImperial Navy Standard S x4"
+    },
+    {
+      "id": 24,
+      "doctrine": "Tackle Frigs",
+      "doctrine_id": 5,
+      "category": "New Player Friendly",
+      "name": "Navy Damage Mk2",
+      "hull": "Punisher",
+      "hull_type_id": 597,
+      "url": "https://auth.navaldefence.org/fittings/fit/24/",
+      "eft": "[Punisher,  Navy Damage Mk2]\n\n400mm Crystalline Carbonide Restrained Plates\nMultispectrum Coating II\nMultispectrum Coating II\nHeat Sink II\nDamage Control II\n\nInitiated Compact Warp Scrambler\n5MN Y-T8 Compact Microwarpdrive\n\nSmall Focused Modulated Pulse Energy Beam I\nSmall Focused Modulated Pulse Energy Beam I\nSmall Focused Modulated Pulse Energy Beam I\nSmall Focused Modulated Pulse Energy Beam I\n\nSmall Trimark Armor Pump I\nSmall Trimark Armor Pump I\nSmall Ancillary Current Router I\n\n\n\n\n\n\n\nImperial Navy Multifrequency S x4\nImperial Navy Radio S x4\nImperial Navy Standard S x4"
+    },
+    {
+      "id": 26,
+      "doctrine": "Tackle Frigs",
+      "doctrine_id": 5,
+      "category": "New Player Friendly",
+      "name": "Navy Damage Mk2",
+      "hull": "Kestrel",
+      "hull_type_id": 602,
+      "url": "https://auth.navaldefence.org/fittings/fit/26/",
+      "eft": "[Kestrel,  Navy Damage Mk2]\n\nDamage Control II\nBallistic Control System II\n\nFaint Epsilon Scoped Warp Scrambler\nMedium F-S9 Regolith Compact Shield Extender\nCompact EM Shield Amplifier\n5MN Y-T8 Compact Microwarpdrive\n\n&#x27;Arbalest&#x27; Rocket Launcher I\n&#x27;Arbalest&#x27; Rocket Launcher I\n&#x27;Arbalest&#x27; Rocket Launcher I\n&#x27;Arbalest&#x27; Rocket Launcher I\n\nSmall Bay Loading Accelerator I\nSmall Thermal Shield Reinforcer I\nSmall Core Defense Field Extender I\n\n\n\n\n\n\n\nCaldari Navy Mjolnir Rocket x1000\nCaldari Navy Scourge Rocket x1000\nCaldari Navy Nova Rocket x1000"
+    },
+    {
+      "id": 94,
+      "doctrine": "Black Bird",
+      "doctrine_id": 22,
+      "category": "Strategic Op",
+      "name": "Exequror Mk2",
+      "hull": "Exequror",
+      "hull_type_id": 634,
+      "url": "https://auth.navaldefence.org/fittings/fit/94/",
+      "eft": "[Exequror,  Exequror Mk2]\n\nNanofiber Internal Structure II\nDamage Control II\nCompact Explosive Energized Membrane\nCompact Multispectrum Energized Membrane\nPower Diagnostic System II\nNanofiber Internal Structure II\n\n50MN Quad LiF Restrained Microwarpdrive\nMedium Cap Battery II\nMedium Cap Battery II\nCap Recharger II\n\nMedium Solace Scoped Remote Armor Repairer\nMedium Solace Scoped Remote Armor Repairer\nMedium Ancillary Remote Armor Repairer\n\nMedium Semiconductor Memory Cell I\nMedium Polycarbon Engine Housing II\nMedium Semiconductor Memory Cell I\n\n\n\n\n\nValkyrie I x5\n\n\nNanite Repair Paste x320"
+    },
+    {
+      "id": 93,
+      "doctrine": "Black Bird",
+      "doctrine_id": 22,
+      "category": "Strategic Op",
+      "name": "Exequror Mk3",
+      "hull": "Exequror",
+      "hull_type_id": 634,
+      "url": "https://auth.navaldefence.org/fittings/fit/93/",
+      "eft": "[Exequror,  Exequror Mk3]\n\nNanofiber Internal Structure II\nDamage Control II\nExplosive Energized Membrane II\nMultispectrum Energized Membrane II\nPower Diagnostic System II\nNanofiber Internal Structure II\n\n50MN Quad LiF Restrained Microwarpdrive\nMedium Cap Battery II\nMedium Cap Battery II\nCap Recharger II\n\nMedium Remote Armor Repairer II\nMedium Remote Armor Repairer II\nMedium Ancillary Remote Armor Repairer\n\nMedium Semiconductor Memory Cell I\nMedium Polycarbon Engine Housing II\nMedium Semiconductor Memory Cell I\n\n\n\n\n\nValkyrie II x5\n\n\nNanite Repair Paste x320"
+    },
+    {
+      "id": 89,
+      "doctrine": "Black Bird",
+      "doctrine_id": 22,
+      "category": "Strategic Op",
+      "name": "Navy Cmd Link",
+      "hull": "Pontifex",
+      "hull_type_id": 37481,
+      "url": "https://auth.navaldefence.org/fittings/fit/89/",
+      "eft": "[Pontifex,  Navy Cmd Link]\n\nCo-Processor II\nCo-Processor II\nCo-Processor II\n200mm Steel Plates II\nCo-Processor II\n\n5MN Y-T8 Compact Microwarpdrive\nMicro Jump Field Generator\nF-90 Compact Sensor Booster\n\nInformation Command Burst II\nInformation Command Burst II\nExpanded Probe Launcher I\nSmall Focused Modulated Energy Beam I\n\nSmall Command Processor I\nSmall Processor Overclocking Unit I\n\n\n\n\n\nAcolyte II x5\nWarrior SW-300 x5\nLight Armor Maintenance Bot I x5\n\n\nRadio S x1\nElectronic Superiority Charge x300\nSensor Optimization Charge x300\nSisters Combat Scanner Probe x8\nTargeting Range Script x1"
+    },
+    {
+      "id": 92,
+      "doctrine": "Black Bird",
+      "doctrine_id": 22,
+      "category": "Strategic Op",
+      "name": "Navy EWar Mk2",
+      "hull": "Blackbird",
+      "hull_type_id": 632,
+      "url": "https://auth.navaldefence.org/fittings/fit/92/",
+      "eft": "[Blackbird,  Navy EWar Mk2]\n\nDamage Control II\nMultispectrum Energized Membrane II\n1600mm Rolled Tungsten Compact Plates\n\nHalting Compact Ladar ECM\nHalting Compact Ladar ECM\nHalting Compact Ladar ECM\nHalting Compact Ladar ECM\nSmall F-RX Compact Capacitor Booster\n50MN Y-T8 Compact Microwarpdrive\n\nMedium Polycarbon Engine Housing II\nMedium Low Friction Nozzle Joints II\nMedium Low Friction Nozzle Joints II\n\n\n\n\n\nWarrior I x2\n\n\nNanite Repair Paste x30\nNavy Cap Booster 400 x17\nUmbra Scoped Radar ECM x4\nBZ-5 Scoped Gravimetric ECM x4\nHypnos Scoped Magnetometric ECM x4"
+    },
+    {
+      "id": 91,
+      "doctrine": "Black Bird",
+      "doctrine_id": 22,
+      "category": "Strategic Op",
+      "name": "Navy EWar Mk3",
+      "hull": "Blackbird",
+      "hull_type_id": 632,
+      "url": "https://auth.navaldefence.org/fittings/fit/91/",
+      "eft": "[Blackbird,  Navy EWar Mk3]\n\nDamage Control II\nMultispectrum Energized Membrane II\n1600mm Crystalline Carbonide Restrained Plates\n\nLadar ECM II\nLadar ECM II\nLadar ECM II\nLadar ECM II\nSmall F-RX Compact Capacitor Booster\n50MN Y-T8 Compact Microwarpdrive\n\nMedium Polycarbon Engine Housing II\nMedium Low Friction Nozzle Joints II\nMedium Low Friction Nozzle Joints II\n\n\n\n\n\nWarrior II x2\n\n\nNanite Repair Paste x50\nNavy Cap Booster 400 x17\nGravimetric ECM II x4\nMagnetometric ECM II x4\nRadar ECM II x4"
+    },
+    {
+      "id": 154,
+      "doctrine": "Machariel",
+      "doctrine_id": 33,
+      "category": "Strategic Op",
+      "name": "Navy Damage Mk2",
+      "hull": "Machariel",
+      "hull_type_id": 17738,
+      "url": "https://auth.navaldefence.org/fittings/fit/154/",
+      "eft": "[Machariel,  Navy Damage Mk2]\n\nReactor Control Unit II\nImperial Navy 1600mm Steel Plates\nImperial Navy 1600mm Steel Plates\nReactive Armor Hardener\nCoreli A-Type Multispectrum Coating\nCoreli A-Type Multispectrum Coating\n\n500MN Quad LiF Restrained Microwarpdrive\nMedium Capacitor Booster II\nTracking Computer II\nTracking Computer II\nTracking Computer II\nSensor Booster II\n\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\n1400mm &#x27;Scout&#x27; Artillery I\nMedium Infectious Scoped Energy Neutralizer\n\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\n\n\n\n\n\nAcolyte II x5\n\n\nNavy Cap Booster 800 x15\nRepublic Fleet Depleted Uranium L x1500\nRepublic Fleet EMP L x1500\nRepublic Fleet Fusion L x1500\nRepublic Fleet Phased Plasma L x3500\nRepublic Fleet Proton L x1000\nScan Resolution Script x1\nTargeting Range Script x1\nOptimal Range Script x3\nTracking Speed Script x3\nAgency &#x27;Pyrolancea&#x27; DB5 Dose II x2\nImperial Navy 1600mm Steel Plates x1\nHeavy Infectious Scoped Energy Neutralizer x1\nGyrostabilizer II x1\n800mm Heavy &#x27;Scout&#x27; Repeating Cannon I x7\n100MN Monopropellant Enduring Afterburner x1\nSignature Radius Suppressor I x1"
+    },
+    {
+      "id": 153,
+      "doctrine": "Machariel",
+      "doctrine_id": 33,
+      "category": "Strategic Op",
+      "name": "Navy Damage Mk3",
+      "hull": "Machariel",
+      "hull_type_id": 17738,
+      "url": "https://auth.navaldefence.org/fittings/fit/153/",
+      "eft": "[Machariel,  Navy Damage Mk3]\n\nReactor Control Unit II\nImperial Navy 1600mm Steel Plates\nImperial Navy 1600mm Steel Plates\nReactive Armor Hardener\nCoreli A-Type Multispectrum Coating\nCoreli A-Type Multispectrum Coating\n\n500MN Quad LiF Restrained Microwarpdrive\nMedium Capacitor Booster II\nTracking Computer II\nTracking Computer II\nTracking Computer II\nSensor Booster II\n\n1400mm Howitzer Artillery II\n1400mm Howitzer Artillery II\n1400mm Howitzer Artillery II\n1400mm Howitzer Artillery II\n1400mm Howitzer Artillery II\n1400mm Howitzer Artillery II\n1400mm Howitzer Artillery II\nMedium Infectious Scoped Energy Neutralizer\n\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\nLarge Trimark Armor Pump II\n\n\n\n\n\nAcolyte II x5\n\n\nQuake L x1000\nTremor L x1000\nBarrage L x1000\nHail L x1000\nNavy Cap Booster 800 x15\nRepublic Fleet Depleted Uranium L x1000\nRepublic Fleet EMP L x1000\nRepublic Fleet Fusion L x1000\nRepublic Fleet Phased Plasma L x3000\nRepublic Fleet Proton L x1000\nScan Resolution Script x1\nTargeting Range Script x1\nOptimal Range Script x3\nTracking Speed Script x3\nAgency &#x27;Pyrolancea&#x27; DB5 Dose II x2\nImperial Navy 1600mm Steel Plates x1\nHeavy Infectious Scoped Energy Neutralizer x1\nGyrostabilizer II x1\n800mm Repeating Cannon II x7\n100MN Monopropellant Enduring Afterburner x1\nSignature Radius Suppressor I x1"
+    },
+    {
+      "id": 157,
+      "doctrine": "Machariel",
+      "doctrine_id": 33,
+      "category": "Strategic Op",
+      "name": "Navy Firewall Mk3",
+      "hull": "Nestor",
+      "hull_type_id": 33472,
+      "url": "https://auth.navaldefence.org/fittings/fit/157/",
+      "eft": "[Nestor,  Navy Firewall Mk3]\n\nImperial Navy 1600mm Steel Plates\nImperial Navy 1600mm Steel Plates\nShadow Serpentis Explosive Armor Hardener\nImperial Navy Multispectrum Energized Membrane\nReactive Armor Hardener\nDamage Control II\n\n500MN Quad LiF Restrained Microwarpdrive\nShadow Serpentis 100MN Afterburner\nHeavy Capacitor Booster II\nRepublic Fleet Large Cap Battery\nRepublic Fleet Large Cap Battery\nRepublic Fleet Large Cap Battery\n\nLarge Plasma Smartbomb II\nLarge Plasma Smartbomb II\nLarge Plasma Smartbomb II\nLarge Plasma Smartbomb II\nLarge Plasma Smartbomb II\nLarge Plasma Smartbomb II\nLarge Plasma Smartbomb II\n\nLarge Trimark Armor Pump I\nLarge Trimark Armor Pump I\nLarge Trimark Armor Pump I\n\n\n\n\n\nWarrior II x10\nValkyrie II x5\nOgre II x5\nBouncer II x5\nValkyrie SW-600 x5\nVespa EC-600 x5\nWarrior SW-300 x10\n\n\nNavy Cap Booster 800 x24\nNanite Repair Paste x100\nAgency &#x27;Overclocker&#x27; SB5 Dose II x1\nQuafe Zero Classic x1\nStrong Mindflood Booster x1"
+    },
+    {
+      "id": 156,
+      "doctrine": "Machariel",
+      "doctrine_id": 33,
+      "category": "Strategic Op",
+      "name": "Navy Links Mk3",
+      "hull": "Legion",
+      "hull_type_id": 29986,
+      "url": "https://auth.navaldefence.org/fittings/fit/156/",
+      "eft": "[Legion,  Navy Links Mk3]\n\n1600mm Rolled Tungsten Compact Plates\nDamage Control II\nImperial Navy Multispectrum Energized Membrane\nTrue Sansha Thermal Armor Hardener\nTrue Sansha Kinetic Armor Hardener\nReactive Armor Hardener\n1600mm Rolled Tungsten Compact Plates\nReactor Control Unit II\n\n50MN Quad LiF Restrained Microwarpdrive\nMedium Compact Pb-Acid Cap Battery\n\nArmor Command Burst II\nArmor Command Burst II\nArmor Command Burst II\n\nMedium Command Processor I\nMedium Command Processor I\nMedium Trimark Armor Pump II\n\n\n\n\n\nAcolyte II x5\nWarrior II x5\nHornet EC-300 x5\n\n\nLegion Core - Augmented Antimatter Reactor x1\nLegion Defensive - Augmented Plating x1\nLegion Offensive - Support Processor x1\nLegion Propulsion - Intercalated Nanofibers x1\nArmor Energizing Charge x300\nArmor Reinforcement Charge x300\nRapid Repair Charge x300\nElectronic Hardening Charge x300\nElectronic Superiority Charge x300\nSensor Optimization Charge x300\nEvasive Maneuvers Charge x300\nInterdiction Maneuvers Charge x300\nRapid Deployment Charge x300\nInformation Command Burst II x3\nSkirmish Command Burst II x3"
+    },
+    {
+      "id": 159,
+      "doctrine": "Machariel",
+      "doctrine_id": 33,
+      "category": "Strategic Op",
+      "name": "Pod Protector 9000",
+      "hull": "Succubus",
+      "hull_type_id": 17924,
+      "url": "https://auth.navaldefence.org/fittings/fit/159/",
+      "eft": "[Succubus,  Pod Protector 9000]\n\nInertial Stabilizers II\nInertial Stabilizers II\nMicro Auxiliary Power Core II\n\nMultispectrum Shield Hardener II\nMultispectrum Shield Hardener II\nMedium Shield Extender II\n10MN Afterburner II\n\nImproved Cloaking Device II\n\nSmall Polycarbon Engine Housing I\nSmall Processor Overclocking Unit I\nSmall Ancillary Current Router I"
+    },
+    {
+      "id": 141,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Lachesis Mk4 Armor",
+      "hull": "Lachesis",
+      "hull_type_id": 11971,
+      "url": "https://auth.navaldefence.org/fittings/fit/141/",
+      "eft": "[Lachesis,  Lachesis Mk4 Armor]\n\nFederation Navy 1600mm Steel Plates\nRepublic Fleet Explosive Armor Hardener\n1600mm Rolled Tungsten Compact Plates\nDamage Control II\n\n50MN Quad LiF Restrained Microwarpdrive\nWarp Disruptor II\nWarp Disruptor II\nWarp Disruptor II\nWarp Disruptor II\nWarp Disruptor II\nWarp Scrambler II\n\nDrone Link Augmentor II\nDrone Link Augmentor I\nSmall Energy Nosferatu II\nSmall Energy Nosferatu II\n\nMedium Ancillary Current Router II\nMedium Trimark Armor Pump II\n\n\n\n\n\nHornet EC-300 x5\nHornet EC-300 x5\n\n\nSynth X-Instinct Booster x1\nAgency &#x27;Overclocker&#x27; SB7 Dose III x1\nScan Resolution Dampening Script x6\nTargeting Range Dampening Script x6\nRemote Sensor Dampener II x6"
+    },
+    {
+      "id": 46,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy Damage Mk2",
+      "hull": "Prophecy Navy Issue",
+      "hull_type_id": 72872,
+      "url": "https://auth.navaldefence.org/fittings/fit/46/",
+      "eft": "[Prophecy Navy Issue, Navy Damage Mk2]\n\nDamage Control II\nMultispectrum Energized Membrane II\nReactive Armor Hardener\nHeat Sink II\nHeat Sink II\nHeat Sink II\n800mm Steel Plates II\n\nMedium F-RX Compact Capacitor Booster\n50MN Y-T8 Compact Microwarpdrive\nPhased Muon Scoped Sensor Dampener\nPhased Muon Scoped Sensor Dampener\n\nDrone Link Augmentor II\nHeavy Modulated Energy Beam I\nHeavy Modulated Energy Beam I\nHeavy Modulated Energy Beam I\nHeavy Modulated Energy Beam I\nHeavy Modulated Energy Beam I\n\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\n\n\n\n\n\nInfiltrator I x5\nWarrior I x5\nValkyrie I x5\n\n\nECCM Script x1\nImperial Navy Multifrequency M x10\nTracking Speed Script x2\nOptimal Range Script x2\nOptimal Range Disruption Script x2\nNavy Cap Booster 800 x11\nTracking Speed Disruption Script x2\nTargeting Range Script x1\nScan Resolution Script x1\nScan Resolution Dampening Script x2\nMissile Range Disruption Script x2\nTargeting Range Dampening Script x2\nImperial Navy Standard M x5\nImperial Navy Infrared M x5\nNanite Repair Paste x50\nImperial Navy Radio M x5\nAgency &#x27;Pyrolancea&#x27; DB5 Dose II x1\nF-12 Enduring Tracking Computer x2\nWarp Scrambler II x1\nHighstroke Scoped Guidance Disruptor x2\nDDO Scoped Tracking Disruptor I x2\nStasis Webifier II x1\nF-90 Compact Sensor Booster x1"
+    },
+    {
+      "id": 47,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy Damage Mk3",
+      "hull": "Prophecy Navy Issue",
+      "hull_type_id": 72872,
+      "url": "https://auth.navaldefence.org/fittings/fit/47/",
+      "eft": "[Prophecy Navy Issue, Navy Damage Mk3]\n\nDamage Control II\nMultispectrum Energized Membrane II\nReactive Armor Hardener\nHeat Sink II\nHeat Sink II\nHeat Sink II\n800mm Steel Plates II\n\nMedium F-RX Compact Capacitor Booster\n50MN Y-T8 Compact Microwarpdrive\nRemote Sensor Dampener II\nRemote Sensor Dampener II\n\nDrone Link Augmentor II\nHeavy Beam Laser II\nHeavy Beam Laser II\nHeavy Beam Laser II\nHeavy Beam Laser II\nHeavy Beam Laser II\n\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\n\n\n\n\n\nWarrior II x5\nVespa EC-600 x5\nWarden II x2\n\n\nECCM Script x1\nOptimal Range Script x2\nTracking Speed Script x2\nOptimal Range Disruption Script x2\nTargeting Range Script x1\nTracking Speed Disruption Script x2\nMissile Range Disruption Script x2\nImperial Navy Multifrequency M x10\nNavy Cap Booster 800 x11\nScan Resolution Script x1\nScan Resolution Dampening Script x2\nAurora M x5\nTargeting Range Dampening Script x4\nImperial Navy Standard M x5\nGleam M x5\nImperial Navy Infrared M x5\nNanite Repair Paste x100\nAgency &#x27;Pyrolancea&#x27; DB5 Dose II x1\nSensor Booster II x1\nWarp Scrambler II x1\nHighstroke Scoped Guidance Disruptor x2\nDDO Scoped Tracking Disruptor I x2\nStasis Webifier II x1\nTracking Computer II x2"
+    },
+    {
+      "id": 14,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy EWar Mk1",
+      "hull": "Crucifier",
+      "hull_type_id": 2161,
+      "url": "https://auth.navaldefence.org/fittings/fit/14/",
+      "eft": "[Crucifier,  Navy EWar Mk1]\n\nMicro Auxiliary Power Core I\nF-89 Compact Signal Amplifier\nDamage Control I\n\nDDO Scoped Tracking Disruptor I\nDDO Scoped Tracking Disruptor I\n5MN Quad LiF Restrained Microwarpdrive\nMedium Azeotropic Restrained Shield Extender\n\n125mm Gatling AutoCannon I\n125mm Gatling AutoCannon I\n\nSmall Particle Dispersion Projector I\nSmall Particle Dispersion Projector I\nSmall Ionic Field Projector I\n\n\n\n\n\nWarrior I x9\n\n\nEMP S x1200\nTracking Speed Disruption Script x2\nOptimal Range Disruption Script x2\nMissile Range Disruption Script x2\nMissile Precision Disruption Script x2\nHighstroke Scoped Guidance Disruptor x2"
+    },
+    {
+      "id": 129,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy EWar Mk1",
+      "hull": "Celestis",
+      "hull_type_id": 633,
+      "url": "https://auth.navaldefence.org/fittings/fit/129/",
+      "eft": "[Celestis,  Navy EWar Mk1]\n\nDamage Control II\n1600mm Crystalline Carbonide Restrained Plates\nCompact Multispectrum Energized Membrane\nCompact Multispectrum Energized Membrane\nCompact Explosive Energized Membrane\n\n10MN Monopropellant Enduring Afterburner\nAlumel-Wired Enduring Sensor Booster\nLFT Enduring Sensor Dampener\nLFT Enduring Sensor Dampener\nLFT Enduring Sensor Dampener\n\nDrone Link Augmentor I\nDrone Link Augmentor I\n\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\n\n\n\n\n\nAcolyte I x5\nHornet EC-300 x5\n\n\nNavy Cap Booster 400 x24\nNanite Repair Paste x10\nECCM Script x1\nScan Resolution Script x1\nTargeting Range Script x1\nScan Resolution Dampening Script x3\nTargeting Range Dampening Script x3\nSmall F-RX Compact Capacitor Booster x1\n50MN Cold-Gas Enduring Microwarpdrive x1"
+    },
+    {
+      "id": 71,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy EWar Mk3",
+      "hull": "Scorpion",
+      "hull_type_id": 640,
+      "url": "https://auth.navaldefence.org/fittings/fit/71/",
+      "eft": "[Scorpion,   Navy EWar Mk3]\n\n1600mm Steel Plates II\n1600mm Steel Plates II\nDamage Control II\nExplosive Armor Hardener II\nReactive Armor Hardener\n\n500MN Quad LiF Restrained Microwarpdrive\nHeavy Capacitor Booster II\nLadar ECM II\nLadar ECM II\nLadar ECM II\nLadar ECM II\nLadar ECM II\nLadar ECM II\n\nRapid Heavy Missile Launcher II\nRapid Heavy Missile Launcher II\nRapid Heavy Missile Launcher II\nRapid Heavy Missile Launcher II\nHeavy Infectious Scoped Energy Neutralizer\n\nLarge Trimark Armor Pump I\nLarge Trimark Armor Pump I\nLarge Kinetic Armor Reinforcer I\n\n\n\n\n\nAcolyte II x5\nWarrior II x5\nHornet EC-300 x5\n\n\nNavy Cap Booster 800 x15\nCaldari Navy Inferno Heavy Missile x1200\nCaldari Navy Mjolnir Heavy Missile x1200\nCaldari Navy Nova Heavy Missile x1200\nCaldari Navy Scourge Heavy Missile x1200\nNanite Repair Paste x100\nECCM Script x1\nScan Resolution Script x1\nTargeting Range Script x1\nAgency &#x27;Overclocker&#x27; SB5 Dose II x1\nSynth Mindflood Booster x1\nGravimetric ECM II x6\nMagnetometric ECM II x6\nRadar ECM II x6\nMultispectrum Energized Membrane II x1\nSensor Booster II x1\nTarget Painter II x1"
+    },
+    {
+      "id": 5,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy Links Mk3",
+      "hull": "Damnation",
+      "hull_type_id": 22474,
+      "url": "https://auth.navaldefence.org/fittings/fit/5/",
+      "eft": "[Damnation,  Navy Links Mk3]\n\nDamage Control II\nMultispectrum Energized Membrane II\nMultispectrum Energized Membrane II\nThermal Energized Membrane II\n1600mm Rolled Tungsten Compact Plates\nReactive Armor Hardener\n\n50MN Quad LiF Restrained Microwarpdrive\nTarget Painter II\nMedium F-RX Compact Capacitor Booster\nDDO Scoped Tracking Disruptor I\n\nArmor Command Burst II\nSkirmish Command Burst II\nArmor Command Burst II\nLight Missile Launcher II\nLight Missile Launcher II\nLight Missile Launcher II\nLight Missile Launcher II\n\nMedium Trimark Armor Pump II\nMedium Command Processor I\n\n\n\n\n\nValkyrie II x5\nVespa EC-600 x5\n\n\nArmor Energizing Charge x1200\nArmor Reinforcement Charge x1200\nRapid Repair Charge x1200\nNavy Cap Booster 800 x14\nElectronic Hardening Charge x1200\nElectronic Superiority Charge x1200\nSensor Optimization Charge x1000\nCaldari Navy Nova Light Missile x1000\nCaldari Navy Scourge Light Missile x1000\nNanite Repair Paste x100\nOptimal Range Disruption Script x1\nTracking Speed Disruption Script x1\n1600mm Rolled Tungsten Compact Plates x1\nInformation Command Burst II x3"
+    },
+    {
+      "id": 15,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy Logi Mk3",
+      "hull": "Guardian",
+      "hull_type_id": 11987,
+      "url": "https://auth.navaldefence.org/fittings/fit/15/",
+      "eft": "[Guardian,  Navy Logi Mk3]\n\nTrue Sansha Thermal Armor Hardener\nDamage Control II\nTrue Sansha EM Armor Hardener\nMultispectrum Energized Membrane II\n1600mm Steel Plates II\n\n50MN Quad LiF Restrained Microwarpdrive\nSensor Booster II\n\nLarge Coaxial Compact Remote Armor Repairer\nMedium Inductive Compact Remote Capacitor Transmitter\nLarge Coaxial Compact Remote Armor Repairer\nLarge Inductive Compact Remote Capacitor Transmitter\nMedium Solace Scoped Remote Armor Repairer\nLarge Coaxial Compact Remote Armor Repairer\n\nMedium Ancillary Current Router II\nMedium Trimark Armor Pump I\n\n\n\n\n\nAcolyte II x5\n\n\nNanite Repair Paste x150\nECCM Script x1\nScan Resolution Script x1\nTargeting Range Script x1\nStandard Mindflood Booster x2\nSynth X-Instinct Booster x2\nTrue Sansha Kinetic Armor Hardener x1\n10MN Afterburner II x1"
+    },
+    {
+      "id": 48,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy Logi Mk3",
+      "hull": "Oneiros",
+      "hull_type_id": 11989,
+      "url": "https://auth.navaldefence.org/fittings/fit/48/",
+      "eft": "[Oneiros,  Navy Logi Mk3]\n\n1600mm Steel Plates II\nDamage Control II\nEM Armor Hardener II\nExplosive Armor Hardener II\nMultispectrum Energized Membrane II\n\n50MN Quad LiF Restrained Microwarpdrive\nSensor Booster II\nMedium Capacitor Booster II\n10MN Afterburner II\n\nLarge Remote Armor Repairer II\nMedium Remote Armor Repairer II\nMedium Remote Armor Repairer II\nMedium Remote Armor Repairer II\n\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\n\n\n\n\n\nWarrior II x5\nLight Armor Maintenance Bot II x5\n\n\nTargeting Range Script x1\nScan Resolution Script x1\nECCM Script x1\nNanite Repair Paste x100\nNavy Cap Booster 800 x23\nStandard Mindflood Booster x2"
+    },
+    {
+      "id": 130,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy Tackle Mk1",
+      "hull": "Maller",
+      "hull_type_id": 624,
+      "url": "https://auth.navaldefence.org/fittings/fit/130/",
+      "eft": "[Maller,  Navy Tackle Mk1]\n\nDamage Control II\n1600mm Crystalline Carbonide Restrained Plates\n1600mm Crystalline Carbonide Restrained Plates\nCompact Multispectrum Energized Membrane\nCompact Multispectrum Energized Membrane\nCompact Multispectrum Energized Membrane\n\n50MN Cold-Gas Enduring Microwarpdrive\nX5 Enduring Stasis Webifier\nFaint Epsilon Scoped Warp Scrambler\n\nMedium Knave Scoped Energy Nosferatu\nSmall Knave Scoped Energy Nosferatu\nSmall Knave Scoped Energy Nosferatu\nSmall Knave Scoped Energy Nosferatu\nSmall Knave Scoped Energy Nosferatu\n\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\nMedium Trimark Armor Pump I\n\n\n\n\n\nHornet EC-300 x3\n\n\nNanite Repair Paste x10\nECCM Script x1\nScan Resolution Script x1\nTargeting Range Script x1\nAgency &#x27;Overclocker&#x27; SB3 Dose I x1\nAlumel-Wired Enduring Sensor Booster x1"
+    },
+    {
+      "id": 128,
+      "doctrine": "PNI/Guardians",
+      "doctrine_id": 11,
+      "category": "Strategic Op",
+      "name": "Navy Tackle Mk3",
+      "hull": "Devoter",
+      "hull_type_id": 12017,
+      "url": "https://auth.navaldefence.org/fittings/fit/128/",
+      "eft": "[Devoter,  Navy Tackle Mk3]\n\nImperial Navy 1600mm Steel Plates\nImperial Navy 1600mm Steel Plates\nMultispectrum Energized Membrane II\nCentum C-Type Thermal Energized Membrane\nCoreli A-Type Thermal Coating\nCorelum C-Type Kinetic Energized Membrane\nCentum B-Type EM Energized Membrane\n\n50MN Quad LiF Restrained Microwarpdrive\nSmall F-RX Compact Capacitor Booster\nSensor Booster II\n\nCynosural Field Generator I\n125mm Gatling AutoCannon I\nM-36 Enduring Warp Disruption Field Generator\nM-36 Enduring Warp Disruption Field Generator\nM-36 Enduring Warp Disruption Field Generator\n\nMedium Trimark Armor Pump II\nMedium Trimark Armor Pump II\n\n\n\n\n\nWarrior II x5\nHornet EC-300 x5\n\n\nNavy Cap Booster 400 x21\nNanite Repair Paste x300\nEMP S x1000\nECCM Script x1\nScan Resolution Script x1\nTargeting Range Script x1\nFocused Warp Disruption Script x3\nFocused Warp Scrambling Script x3\nLiquid Ozone x250\n10MN Afterburner II x1"
+    }
+  ]
+}
