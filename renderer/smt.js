@@ -13,8 +13,9 @@
   const st = {
     region: null, layout: null, index: null, byName: null, nodeEls: new Map(),
     intel: new Map(), kills: new Map(), feed: [],
-    intelSince: 0, killSince: 0, ov: { intel: true, kills: true },
-    follow: false, loaded: false, poll: null, tick: null,
+    chars: [], fleet: null, fleetMembers: [],
+    intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true },
+    follow: false, loaded: false, poll: null, tick: null, charPoll: null,
     view: { s: 1, tx: 0, ty: 0 },
   };
   const $id = (x) => document.getElementById(x);
@@ -58,6 +59,7 @@
       renderMap();
       fitView();
       applyLayers();
+      renderCharMarkers();
       setStatus('');
       if (focusId) centerOn(focusId);
     } catch (e) { setStatus(`Failed to load ${name}: ${e.message || e}`, true); }
@@ -155,6 +157,50 @@
     });
   }
 
+  // ---- characters + fleet ----
+  async function pollChars() {
+    if (!st.ov.chars) { renderCharChips(); renderCharMarkers(); return; }
+    try {
+      const d = await j('/api/smt/characters');
+      st.chars = d.characters || []; st.fleet = d.fleet; st.fleetMembers = d.fleet_members || [];
+      st.charsAuthed = d.authed;
+      renderCharChips(); renderCharMarkers();
+    } catch (_) { /* transient */ }
+  }
+  function renderCharChips() {
+    const box = $id('smt-chars'); if (!box) return;
+    if (!st.ov.chars) { box.innerHTML = ''; return; }
+    if (!st.chars.length) {
+      box.innerHTML = st.charsAuthed ? '<span class="muted small">SMT characters authed but no location yet (offline, or the location scope isn’t enabled in your EVE app).</span>'
+        : '<span class="muted small">No SMT characters — add them in Auth → SMT Characters to plot them here.</span>';
+      return;
+    }
+    const chip = (c) => `<button class="smt-char-chip${c.online ? ' on' : ''}${c.region === st.region ? ' here' : ''}" data-region="${esc(c.region || '')}" data-id="${c.system_id || ''}" title="${esc([c.ship_type_name, c.docked ? 'docked' : '', c.error || ''].filter(Boolean).join(' · '))}">
+      <span class="smt-char-dot"></span>${esc(c.name || c.slot)} <span class="muted">${esc(c.system_name || '—')}</span></button>`;
+    box.innerHTML = st.chars.map(chip).join('') + (st.fleet ? `<span class="smt-fleet-tag" title="You're in a fleet of ${st.fleet.size}">⛴ fleet ${st.fleet.size}</span>` : '');
+  }
+  function renderCharMarkers() {
+    const root = $id('smt-root'); if (!root) return;
+    root.querySelectorAll('.smt-clayer').forEach((e) => e.remove());
+    if (!st.ov.chars || !st.layout) return;
+    const byId = new Map(st.layout.systems.map((s) => [String(s.id), s]));
+    const layer = document.createElementNS(SVGNS, 'g'); layer.setAttribute('class', 'smt-clayer');
+    const place = (sid, label, cls) => {
+      const s = byId.get(String(sid)); if (!s) return;
+      const g = document.createElementNS(SVGNS, 'g'); g.setAttribute('class', 'smt-char ' + cls);
+      g.setAttribute('transform', `translate(${s.x},${s.y})`);
+      g.innerHTML = `<circle class="smt-char-mk" r="6" /><rect class="smt-char-pill" x="9" y="-9" rx="3" ry="3" height="14" width="${9 + label.length * 5.6}" /><text class="smt-char-lbl" x="13" y="1.5">${esc(label)}</text>`;
+      layer.appendChild(g);
+    };
+    const bySys = {};
+    for (const c of st.chars) if (c.system_id && c.region === st.region) (bySys[c.system_id] = bySys[c.system_id] || []).push(c);
+    for (const sid in bySys) { const l = bySys[sid]; place(sid, l.map((c) => c.name).join(', '), l.some((c) => c.online) ? 'online' : 'offline'); }
+    const fleetBySys = {};
+    for (const m of st.fleetMembers) if (m.system_id && m.region === st.region) (fleetBySys[m.system_id] = fleetBySys[m.system_id] || []).push(m);
+    for (const sid in fleetBySys) { const l = fleetBySys[sid]; place(sid, l.length > 2 ? `${l.length} fleet` : l.map((m) => m.name || 'fleet').join(', '), 'fleet'); }
+    root.appendChild(layer);
+  }
+
   function followLatest() {
     const latest = st.feed.find((e) => e.systems && e.systems.length);
     if (!latest) return;
@@ -235,7 +281,12 @@
   // ---- wiring ----
   function wire() {
     $id('smt-region')?.addEventListener('change', (e) => showRegion(e.target.value));
-    document.querySelectorAll('.smt-ov').forEach((b) => b.addEventListener('click', () => { b.classList.toggle('on'); st.ov[b.dataset.ov] = b.classList.contains('on'); applyLayers(); }));
+    document.querySelectorAll('.smt-ov').forEach((b) => b.addEventListener('click', () => {
+      b.classList.toggle('on'); st.ov[b.dataset.ov] = b.classList.contains('on');
+      applyLayers();
+      if (b.dataset.ov === 'chars') { if (st.ov.chars) pollChars(); else { renderCharChips(); renderCharMarkers(); } }
+    }));
+    $id('smt-chars')?.addEventListener('click', (e) => { const c = e.target.closest('.smt-char-chip'); if (c && c.dataset.region) showRegion(c.dataset.region, c.dataset.id); });
     $id('smt-follow')?.addEventListener('change', (e) => { st.follow = e.target.checked; });
     $id('smt-config-btn')?.addEventListener('click', () => { const c = $id('smt-config'); if (c) { c.hidden = !c.hidden; if (!c.hidden) loadConfig(); } });
     $id('smt-save')?.addEventListener('click', saveConfig);
@@ -252,8 +303,9 @@
       st.loaded = true; wire();
       Promise.all([loadRegions(), loadIndex()]).then(() => showRegion($id('smt-region')?.value || 'Delve')).catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
       loadConfig();
-      pollLayers();
+      pollLayers(); pollChars();
       st.poll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollLayers(); }, 4000);
+      st.charPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollChars(); }, 8000);
       st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) applyLayers(); }, 1000);
     } else if (st.layout) { fitView(); }
   }

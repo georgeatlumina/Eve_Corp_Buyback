@@ -30,6 +30,8 @@ from auth import (
     FIT_SCOPES,
     ASSET_SLOTS,
     ASSET_SCOPES,
+    SMT_SLOTS,
+    SMT_SCOPES,
     FIT_READ_SCOPE,
     FIT_WRITE_SCOPE,
     build_authorize_url,
@@ -44,6 +46,7 @@ from auth import (
     list_authenticated_pi_slots,
     list_authenticated_fit_slots,
     list_authenticated_asset_slots,
+    list_authenticated_smt_slots,
     load_cached_tokens,
     refresh_access_token,
     save_cached_tokens,
@@ -53,6 +56,11 @@ from esi import (
     redact_secrets,
     fetch_alliance_info,
     fetch_character_info,
+    fetch_character_location,
+    fetch_character_ship,
+    fetch_character_online,
+    fetch_character_fleet,
+    fetch_fleet_members,
     fetch_all_ship_types,
     fetch_character_contract_items,
     fetch_character_contracts,
@@ -150,8 +158,8 @@ _auth_lock = threading.Lock()
 
 def _normalize_slot(slot: Optional[str]) -> str:
     s = slot or DEFAULT_SLOT
-    if s not in VALID_SLOTS and s not in PI_SLOTS and s not in FIT_SLOTS and s not in ASSET_SLOTS:
-        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS + PI_SLOTS + FIT_SLOTS + ASSET_SLOTS}')
+    if s not in VALID_SLOTS and s not in PI_SLOTS and s not in FIT_SLOTS and s not in ASSET_SLOTS and s not in SMT_SLOTS:
+        raise HTTPException(400, f'Invalid slot {s!r}; expected one of {VALID_SLOTS + PI_SLOTS + FIT_SLOTS + ASSET_SLOTS + SMT_SLOTS}')
     return s
 
 
@@ -858,6 +866,95 @@ def smt_intel_feed(since: float = 0.0):
 def smt_kills_feed(since: float = 0.0):
     """Live zKillboard kills (RedisQ) newer than `since` (epoch seconds)."""
     return smt_intel.get_kills(since)
+
+
+@app.get('/api/smt/characters')
+def smt_characters():
+    """Your SMT-tracked characters' live location / ship / online status for the
+    Intel Map, plus the current fleet's members when available. Each tracked
+    character is authed in the Auth tab's SMT Characters section."""
+    client_id, secret_key = get_app_credentials()
+    ua = get_user_agent()
+    slots = list_authenticated_smt_slots()
+    if not slots:
+        return {'characters': [], 'fleet': None, 'fleet_members': [], 'authed': 0}
+
+    chars, fleet_info, fleet_members_raw = [], None, {}
+    sys_ids, type_ids, char_ids = set(), set(), set()
+    for slot in slots:
+        try:
+            token = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            payload = decode_jwt_payload(token)
+            cid = character_id_from_access_token(token)
+        except Exception:  # noqa: BLE001
+            continue
+        rec = {'slot': slot, 'character_id': cid, 'name': payload.get('name'),
+               'system_id': None, 'ship_type_id': None, 'ship_name': None, 'online': None}
+        try:
+            loc = fetch_character_location(cid, token, ua)
+            rec['system_id'] = loc.get('solar_system_id')
+            rec['docked'] = bool(loc.get('station_id') or loc.get('structure_id'))
+        except requests.HTTPError as e:
+            rec['error'] = 'no location scope' if (e.response is not None and e.response.status_code == 403) else 'location error'
+        except Exception:  # noqa: BLE001
+            rec['error'] = 'location error'
+        try:
+            ship = fetch_character_ship(cid, token, ua)
+            rec['ship_type_id'] = ship.get('ship_type_id')
+            rec['ship_name'] = ship.get('ship_name')
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            rec['online'] = fetch_character_online(cid, token, ua).get('online')
+        except Exception:  # noqa: BLE001
+            pass
+        if rec['system_id']:
+            sys_ids.add(int(rec['system_id']))
+        if rec['ship_type_id']:
+            type_ids.add(int(rec['ship_type_id']))
+        if fleet_info is None:                       # best-effort fleet from the first char in one
+            try:
+                fid = (fetch_character_fleet(cid, token, ua) or {}).get('fleet_id')
+                if fid:
+                    members = fetch_fleet_members(fid, token, ua)
+                    fleet_info = {'fleet_id': fid, 'size': len(members)}
+                    for m in members:
+                        mcid = m.get('character_id')
+                        if mcid:
+                            fleet_members_raw[int(mcid)] = {'system_id': m.get('solar_system_id'), 'ship_type_id': m.get('ship_type_id')}
+                            char_ids.add(int(mcid))
+                            if m.get('solar_system_id'):
+                                sys_ids.add(int(m['solar_system_id']))
+                            if m.get('ship_type_id'):
+                                type_ids.add(int(m['ship_type_id']))
+            except Exception:  # noqa: BLE001 — not in a fleet / no fleet scope
+                pass
+        chars.append(rec)
+
+    try:
+        names = resolve_names(sorted(sys_ids | type_ids | char_ids), ua) if (sys_ids or type_ids or char_ids) else {}
+    except Exception:  # noqa: BLE001
+        names = {}
+    systems = eve_map.load_map()['systems']
+    for c in chars:
+        c['system_name'] = names.get(int(c['system_id'])) if c.get('system_id') else None
+        c['ship_type_name'] = names.get(int(c['ship_type_id'])) if c.get('ship_type_id') else None
+        rec = systems.get(str(c['system_id'])) if c.get('system_id') else None
+        c['region'] = rec['region'] if rec else None
+
+    tracked = {c['character_id'] for c in chars}
+    fleet_members = []
+    for mcid, info in fleet_members_raw.items():
+        if mcid in tracked:
+            continue
+        sid = info.get('system_id')
+        rec = systems.get(str(sid)) if sid else None
+        fleet_members.append({'character_id': mcid, 'name': names.get(mcid), 'system_id': sid,
+                              'system_name': names.get(int(sid)) if sid else None,
+                              'region': rec['region'] if rec else None,
+                              'ship_type_id': info.get('ship_type_id'),
+                              'ship_type_name': names.get(int(info['ship_type_id'])) if info.get('ship_type_id') else None})
+    return {'characters': chars, 'fleet': fleet_info, 'fleet_members': fleet_members, 'authed': len(slots)}
 
 
 _pi_price_cache: dict[int, dict] = {}
@@ -1642,6 +1739,8 @@ def auth_login(slot: Optional[str] = None):
         scopes = list(FIT_SCOPES)
     elif slot_name in ASSET_SLOTS:
         scopes = list(ASSET_SCOPES)
+    elif slot_name in SMT_SLOTS:
+        scopes = list(SMT_SCOPES)
     else:
         scopes = cfg['scopes']
     state_token = secrets.token_urlsafe(32)
@@ -1673,6 +1772,13 @@ def auth_asset_slots():
     """Status for every dedicated inventory slot — Auth tab's Inventory
     Characters section (powers the planners' auto-inventory-search)."""
     return {'slots': [_slot_status(s) for s in ASSET_SLOTS]}
+
+
+@app.get('/api/auth/smt-slots')
+def auth_smt_slots():
+    """Status for every SMT tracking slot — Auth tab's SMT Characters section
+    (plots your characters + fleet on the SMT Intel Map)."""
+    return {'slots': [_slot_status(s) for s in SMT_SLOTS]}
 
 
 @app.post('/api/auth/logout')

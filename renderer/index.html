@@ -318,6 +318,10 @@
       <p class="muted">Authorize alts <strong>just</strong> for reading their <strong>assets</strong> (<code>assets.read</code> only), to power the <strong>auto inventory search</strong> on the <strong>Production</strong> and <strong>Reaction</strong> planners (Auto-detect stock + node availability) and the <strong>My Assets</strong> tab — without granting your mains extra access. Use <em>Add inventory character</em> to log in the next one.</p>
       <div id="auth-asset-slots"></div>
 
+      <h3>SMT Characters</h3>
+      <p class="muted">Authorize characters <strong>just</strong> for <strong>location / ship / online</strong> (and <strong>fleet</strong>) so the <strong>SMT → Intel Map</strong> can plot them (and your fleet) live on the map. Scopes: <code>location.read_location / read_ship_type / read_online</code> + <code>fleets.read_fleet</code>. <em>These ESI scopes must be enabled in your EVE developer-portal app, or the login will error.</em></p>
+      <div id="auth-smt-slots"></div>
+
       <h3>Alliance Auth (Doctrines &amp; Market Readiness)</h3>
       <p class="muted">Sign in to Alliance Auth at <code>auth.navaldefence.org</code> once; the session is remembered and reused by the Doctrines and Market Readiness tabs.</p>
       <div class="actions">
@@ -955,6 +959,7 @@
         <div class="smt-overlays" role="group" aria-label="Layers">
           <button class="smt-ov on" type="button" data-ov="intel" title="Show intel reports on the map">Intel</button>
           <button class="smt-ov on" type="button" data-ov="kills" title="Show live zKillboard kills on the map">Kills</button>
+          <button class="smt-ov on" type="button" data-ov="chars" title="Show your SMT characters + fleet on the map">Chars</button>
         </div>
         <label class="smt-follow" title="Jump the map to wherever the newest intel is"><input type="checkbox" id="smt-follow" /> Follow intel</label>
         <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
@@ -966,6 +971,7 @@
         <div id="smt-channels" class="smt-channels"><span class="muted">Set the folder above, then Detect to list channels.</span></div>
         <div class="smt-config-actions"><button id="smt-save" type="button">Save</button> <span id="smt-config-status" class="muted small"></span></div>
       </div>
+      <div id="smt-chars" class="smt-chars"></div>
       <div class="smt-stage">
         <div id="smt-canvas" class="smt-canvas"><svg id="smt-svg" xmlns="http://www.w3.org/2000/svg"><g id="smt-root"></g></svg></div>
         <aside class="smt-feed">

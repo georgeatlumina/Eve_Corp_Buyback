@@ -760,6 +760,66 @@ def delete_character_fitting(character_id, fitting_id, access_token, user_agent)
     return True
 
 
+def fetch_character_location(character_id, access_token, user_agent):
+    """The character's current location: ``{solar_system_id, station_id?,
+    structure_id?}``. Needs esi-location.read_location.v1."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/location/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or {}
+
+
+def fetch_character_ship(character_id, access_token, user_agent):
+    """The character's current ship: ``{ship_type_id, ship_name, ship_item_id}``.
+    Needs esi-location.read_ship_type.v1."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/ship/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or {}
+
+
+def fetch_character_online(character_id, access_token, user_agent):
+    """The character's online status: ``{online, last_login, last_logout,
+    logins}``. Needs esi-location.read_online.v1."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/online/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or {}
+
+
+def fetch_character_fleet(character_id, access_token, user_agent):
+    """The character's current fleet: ``{fleet_id, role, ...}``. Needs
+    esi-fleets.read_fleet.v1. ESI returns 404 when not in a fleet."""
+    resp = _session.get(
+        f'{ESI_BASE}/characters/{int(character_id)}/fleet/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or {}
+
+
+def fetch_fleet_members(fleet_id, access_token, user_agent):
+    """All members of a fleet: ``[{character_id, solar_system_id, ship_type_id,
+    role, ...}]``. Needs esi-fleets.read_fleet.v1 on a fleet boss/booster."""
+    resp = _session.get(
+        f'{ESI_BASE}/fleets/{int(fleet_id)}/members/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility', 'token': access_token},
+    )
+    resp.raise_for_status()
+    return resp.json() or []
+
+
 def fetch_character_skills(character_id, access_token, user_agent):
     """The authed character's trained skills: ``{skills: [{skill_id,
     active_skill_level, trained_skill_level, skillpoints_in_skill}], total_sp,

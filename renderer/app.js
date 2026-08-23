@@ -1076,6 +1076,24 @@ function renderAssetAuthSection(container, info) {
     <div class="auth-pi-add-row">${add} ${count}</div>`;
 }
 
+function renderSmtAuthSection(container, info) {
+  const authed = info.filter((s) => s.authenticated);
+  const free = info.find((s) => !s.authenticated);
+  const cards = authed.map((s) => {
+    const err = s.error ? `<span class="auth-pi-err" title="${escapeHtml(s.error)}">⚠</span>` : '';
+    return `<div class="auth-pi-card" data-slot="${s.slot}">
+      <span class="auth-pi-name">${escapeHtml(s.character || s.slot)}${err}</span>
+      <button type="button" class="auth-slot-logout linklike auth-pi-x" data-slot="${s.slot}" title="Log out">✕</button>
+    </div>`;
+  }).join('');
+  const count = `<span class="muted auth-pi-count">${authed.length}/${info.length} authorized</span>`;
+  const add = free
+    ? `<button type="button" class="auth-slot-login auth-pi-add" data-slot="${free.slot}">+ Add SMT character</button>`
+    : `<span class="muted">All ${info.length} SMT slots in use.</span>`;
+  container.innerHTML = `<div class="auth-pi-grid">${cards || '<span class="muted">No SMT characters yet.</span>'}</div>
+    <div class="auth-pi-add-row">${add} ${count}</div>`;
+}
+
 // Settings-page version picker: list released versions (from the sidecar's
 // GitHub-backed /api/releases) so users can switch to or roll back to any of
 // them. Selecting one hands the tag to main.js, which downloads that installer
@@ -1154,6 +1172,15 @@ async function refreshAuthStatus() {
       const ar = await fetch(`${API}/api/auth/asset-slots`);
       const assetInfo = ar.ok ? ((await ar.json()).slots || []) : [];
       renderAssetAuthSection(assetContainer, assetInfo);
+    } catch (_) { /* leave as-is on failure */ }
+  }
+  // SMT Characters — location/ship/online (+fleet) auth for the SMT Intel Map.
+  const smtContainer = $('#auth-smt-slots');
+  if (smtContainer) {
+    try {
+      const sr = await fetch(`${API}/api/auth/smt-slots`);
+      const smtInfo = sr.ok ? ((await sr.json()).slots || []) : [];
+      renderSmtAuthSection(smtContainer, smtInfo);
     } catch (_) { /* leave as-is on failure */ }
   }
 

@@ -42,7 +42,15 @@ FIT_SCOPES = ('publicData', FIT_READ_SCOPE, FIT_WRITE_SCOPE, 'esi-assets.read_as
 # re-scoping the main characters. Up to 24.
 ASSET_SLOTS = tuple(f'asset{i}' for i in range(1, 25))
 ASSET_SCOPES = ('publicData', 'esi-assets.read_assets.v1')
-ALL_SLOTS = VALID_SLOTS + PI_SLOTS + FIT_SLOTS + ASSET_SLOTS
+# SMT tracking slots: authorize alts *just* for the location/ship/online (+fleet)
+# scopes so the SMT Intel Map can plot your characters (and fleet) on the map
+# without re-scoping your mains. Up to 24. NB: these ESI scopes must be enabled
+# in the EVE developer-portal app registration or the SSO login will error.
+SMT_SLOTS = tuple(f'smt{i}' for i in range(1, 25))
+SMT_SCOPES = ('publicData', 'esi-location.read_location.v1',
+              'esi-location.read_ship_type.v1', 'esi-location.read_online.v1',
+              'esi-fleets.read_fleet.v1')
+ALL_SLOTS = VALID_SLOTS + PI_SLOTS + FIT_SLOTS + ASSET_SLOTS + SMT_SLOTS
 
 
 def get_app_credentials():
@@ -166,6 +174,12 @@ def list_authenticated_asset_slots():
     """Return authenticated dedicated inventory (asset) slot names."""
     slots = _load_all_slots()
     return [s for s in ASSET_SLOTS if s in slots]
+
+
+def list_authenticated_smt_slots():
+    """Return authenticated dedicated SMT-tracking slot names."""
+    slots = _load_all_slots()
+    return [s for s in SMT_SLOTS if s in slots]
 
 
 def get_valid_access_token(client_id, secret_key, user_agent, slot=DEFAULT_SLOT):
