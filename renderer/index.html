@@ -37,6 +37,7 @@
         <div class="nav-panel" role="menu">
           <button class="tab-btn" data-tab="fitting">Fitting</button>
           <button class="tab-btn" data-tab="dscan">D-Scan</button>
+          <button class="tab-btn" data-tab="structures">Structures</button>
         </div>
       </div>
 
@@ -926,6 +927,17 @@
       <div id="assets-results"></div>
     </section>
 
+    <section id="tab-structures" class="tab">
+      <h2>Structures</h2>
+      <p class="muted">Your corp's Upwell structures and their reinforcement state, live from ESI. <strong>Reinforced</strong> means the structure is in its armor or hull timer; the countdown shows when it comes out. Needs a <strong>Station&nbsp;Manager / Director</strong> character authed with the <code>read corp structures</code> scope. Only your own corp's structures are visible — ESI exposes no one else's timers.</p>
+      <div class="struct-bar">
+        <button id="struct-refresh" type="button">Load structures</button>
+        <label class="struct-filter"><input type="checkbox" id="struct-reinf-only" /> Reinforced only</label>
+        <span id="struct-status" class="muted"></span>
+      </div>
+      <div id="struct-results"></div>
+    </section>
+
     <section id="tab-pi-builder" class="tab">
       <details id="pi-planner" class="pi-planner-embed" open>
         <summary><strong>PI Planner</strong> — rank the most profitable P0→P4 chains a system can build</summary>
@@ -1600,6 +1612,7 @@
   <script src="map.js"></script>
   <script src="zkill.js"></script>
   <script src="assets.js"></script>
+  <script src="structures.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="fitting.js"></script>

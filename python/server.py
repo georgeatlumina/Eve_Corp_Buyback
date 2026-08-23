@@ -1730,6 +1730,80 @@ def send_mail_by_name(req: SendMailByNameRequest):
     return _send_mail_core(cid, req.subject, req.body)
 
 
+_STRUCTURE_REINFORCED = {'armor_reinforce', 'hull_reinforce'}
+
+
+@app.get('/api/structures')
+def corp_structures():
+    """Corp-owned Upwell structures with their reinforcement state + timers.
+
+    Needs a Station-Manager/Director character authed with
+    ``esi-corporations.read_structures.v1`` (and ``esi-universe.read_structures.v1``
+    to resolve names). ``reinforced`` is true while a structure is in its armor or
+    hull timer; ``state_timer_end`` is when it comes out. Only your own corp's
+    structures are visible — ESI exposes no one else's reinforcement state."""
+    cfg = load_config()
+    if not cfg.get('corp_id'):
+        raise HTTPException(400, 'Configure corp_id first (Config tab).')
+    client_id, secret_key = get_app_credentials()
+    ua = get_user_agent()
+    try:
+        token = get_valid_access_token(client_id, secret_key, ua)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(401, str(e))
+    try:
+        raw = fetch_corp_structures(cfg['corp_id'], token, ua)
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 502
+        if status == 403:
+            raise HTTPException(403, 'This character can’t read corp structures. It needs the '
+                                     'Station Manager or Director corp role plus the '
+                                     'esi-corporations.read_structures.v1 scope (re-auth after enabling it).')
+        raise HTTPException(status if 400 <= status < 600 else 502, f'ESI error {status} reading corp structures.')
+
+    sys_ids = sorted({int(s['system_id']) for s in raw if s.get('system_id')})
+    type_ids = sorted({int(s['type_id']) for s in raw if s.get('type_id')})
+    try:
+        names = resolve_names(sys_ids + type_ids, ua)
+    except Exception:  # noqa: BLE001 — names are best-effort
+        names = {}
+
+    def _struct_name(sid):
+        try:
+            return sid, (fetch_structure_info(sid, token, ua) or {}).get('name')
+        except Exception:  # noqa: BLE001
+            return sid, None
+    struct_names = {}
+    ids = [int(s['structure_id']) for s in raw if s.get('structure_id')]
+    if ids:
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            for sid, nm in ex.map(_struct_name, ids):
+                struct_names[sid] = nm
+
+    out = []
+    for s in raw:
+        sid = int(s.get('structure_id') or 0)
+        state = s.get('state') or 'unknown'
+        out.append({
+            'structure_id': sid,
+            'name': struct_names.get(sid) or f'Structure {sid}',
+            'type_id': s.get('type_id'),
+            'type_name': names.get(int(s['type_id'])) if s.get('type_id') else None,
+            'system_id': s.get('system_id'),
+            'system_name': names.get(int(s['system_id'])) if s.get('system_id') else None,
+            'state': state,
+            'reinforced': state in _STRUCTURE_REINFORCED,
+            'state_timer_start': s.get('state_timer_start'),
+            'state_timer_end': s.get('state_timer_end'),
+            'fuel_expires': s.get('fuel_expires'),
+            'reinforce_hour': s.get('reinforce_hour'),
+            'services': s.get('services') or [],
+        })
+    out.sort(key=lambda x: (0 if x['reinforced'] else 1, x.get('state_timer_end') or '~', x['name'].lower()))
+    return {'structures': out, 'count': len(out),
+            'reinforced': sum(1 for x in out if x['reinforced']), 'corp_id': cfg['corp_id']}
+
+
 @app.get('/api/wallets')
 def get_wallets():
     cfg = load_config()

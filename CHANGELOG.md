@@ -4,6 +4,16 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.10.0 — Structures tab: corp reinforcement timers
+
+- New **Structures** tab (under Combat) listing your corp's Upwell structures with their
+  **reinforcement state** live from ESI — reinforced structures (armor/hull timer) are highlighted with
+  a live **"comes out" countdown**, plus **fuel-remaining** timers (low fuel flagged) and per-structure
+  state badges (shield/armor/hull vulnerable, anchoring, etc.).
+- Needs a **Station Manager / Director** character (the main auth used for corp reads) with the
+  `esi-corporations.read_structures.v1` scope (+ `esi-universe.read_structures.v1` for names) and a
+  configured `corp_id`. Only your own corp's structures are visible — ESI exposes no one else's timers.
+
 ## v3.9.6 — Installer: the desktop icon stays gone once you remove it (Windows)
 
 - The Windows desktop shortcut is now created on the **first install only** and is **never recreated
