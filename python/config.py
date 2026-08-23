@@ -139,6 +139,11 @@ DEFAULTS = {
     'stockpile_allow_push': False,
     'stockpile_last_synced': '',   # ISO timestamp of last successful push
     'stockpile_last_status': '',   # short human-readable last result
+    # Gates the write side of the shared corp-hangar-division selection (used
+    # by both the Acquisitions and Stockpile ESI scans) — mirrors
+    # stockpile_allow_push so importing someone else's exported config can't
+    # silently unlock pushing the shared selection.
+    'hangar_selection_allow_push': False,
     # ---- Liquidation page ----
     # Buyback items are shipped to Jita and sold. Cost basis = the payout
     # fraction of the live Janice *buy* price on the configured market hub
