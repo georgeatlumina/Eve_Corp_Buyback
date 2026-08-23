@@ -88,6 +88,7 @@ from esi import (
     fetch_sovereignty_campaigns,
     fetch_sovereignty_map,
     fetch_sovereignty_structures,
+    fetch_faction_warfare_systems,
     fetch_station_info,
     fetch_structure_info,
     fetch_structure_orders,
@@ -1009,6 +1010,71 @@ def smt_thera():
     """Live Thera + Turnur wormhole connections to k-space (from eve-scout),
     each with wh type, max ship size and remaining life."""
     return smt_intel.get_thera()
+
+
+_sov_cache: dict = {'ts': 0.0, 'data': None}
+_SOV_TTL = 180
+_IHUB_TYPE = 32458
+
+
+@app.get('/api/smt/sov')
+def smt_sov():
+    """Sovereignty intel layer: holders (alliance), per-system ADM (from IHUBs),
+    active sov campaigns with timers, and contested faction-warfare systems."""
+    now = time.time()
+    if _sov_cache['data'] and now - _sov_cache['ts'] < _SOV_TTL:
+        return _sov_cache['data']
+    ua = get_user_agent()
+    systems = eve_map.load_map()['systems']
+    out: dict = {'holders': {}, 'adm': {}, 'campaigns': [], 'fw': {}, 'ts': int(now)}
+    try:
+        sov = fetch_sovereignty_map(ua)
+        alli = sorted({s['alliance_id'] for s in sov if s.get('alliance_id')})
+        try:
+            names = resolve_names(alli, ua) if alli else {}
+        except Exception:  # noqa: BLE001
+            names = {}
+        for s in sov:
+            aid = s.get('alliance_id')
+            if aid:
+                out['holders'][str(s['system_id'])] = {'alliance_id': aid, 'name': names.get(aid)}
+    except Exception as e:  # noqa: BLE001
+        out['holders_error'] = f'{type(e).__name__}: {e}'
+    try:
+        for stc in fetch_sovereignty_structures(ua):
+            if stc.get('structure_type_id') == _IHUB_TYPE and stc.get('vulnerability_occupancy_level') is not None:
+                out['adm'][str(stc['solar_system_id'])] = stc['vulnerability_occupancy_level']
+    except Exception as e:  # noqa: BLE001
+        out['adm_error'] = f'{type(e).__name__}: {e}'
+    try:
+        cams = fetch_sovereignty_campaigns(ua)
+        did = sorted({c['defender_id'] for c in cams if c.get('defender_id')})
+        try:
+            dnames = resolve_names(did, ua) if did else {}
+        except Exception:  # noqa: BLE001
+            dnames = {}
+        for c in cams:
+            sid = c.get('solar_system_id')
+            rec = systems.get(str(sid)) or {}
+            out['campaigns'].append({'system_id': sid, 'system': rec.get('name'), 'region': rec.get('region'),
+                                     'event_type': c.get('event_type'), 'start_time': c.get('start_time'),
+                                     'defender_id': c.get('defender_id'), 'defender': dnames.get(c.get('defender_id')),
+                                     'defender_score': c.get('defender_score'), 'attackers_score': c.get('attackers_score')})
+        out['campaigns'].sort(key=lambda x: x.get('start_time') or '~')
+    except Exception as e:  # noqa: BLE001
+        out['campaigns_error'] = f'{type(e).__name__}: {e}'
+    try:
+        for f in fetch_faction_warfare_systems(ua):
+            state = f.get('contested')
+            if state and state != 'uncontested':
+                thr = f.get('victory_points_threshold') or 0
+                out['fw'][str(f['solar_system_id'])] = {
+                    'contested': state, 'owner': f.get('owner_faction_id'), 'occupier': f.get('occupier_faction_id'),
+                    'pct': round(100 * (f.get('victory_points') or 0) / thr) if thr else 0}
+    except Exception as e:  # noqa: BLE001
+        out['fw_error'] = f'{type(e).__name__}: {e}'
+    _sov_cache.update(ts=now, data=out)
+    return out
 
 
 @app.get('/api/smt/route')

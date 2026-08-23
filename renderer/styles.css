@@ -2079,3 +2079,17 @@ body.popout-calc .pib-calc > summary { display: none; }
 .sm-thera-lbl { fill: #d6b8f0; font-size: 8px; pointer-events: none; }
 .sm-thera.is-turnur .sm-thera-lbl { fill: #9fe0e6; }
 .sm-route-wh { stroke: #b072e0; stroke-dasharray: 6 3; stroke-width: 2.6; }
+
+/* SMT sovereignty layer */
+.smt-ov[data-ov="sov"].on { background: #7a5cae; }
+.smt-sov-bar { padding: 0.45em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.smt-sov-bar[hidden] { display: none; }
+.smt-sov-row { display: flex; align-items: center; gap: 0.4em; font-size: 0.85em; color: #cde; flex-wrap: wrap; padding: 0.1em 0; }
+.smt-camp-ev { font-weight: 600; padding: 0 0.4em; border-radius: 10px; font-size: 0.85em; background: #3a2a16; color: #e0b56a; border: 1px solid #6b5028; }
+.smt-camp-t { color: #e0a34a; font-variant-numeric: tabular-nums; }
+.smt-camp-t.live { color: #ff7a7a; font-weight: 600; }
+.sm-adm { fill: #cbd6df; font-size: 7px; font-weight: 700; pointer-events: none; }
+.sm-adm.low { fill: #ff8a8a; }
+.sm-adm.high { fill: #7fd6a0; }
+.sm-camp { fill: none; stroke: #ff5a5a; stroke-width: 1.6; opacity: 0.9; animation: smt-camp-pulse 1.6s ease-in-out infinite; }
+@keyframes smt-camp-pulse { 0%,100% { r: 9; opacity: 0.85; } 50% { r: 13; opacity: 0.35; } }

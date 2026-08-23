@@ -1010,6 +1010,18 @@ def fetch_system_jumps(user_agent):
     return resp.json()
 
 
+def fetch_faction_warfare_systems(user_agent):
+    """All faction-warfare systems: owner/occupier faction, contested state and
+    victory points. Public, ~160 entries."""
+    resp = _session.get(
+        f'{ESI_BASE}/fw/systems/',
+        headers={'Accept': 'application/json', 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+    )
+    resp.raise_for_status()
+    return resp.json() or []
+
+
 def fetch_incursions(user_agent):
     """Active Sansha incursions across the cluster."""
     resp = _session.get(

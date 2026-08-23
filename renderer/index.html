@@ -960,11 +960,13 @@
           <button class="smt-ov on" type="button" data-ov="intel" title="Show intel reports on the map">Intel</button>
           <button class="smt-ov on" type="button" data-ov="kills" title="Show live zKillboard kills on the map">Kills</button>
           <button class="smt-ov on" type="button" data-ov="chars" title="Show your SMT characters + fleet on the map">Chars</button>
+          <button class="smt-ov" type="button" data-ov="sov" title="Colour by sovereignty, show ADM + contested systems">Sov</button>
         </div>
         <label class="smt-follow" title="Jump the map to wherever the newest intel is"><input type="checkbox" id="smt-follow" /> Follow intel</label>
         <button id="smt-route-btn" class="secondary" type="button" title="Plan a route (bridge / Thera-aware)">Route…</button>
         <button id="smt-bridges-btn" class="secondary" type="button" title="Manage your jump-bridge network">Bridges…</button>
         <button id="smt-thera-btn" class="secondary" type="button" title="Live Thera / Turnur connections (eve-scout)">Thera…</button>
+        <button id="smt-sov-btn" class="secondary" type="button" title="Active sov campaigns + faction-warfare timers">Sov…</button>
         <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
         <span id="smt-status" class="muted small"></span>
       </div>
@@ -981,6 +983,10 @@
       <div id="smt-thera-bar" class="smt-thera-bar" hidden>
         <div class="smt-thera-h muted small">Live Thera / Turnur connections to k-space <span id="smt-thera-status"></span></div>
         <div id="smt-thera-list" class="smt-thera-list"></div>
+      </div>
+      <div id="smt-sov-bar" class="smt-sov-bar" hidden>
+        <div class="smt-thera-h muted small">Active sovereignty campaigns <span id="smt-sov-status"></span> — tick <strong>Sov</strong> above to colour the map by holder + ADM</div>
+        <div id="smt-sov-list" class="smt-thera-list"></div>
       </div>
       <div id="smt-bridges-bar" class="smt-bridges-bar" hidden>
         <div class="smt-bridges-add">

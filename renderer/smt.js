@@ -13,8 +13,8 @@
   const st = {
     region: null, layout: null, index: null, byName: null, nodeEls: new Map(),
     intel: new Map(), kills: new Map(), feed: [],
-    chars: [], fleet: null, fleetMembers: [], bridges: [], thera: [], route: null,
-    intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true },
+    chars: [], fleet: null, fleetMembers: [], bridges: [], thera: [], sov: null, route: null,
+    intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true, sov: false },
     follow: false, loaded: false, poll: null, tick: null, charPoll: null,
     view: { s: 1, tx: 0, ty: 0 },
   };
@@ -62,6 +62,7 @@
       renderCharMarkers();
       renderBridges();
       renderTheraOnMap();
+      applySov();
       renderRoute();
       setStatus('');
       if (focusId) centerOn(focusId);
@@ -346,6 +347,59 @@
     root.appendChild(layer);
   }
 
+  // ---- sovereignty (holders + ADM + campaigns + FW) ----
+  function alliCol(id) { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff; return `hsl(${h % 360} 55% 45%)`; }
+  function fmtDur(ms) { let s = Math.floor(ms / 1000); const d = Math.floor(s / 86400); s -= d * 86400; const h = Math.floor(s / 3600); s -= h * 3600; const m = Math.floor(s / 60); const p = []; if (d) p.push(d + 'd'); if (h || d) p.push(h + 'h'); p.push(m + 'm'); return p.join(' '); }
+  async function loadSov() { try { st.sov = await j('/api/smt/sov'); renderSovPanel(); applySov(); } catch (_) { /* transient */ } }
+  function applySov() {
+    const root = $id('smt-root'); if (!root) return;
+    root.querySelectorAll('.smt-sovlayer').forEach((e) => e.remove());
+    const sov = st.sov || {};
+    st.nodeEls.forEach((el, id) => {
+      const dot = el.querySelector('.sm-dot'); if (!dot) return;
+      const sec = el.dataset.sec === '' ? null : parseFloat(el.dataset.sec);
+      if (!st.ov.sov) { dot.style.fill = secCol(sec); return; }
+      const h = (sov.holders || {})[id], fw = (sov.fw || {})[id];
+      if (h && h.alliance_id) dot.style.fill = alliCol(h.alliance_id);
+      else if (fw) dot.style.fill = '#c05a2f';
+      else dot.style.fill = secCol(sec);
+    });
+    if (!st.ov.sov || !st.layout) return;
+    const byId = new Map(st.layout.systems.map((s) => [String(s.id), s]));
+    const layer = document.createElementNS(SVGNS, 'g'); layer.setAttribute('class', 'smt-sovlayer');
+    for (const [sid, adm] of Object.entries(sov.adm || {})) {
+      const s = byId.get(sid); if (!s) continue;
+      const t = document.createElementNS(SVGNS, 'text'); t.setAttribute('class', `sm-adm${adm < 3 ? ' low' : adm >= 5 ? ' high' : ''}`); t.setAttribute('x', s.x); t.setAttribute('y', s.y + 14); t.setAttribute('text-anchor', 'middle'); t.textContent = Math.round(adm); layer.appendChild(t);
+    }
+    for (const c of (sov.campaigns || [])) {
+      const s = byId.get(String(c.system_id)); if (!s) continue;
+      const ring = document.createElementNS(SVGNS, 'circle'); ring.setAttribute('class', 'sm-camp'); ring.setAttribute('cx', s.x); ring.setAttribute('cy', s.y); ring.setAttribute('r', '10'); layer.appendChild(ring);
+    }
+    root.appendChild(layer);
+  }
+  function renderSovPanel() {
+    const box = $id('smt-sov-list'), stt = $id('smt-sov-status'); const sov = st.sov || {};
+    const cams = sov.campaigns || [], fwn = Object.keys(sov.fw || {}).length;
+    if (stt) stt.textContent = `· ${cams.length} campaign(s) · ${fwn} FW contested`;
+    if (!box) return;
+    if (!cams.length) { box.innerHTML = '<span class="muted small">No active sov campaigns right now.</span>'; return; }
+    const EV = { ihub_defense: 'IHUB', tcu_defense: 'TCU', station_defense: 'Station', station_freeport: 'Freeport' };
+    box.innerHTML = cams.map((c) => `<div class="smt-sov-row">
+      <span class="smt-camp-ev">${esc(EV[c.event_type] || c.event_type || '')}</span>
+      <button class="smt-thera-sys" data-region="${esc(c.region || '')}" data-id="${c.system_id}">${esc(c.system || c.system_id)}</button>
+      <span class="muted">${esc(c.region || '')} · def ${esc(c.defender || '?')} ${Math.round((c.defender_score || 0) * 100)}%</span>
+      <span class="smt-camp-t" data-start="${esc(c.start_time || '')}"></span></div>`).join('');
+    tickSov();
+  }
+  function tickSov() {
+    document.querySelectorAll('#smt-sov-list .smt-camp-t').forEach((el) => {
+      const iso = el.dataset.start; if (!iso) { el.textContent = ''; return; }
+      const ms = new Date(iso).getTime() - Date.now();
+      el.textContent = ms > 0 ? `starts in ${fmtDur(ms)}` : `live ${fmtDur(-ms)}`;
+      el.classList.toggle('live', ms <= 0);
+    });
+  }
+
   // ---- config (chat-logs folder + channels) ----
   async function loadConfig() {
     try {
@@ -405,6 +459,7 @@
       b.classList.toggle('on'); st.ov[b.dataset.ov] = b.classList.contains('on');
       applyLayers();
       if (b.dataset.ov === 'chars') { if (st.ov.chars) pollChars(); else { renderCharChips(); renderCharMarkers(); } }
+      if (b.dataset.ov === 'sov') { if (st.ov.sov && !st.sov) loadSov(); else applySov(); }
     }));
     $id('smt-chars')?.addEventListener('click', (e) => { const c = e.target.closest('.smt-char-chip'); if (c && c.dataset.region) showRegion(c.dataset.region, c.dataset.id); });
     // route + bridges panels
@@ -412,6 +467,8 @@
     $id('smt-bridges-btn')?.addEventListener('click', () => { const b = $id('smt-bridges-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadBridges(); } });
     $id('smt-thera-btn')?.addEventListener('click', () => { const b = $id('smt-thera-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadThera(); } });
     $id('smt-thera-list')?.addEventListener('click', (e) => { const s = e.target.closest('.smt-thera-sys'); if (s && s.dataset.region) showRegion(s.dataset.region, s.dataset.id); });
+    $id('smt-sov-btn')?.addEventListener('click', () => { const b = $id('smt-sov-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadSov(); } });
+    $id('smt-sov-list')?.addEventListener('click', (e) => { const s = e.target.closest('.smt-thera-sys'); if (s && s.dataset.region) showRegion(s.dataset.region, s.dataset.id); });
     $id('smt-route-go')?.addEventListener('click', runRoute);
     $id('smt-route-clear')?.addEventListener('click', clearRoute);
     $id('smt-route-from')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRoute(); });
@@ -437,12 +494,13 @@
     if (!st.loaded) {
       st.loaded = true; wire();
       Promise.all([loadRegions(), loadIndex()]).then(() => showRegion($id('smt-region')?.value || 'Delve')).catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
-      loadConfig(); loadBridges(); loadThera();
+      loadConfig(); loadBridges(); loadThera(); loadSov();
       pollLayers(); pollChars();
       st.theraPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadThera(); }, 120000);
+      st.sovPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadSov(); }, 180000);
       st.poll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollLayers(); }, 4000);
       st.charPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollChars(); }, 8000);
-      st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) applyLayers(); }, 1000);
+      st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) { applyLayers(); tickSov(); } }, 1000);
     } else if (st.layout) { fitView(); }
   }
 
