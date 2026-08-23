@@ -112,6 +112,7 @@ import industry
 import liquidation
 import pi as pi_planner
 import pi_layout
+import smt as smt_intel
 import stockpile
 try:
     import pyfa_engine  # vendored Pyfa eos fitting engine (optional; needs deps + eve.db)
@@ -802,6 +803,61 @@ def map_live():
         out['sov_error'] = f'{type(e).__name__}: {e}'
     _map_live_cache.update(ts=now, data=out)
     return out
+
+
+# ======================= SMT: intel + live activity =======================
+
+def _smt_boot():
+    """Load saved SMT config and start the intel + zKill collectors (once)."""
+    try:
+        cfg = load_config()
+        smt_intel.set_config(cfg.get('smt_log_dir'), cfg.get('smt_channels') or [])
+    except Exception:  # noqa: BLE001
+        pass
+    smt_intel.ensure_started()
+
+
+_smt_boot()
+
+
+class SMTConfig(BaseModel):
+    log_dir: Optional[str] = None
+    channels: Optional[list[str]] = None
+
+
+@app.get('/api/smt/config')
+def smt_config_get():
+    """Current intel config + the channels discoverable in the logs folder."""
+    cfg = smt_intel.get_config()
+    return {'log_dir': cfg['log_dir'], 'channels': cfg['channels'],
+            'available': smt_intel.list_channels(),
+            'log_dir_ok': bool(cfg['log_dir'] and os.path.isdir(cfg['log_dir'])),
+            'defaults': [d for d in smt_intel.DEFAULT_LOG_DIRS if os.path.isdir(d)]}
+
+
+@app.post('/api/smt/config')
+def smt_config_set(req: SMTConfig):
+    """Set the chat-logs folder + which intel channels to watch (persisted)."""
+    smt_intel.set_config(req.log_dir, req.channels or [])
+    cfg = load_config()
+    saved = smt_intel.get_config()
+    cfg['smt_log_dir'] = saved['log_dir']
+    cfg['smt_channels'] = saved['channels']
+    save_config(cfg)
+    return smt_config_get()
+
+
+@app.get('/api/smt/intel')
+def smt_intel_feed(since: float = 0.0):
+    """Intel events newer than `since` (epoch seconds). Each event carries the
+    matched system ids/names, the channel, the text and a clear flag."""
+    return smt_intel.get_intel(since)
+
+
+@app.get('/api/smt/kills')
+def smt_kills_feed(since: float = 0.0):
+    """Live zKillboard kills (RedisQ) newer than `since` (epoch seconds)."""
+    return smt_intel.get_kills(since)
 
 
 _pi_price_cache: dict[int, dict] = {}

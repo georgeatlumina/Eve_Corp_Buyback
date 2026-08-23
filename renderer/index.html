@@ -82,6 +82,13 @@
         </div>
       </div>
 
+      <div class="nav-group" data-group="smt">
+        <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">SMT</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-panel" role="menu">
+          <button class="tab-btn" data-tab="smt-intel">Intel Map</button>
+        </div>
+      </div>
+
       <div class="nav-group push-right" data-group="setup">
         <button class="nav-trigger" type="button" aria-haspopup="true" aria-expanded="false"><span class="nav-trigger-label">Settings</span><span class="nav-caret" aria-hidden="true">▾</span></button>
         <div class="nav-panel" role="menu">
@@ -938,6 +945,37 @@
       <div id="struct-results"></div>
     </section>
 
+    <section id="tab-smt-intel" class="tab smttab">
+      <div class="smt-toolbar">
+        <select id="smt-region" class="smt-region" title="Region"></select>
+        <div class="smt-search-wrap">
+          <input id="smt-search" list="smt-syslist" type="text" placeholder="Jump to system…" spellcheck="false" autocomplete="off" />
+          <datalist id="smt-syslist"></datalist>
+        </div>
+        <div class="smt-overlays" role="group" aria-label="Layers">
+          <button class="smt-ov on" type="button" data-ov="intel" title="Show intel reports on the map">Intel</button>
+          <button class="smt-ov on" type="button" data-ov="kills" title="Show live zKillboard kills on the map">Kills</button>
+        </div>
+        <label class="smt-follow" title="Jump the map to wherever the newest intel is"><input type="checkbox" id="smt-follow" /> Follow intel</label>
+        <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
+        <span id="smt-status" class="muted small"></span>
+      </div>
+      <div id="smt-config" class="smt-config" hidden>
+        <label class="smt-config-row">Chat-logs folder <input id="smt-logdir" type="text" placeholder="…/Documents/EVE/logs/Chatlogs" spellcheck="false" autocomplete="off" /> <button id="smt-detect" class="secondary" type="button">Detect</button></label>
+        <div class="smt-channels-h muted small">Intel channels to watch:</div>
+        <div id="smt-channels" class="smt-channels"><span class="muted">Set the folder above, then Detect to list channels.</span></div>
+        <div class="smt-config-actions"><button id="smt-save" type="button">Save</button> <span id="smt-config-status" class="muted small"></span></div>
+      </div>
+      <div class="smt-stage">
+        <div id="smt-canvas" class="smt-canvas"><svg id="smt-svg" xmlns="http://www.w3.org/2000/svg"><g id="smt-root"></g></svg></div>
+        <aside class="smt-feed">
+          <div class="smt-feed-h">Intel feed <span id="smt-feed-count" class="muted"></span></div>
+          <div id="smt-feed-list" class="smt-feed-list"></div>
+        </aside>
+      </div>
+      <p class="smt-foot muted small">Intel matcher &amp; live map ported from <a href="https://github.com/Slazanger/SMT" data-ext-link>Slazanger's SMT</a> (MIT). Intel is read from your local EVE chat-logs; kills stream live from zKillboard. Region layouts © Wollari &amp; CCP (Dotlan).</p>
+    </section>
+
     <section id="tab-pi-builder" class="tab">
       <details id="pi-planner" class="pi-planner-embed" open>
         <summary><strong>PI Planner</strong> — rank the most profitable P0→P4 chains a system can build</summary>
@@ -1613,6 +1651,7 @@
   <script src="zkill.js"></script>
   <script src="assets.js"></script>
   <script src="structures.js"></script>
+  <script src="smt.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
   <script src="fitting.js"></script>

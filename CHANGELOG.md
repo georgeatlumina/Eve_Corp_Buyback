@@ -4,6 +4,20 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.11.0 — SMT tab: Intel Map (live intel + kills)
+
+First slice of an SMT (Slazanger's Eve Map Tool) port, in a new **SMT** tab group.
+
+- **Intel Map** — an SMT-styled region map (separate from the Maps tab) with two live layers:
+  - **Intel** read from your local **EVE chat-logs**: point the app at your Chatlogs folder, tick the
+    intel channels, and reported systems glow red on the map (green for "clr") and **decay over ~10 min**,
+    with a live **intel feed** panel. The system-name matcher is ported from SMT.
+  - **Kills** — a live **zKillboard (RedisQ)** feed marking systems with recent kills.
+- Region picker, system search, layer toggles, and **Follow intel** (jump the map to the newest report).
+- Backend `/api/smt/*` collectors run in the background (chat-log tailing + RedisQ); nothing leaves your
+  machine except the public zKill stream. More SMT features (characters/fleet, jump bridges, Thera/Turnur,
+  sov campaigns, overlay) will follow in later releases.
+
 ## v3.10.0 — Structures tab: corp reinforcement timers
 
 - New **Structures** tab (under Combat) listing your corp's Upwell structures with their
