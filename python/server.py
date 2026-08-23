@@ -4862,13 +4862,32 @@ def save_stockpile(req: StockpileSave):
             'qty': int(p['qty']),
             'category': stockpile.classify(m, p['name']),
         })
+    store, commit, rc = _stockpile_persist(items, req.note)
+    return {
+        **store,
+        'storage': 'github' if (rc and rc.get('write_pat')) else 'local',
+        'totals': _stockpile_totals(store),
+        'commit_sha': (commit or {}).get('commit_sha'),
+        'commit_html_url': (commit or {}).get('commit_html_url'),
+        'unresolved': [p['name'] for p in parsed if not name_to_id.get(p['name'].lower())],
+    }
+
+
+def _stockpile_persist(items, note):
+    """Build, save-locally, and (if a write PAT is configured) push a
+    stockpile store from already-resolved `items`. Returns
+    (store, commit, rc) — commit is None when saved locally only. Raises
+    HTTPException(502) if a configured push fails (matches the paste path's
+    existing behavior)."""
+    cfg = load_config()
     store = {
         'updated_at': datetime.now(timezone.utc).isoformat(),
-        'note': (req.note or '').strip(),
+        'note': (note or '').strip(),
         'items': items,
     }
     rc = _stockpile_remote_cfg(cfg)
     commit = None
+    ua = get_user_agent()
     if rc and rc.get('write_pat'):
         try:
             try:
@@ -4892,13 +4911,46 @@ def save_stockpile(req: StockpileSave):
         cfg['stockpile_last_status'] = f'saved locally ({len(items)} item(s))'
         save_config(cfg)
     stockpile.save_store_local(store)
+    return store, commit, rc
+
+
+class StockpileHangarImport(BaseModel):
+    items: list[dict] = []
+    note: str = ''
+
+
+@app.post('/api/stockpile/import-hangars')
+def import_stockpile_from_hangars(req: StockpileHangarImport):
+    """Replace the stockpile store from an ESI corp-hangar scan. `items` are
+    already-resolved hangar contents from GET /api/corp/assets
+    (type_id/name/quantity/group_id/category_id) — no name resolution needed,
+    unlike the paste path. Always replaces, mirroring the paste-save's
+    replace-only semantics."""
+    cfg = load_config()
+    if not cfg.get('stockpile_allow_push'):
+        raise HTTPException(403, 'Stock editing is disabled (enable "Allow stock edits" in Config).')
+    items = []
+    for it in (req.items or []):
+        qty = int(it.get('quantity') or 0)
+        name = str(it.get('name') or '').strip()
+        if qty <= 0 or not name:
+            continue
+        meta = {'group_id': int(it.get('group_id') or 0), 'category_id': int(it.get('category_id') or 0)}
+        items.append({
+            'name': name,
+            'type_id': int(it.get('type_id') or 0),
+            'qty': qty,
+            'category': stockpile.classify(meta, name),
+        })
+    if not items:
+        raise HTTPException(400, 'No valid items to import.')
+    store, commit, rc = _stockpile_persist(items, req.note)
     return {
         **store,
         'storage': 'github' if (rc and rc.get('write_pat')) else 'local',
         'totals': _stockpile_totals(store),
         'commit_sha': (commit or {}).get('commit_sha'),
         'commit_html_url': (commit or {}).get('commit_html_url'),
-        'unresolved': [p['name'] for p in parsed if not name_to_id.get(p['name'].lower())],
     }
 
 
