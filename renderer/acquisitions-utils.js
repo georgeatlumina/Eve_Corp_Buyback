@@ -320,10 +320,30 @@ function computeShoppingGap(target, pool, market) {
   return { coverage, gapIsk, items };
 }
 
+// ---------------------------------------------------------------------------
+// Hangar-division filtering — shared by the Acquisitions and Stockpile ESI
+// scans. ESI's HangarAll (older/simple corp hangar setups) and CorpSAG1 (the
+// modern flag) both mean "Division 1"; canonicalHangarFlag collapses them so
+// a saved selection matches regardless of which flag a given corp reports.
+// ---------------------------------------------------------------------------
+
+function canonicalHangarFlag(flag) {
+  return flag === 'HangarAll' ? 'CorpSAG1' : flag;
+}
+
+/** Flatten the items of every hangar whose flag is in `selectedFlags`. */
+function filterItemsByHangar(hangars, selectedFlags) {
+  const selected = new Set((selectedFlags || []).map(canonicalHangarFlag));
+  return (hangars || [])
+    .filter((h) => selected.has(canonicalHangarFlag(h.flag)))
+    .flatMap((h) => h.items || []);
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     mergeInventory, splitInventory, formatJaniceExport, ACQ_HULL_CATEGORY_ID,
     ACQ_MARKET_THRESHOLD, ACQ_MODES, buildPool, fitModuleUnits, evaluateBuild,
     planAcquisitions, buildTargets, computeShoppingGap,
+    canonicalHangarFlag, filterItemsByHangar,
   };
 }

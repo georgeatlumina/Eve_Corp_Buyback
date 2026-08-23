@@ -549,3 +549,45 @@ describe('computeShoppingGap', () => {
     expect(item201.qty).toBe(0);
   });
 });
+
+// ── canonicalHangarFlag / filterItemsByHangar ────────────────────────────────
+
+const { canonicalHangarFlag, filterItemsByHangar } = require('../renderer/acquisitions-utils');
+
+describe('canonicalHangarFlag', () => {
+  test('collapses HangarAll into CorpSAG1', () => {
+    expect(canonicalHangarFlag('HangarAll')).toBe('CorpSAG1');
+  });
+
+  test('passes other flags through unchanged', () => {
+    expect(canonicalHangarFlag('CorpSAG3')).toBe('CorpSAG3');
+  });
+});
+
+describe('filterItemsByHangar', () => {
+  const hangars = [
+    { flag: 'CorpSAG1', items: [{ type_id: 34, name: 'Tritanium', quantity: 500 }] },
+    { flag: 'CorpSAG2', items: [{ type_id: 35, name: 'Pyerite', quantity: 100 }] },
+    { flag: 'CorpSAG3', items: [{ type_id: 36, name: 'Mexallon', quantity: 10 }] },
+  ];
+
+  test('returns only items from selected hangars', () => {
+    const items = filterItemsByHangar(hangars, ['CorpSAG1', 'CorpSAG3']);
+    expect(items.map((i) => i.name).sort()).toEqual(['Mexallon', 'Tritanium']);
+  });
+
+  test('empty selection returns no items', () => {
+    expect(filterItemsByHangar(hangars, [])).toEqual([]);
+  });
+
+  test('matches HangarAll-flagged hangars against a CorpSAG1 selection', () => {
+    const legacyHangars = [{ flag: 'HangarAll', items: [{ type_id: 34, name: 'Tritanium', quantity: 500 }] }];
+    const items = filterItemsByHangar(legacyHangars, ['CorpSAG1']);
+    expect(items).toHaveLength(1);
+  });
+
+  test('handles missing/undefined inputs', () => {
+    expect(filterItemsByHangar(null, ['CorpSAG1'])).toEqual([]);
+    expect(filterItemsByHangar(hangars, null)).toEqual([]);
+  });
+});
