@@ -21,3 +21,6 @@ scripts/shots/
 
 # Vendored Pyfa eos game DB (~96MB) IS committed (built from Pyfa staticdata via build_eve_db.py)
 python/pyfa/**/__pycache__/
+
+# Brainstorming visual-companion scratch (mockups)
+.superpowers/
