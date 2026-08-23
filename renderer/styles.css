@@ -949,6 +949,25 @@ body.liq-full main { max-width: none; }
 .inline-check { display: flex; align-items: center; gap: 0.4em; }
 .inline-check input { width: auto; }
 
+/* Shared corp-hangar-division picker (Acquisitions "Load corp inventory" +
+   Stockpile "Scan corp hangars") */
+.hangar-picker-toolbar { font-size: 0.78em; margin-bottom: 0.5em; }
+.hangar-picker-toolbar a { color: #8fb4ff; cursor: pointer; text-decoration: none; }
+.hangar-picker-toolbar a:hover { text-decoration: underline; }
+.hangar-picker-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.4em; margin-bottom: 0.6em;
+}
+.hangar-picker-row {
+  display: flex; align-items: center; gap: 0.5em; cursor: pointer;
+  background: #182230; border: 1px solid #263041; border-radius: 6px;
+  padding: 0.45em 0.6em; font-size: 0.85em; color: #cfd8e3;
+}
+.hangar-picker-row input { width: 15px; height: 15px; accent-color: #2b5fd9; }
+.hangar-picker-name { flex: 1; }
+.hangar-picker-count { color: #7d8ea3; font-size: 0.85em; }
+.hangar-picker-row.unchecked { opacity: 0.55; }
+
 /* ============================ Indy section ============================ */
 .error-text { color: #e07a5f; }
 .linklike { background: none; border: 0; color: #7ab7ff; cursor: pointer; padding: 0; font: inherit; }

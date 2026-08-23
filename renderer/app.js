@@ -5614,6 +5614,59 @@ const REASON_MESSAGES = {
   fetch_failed: 'ESI fetch failed. Check the sidecar log.',
 };
 
+// Shared checkbox grid for choosing which corp hangar divisions to include in
+// an ESI scan — used by both Acquisitions' "Load corp inventory" flow and the
+// Stockpile "Scan corp hangars" flow (stockpile.js loads after app.js and
+// reuses this global, same convention as $/API/escapeHtml). Renders into
+// `container`; the returned getSelectedFlags() reads live checkbox state on
+// every call, so callers don't need to re-render to see a toggle.
+function buildHangarPicker(container, hangars, selectedFlags) {
+  const hasSaved = (selectedFlags || []).length > 0;
+  const selectedSet = new Set(
+    hasSaved
+      ? selectedFlags.map(canonicalHangarFlag)
+      : (hangars || []).map((h) => canonicalHangarFlag(h.flag))
+  );
+  const rows = (hangars || []).map((h) => {
+    const checked = selectedSet.has(canonicalHangarFlag(h.flag));
+    return `<label class="hangar-picker-row${checked ? '' : ' unchecked'}" data-flag="${escapeHtml(h.flag)}">
+      <input type="checkbox" ${checked ? 'checked' : ''}>
+      <span class="hangar-picker-name">${escapeHtml(h.name)}</span>
+      <span class="hangar-picker-count">${h.item_count.toLocaleString()}</span>
+    </label>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="hangar-picker-toolbar">
+      <a href="#" data-action="all">Select all</a> &nbsp;|&nbsp; <a href="#" data-action="none">Select none</a>
+    </div>
+    <div class="hangar-picker-grid">${rows}</div>`;
+
+  const grid = container.querySelector('.hangar-picker-grid');
+  grid.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      cb.closest('.hangar-picker-row').classList.toggle('unchecked', !cb.checked);
+    });
+  });
+  container.querySelector('[data-action="all"]').addEventListener('click', (e) => {
+    e.preventDefault();
+    grid.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+      cb.checked = true;
+      cb.closest('.hangar-picker-row').classList.remove('unchecked');
+    });
+  });
+  container.querySelector('[data-action="none"]').addEventListener('click', (e) => {
+    e.preventDefault();
+    grid.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+      cb.checked = false;
+      cb.closest('.hangar-picker-row').classList.add('unchecked');
+    });
+  });
+
+  return () => Array.from(grid.querySelectorAll('input[type=checkbox]:checked'))
+    .map((cb) => cb.closest('.hangar-picker-row').dataset.flag);
+}
+
 async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
   const btn = root.querySelector('#acq-corp-load');
   const breakdownEl = root.querySelector('#acq-corp-breakdown');
