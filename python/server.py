@@ -6272,23 +6272,24 @@ def get_corp_assets():
         tid = int(type_id)
         if tid in local_meta:
             m = local_meta[tid]
-            return m.get('name', str(tid)), m.get('category_id')
+            return m.get('name', str(tid)), m.get('category_id'), m.get('group_id')
         if tid in enriched:
             m = enriched[tid]
-            return m.get('name', str(tid)), m.get('category_id')
-        return str(tid), None
+            return m.get('name', str(tid)), m.get('category_id'), m.get('group_id')
+        return str(tid), None, None
 
     # Group by hangar division.
     from collections import defaultdict
     by_flag = defaultdict(list)
     for a in hangar_items:
         flag = a.get('location_flag', 'HangarAll')
-        name, category_id = _resolve(a['type_id'])
+        name, category_id, group_id = _resolve(a['type_id'])
         by_flag[flag].append({
             'type_id': int(a['type_id']),
             'name': name,
             'quantity': int(a.get('quantity') or 1),
             'category_id': category_id,
+            'group_id': group_id,
         })
 
     hangars = []
