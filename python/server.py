@@ -216,6 +216,7 @@ class ConfigUpdate(BaseModel):
     market_history_pat_write: Optional[str] = None
     stockpile_group_name: Optional[str] = None
     stockpile_allow_push: Optional[bool] = None
+    hangar_selection_allow_push: Optional[bool] = None
     pi_poco_tax_rate: Optional[float] = None
     pi_templates_dir: Optional[str] = None
 
@@ -4929,19 +4930,26 @@ def import_stockpile_from_hangars(req: StockpileHangarImport):
     cfg = load_config()
     if not cfg.get('stockpile_allow_push'):
         raise HTTPException(403, 'Stock editing is disabled (enable "Allow stock edits" in Config).')
-    items = []
+    agg = {}
+    order = []
     for it in (req.items or []):
         qty = int(it.get('quantity') or 0)
         name = str(it.get('name') or '').strip()
         if qty <= 0 or not name:
             continue
-        meta = {'group_id': int(it.get('group_id') or 0), 'category_id': int(it.get('category_id') or 0)}
-        items.append({
-            'name': name,
-            'type_id': int(it.get('type_id') or 0),
-            'qty': qty,
-            'category': stockpile.classify(meta, name),
-        })
+        type_id = int(it.get('type_id') or 0)
+        key = type_id if type_id else name.lower()
+        if key not in agg:
+            meta = {'group_id': int(it.get('group_id') or 0), 'category_id': int(it.get('category_id') or 0)}
+            agg[key] = {
+                'name': name,
+                'type_id': type_id,
+                'qty': 0,
+                'category': stockpile.classify(meta, name),
+            }
+            order.append(key)
+        agg[key]['qty'] += qty
+    items = [agg[k] for k in order]
     if not items:
         raise HTTPException(400, 'No valid items to import.')
     store, commit, rc = _stockpile_persist(items, req.note)

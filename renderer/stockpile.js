@@ -269,17 +269,17 @@
         sp.loaded = true;
         render();
         statusEl.textContent = `Replaced stockpile with ${items.length.toLocaleString()} item(s) from corp hangars.`;
+        fetch(`${API}/api/hangar-selection`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ flags }),
+        }).catch(() => {});
       } catch (e) {
         statusEl.textContent = `Import failed: ${e.message || e}`;
       } finally {
         replaceBtn.disabled = false;
         breakdownEl.hidden = true;
       }
-      fetch(`${API}/api/hangar-selection`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ flags }),
-      }).catch(() => {});
     });
 
     $('#stockpile-corp-cancel').addEventListener('click', () => { breakdownEl.hidden = true; });

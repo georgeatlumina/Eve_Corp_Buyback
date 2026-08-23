@@ -575,6 +575,9 @@ async function loadConfig() {
   if ($('[name=stockpile_allow_push]')) {
     $('[name=stockpile_allow_push]').checked = !!cfg.stockpile_allow_push;
   }
+  if ($('[name=hangar_selection_allow_push]')) {
+    $('[name=hangar_selection_allow_push]').checked = !!cfg.hangar_selection_allow_push;
+  }
   updatePushButtonVisibility();
   renderQuotaSyncStatus(cfg);
   // Kick off the ship-types fetch in the background; the datalist becomes
@@ -702,6 +705,7 @@ function collectConfigForm() {
     market_history_pat_write: (fd.get('market_history_pat_write') || '').toString().trim(),
     stockpile_group_name: (fd.get('stockpile_group_name') || '').toString().trim(),
     stockpile_allow_push: $('[name=stockpile_allow_push]')?.checked || false,
+    hangar_selection_allow_push: $('[name=hangar_selection_allow_push]')?.checked || false,
     acq_shopping_min_coverage: parseFloat(fd.get('acq_shopping_min_coverage')) || 0.5,
     acq_shopping_max_isk_gap: parseFloat(fd.get('acq_shopping_max_isk_gap')) || 500_000_000,
   };
@@ -5716,6 +5720,7 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
   const applyCorpItems = async (mode) => {
     const flags = getSelectedFlags();
     const allItems = filterItemsByHangar(hangars, flags);
+    if (!allItems.length) { statusEl.textContent = 'No items in the selected hangars.'; return; }
     const hulls = allItems.filter((i) => i.category_id === 6);
     const items = allItems.filter((i) => i.category_id !== 6);
     if (mode === 'replace') {

@@ -24,11 +24,22 @@ def local_store(tmp_path):
         yield stockpile
 
 
+@pytest.fixture()
+def isolated_config(tmp_path):
+    """Isolate config.py's on-disk paths so save_config() (called internally
+    by _stockpile_persist) can never write to the real dev .eve_auth dir."""
+    import config
+    p = tmp_path / 'config.json'
+    with patch.object(config, 'CONFIG_PATH', str(p)), \
+         patch.object(config, 'AUTH_DIR', str(tmp_path)):
+        yield config
+
+
 class TestSaveStockpileRegression:
     """Guards that factoring out _stockpile_persist didn't change the
     existing paste-save endpoint's behavior."""
 
-    def test_paste_still_saves_locally_when_no_repo_configured(self, client, local_store):
+    def test_paste_still_saves_locally_when_no_repo_configured(self, client, local_store, isolated_config):
         cfg = {'stockpile_allow_push': True, 'market_history_repo_url': ''}
         with patch('server.load_config', return_value=cfg), \
              patch('server.resolve_type_ids', return_value={'tritanium': 34}), \
@@ -58,7 +69,7 @@ class TestImportHangars:
             resp = client.post('/api/stockpile/import-hangars', json={'items': []})
         assert resp.status_code == 400
 
-    def test_classifies_and_replaces_the_store(self, client, local_store):
+    def test_classifies_and_replaces_the_store(self, client, local_store, isolated_config):
         cfg = {'stockpile_allow_push': True, 'market_history_repo_url': ''}
         local_store.save_store_local({'updated_at': 'old', 'note': '', 'items': [
             {'name': 'Old Item', 'type_id': 1, 'qty': 1, 'category': 'other'},
@@ -80,7 +91,7 @@ class TestImportHangars:
         assert data['note'] == 'ESI hangar scan'
         assert data['storage'] == 'local'
 
-    def test_zero_quantity_items_are_dropped(self, client):
+    def test_zero_quantity_items_are_dropped(self, client, local_store, isolated_config):
         cfg = {'stockpile_allow_push': True, 'market_history_repo_url': ''}
         items = [
             {'type_id': 34, 'name': 'Tritanium', 'quantity': 5000, 'group_id': 18, 'category_id': 4},
@@ -90,3 +101,31 @@ class TestImportHangars:
             resp = client.post('/api/stockpile/import-hangars', json={'items': items})
         names = [i['name'] for i in resp.json()['items']]
         assert names == ['Tritanium']
+
+    def test_aggregates_duplicate_type_id_stacks(self, client, local_store, isolated_config):
+        cfg = {'stockpile_allow_push': True, 'market_history_repo_url': ''}
+        items = [
+            {'type_id': 34, 'name': 'Tritanium', 'quantity': 5000, 'group_id': 18, 'category_id': 4},
+            {'type_id': 34, 'name': 'Tritanium', 'quantity': 2500, 'group_id': 99, 'category_id': 99},
+        ]
+        with patch('server.load_config', return_value=cfg):
+            resp = client.post('/api/stockpile/import-hangars', json={'items': items})
+        data = resp.json()
+        assert len(data['items']) == 1
+        assert data['items'][0]['name'] == 'Tritanium'
+        assert data['items'][0]['qty'] == 7500
+        assert data['items'][0]['category'] == 'minerals'
+
+
+class TestClassifyByGroupId:
+    def test_minerals_via_group_id_not_name(self):
+        import stockpile
+        assert stockpile.classify({'group_id': 18, 'category_id': 4}, 'Some Exotic Ore') == 'minerals'
+
+    def test_pi_via_group_id(self):
+        import stockpile
+        assert stockpile.classify({'group_id': 1042, 'category_id': 0}, 'Some Raw Material') == 'pi'
+
+    def test_pi_via_category_id(self):
+        import stockpile
+        assert stockpile.classify({'group_id': 0, 'category_id': 43}, 'Some Commodity') == 'pi'
