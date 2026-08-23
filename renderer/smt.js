@@ -13,7 +13,7 @@
   const st = {
     region: null, layout: null, index: null, byName: null, nodeEls: new Map(),
     intel: new Map(), kills: new Map(), feed: [],
-    chars: [], fleet: null, fleetMembers: [],
+    chars: [], fleet: null, fleetMembers: [], bridges: [], route: null,
     intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true },
     follow: false, loaded: false, poll: null, tick: null, charPoll: null,
     view: { s: 1, tx: 0, ty: 0 },
@@ -60,6 +60,8 @@
       fitView();
       applyLayers();
       renderCharMarkers();
+      renderBridges();
+      renderRoute();
       setStatus('');
       if (focusId) centerOn(focusId);
     } catch (e) { setStatus(`Failed to load ${name}: ${e.message || e}`, true); }
@@ -226,6 +228,85 @@
     }).join('');
   }
 
+  // ---- jump bridges ----
+  const resolveSys = (name) => st.byName && st.byName.get((name || '').trim().toLowerCase());
+  async function loadBridges() {
+    try { const d = await j('/api/smt/bridges'); st.bridges = d.bridges || []; renderBridgeList(); renderBridges(); } catch (_) {}
+  }
+  async function saveBridges() {
+    const d = await j('/api/smt/bridges', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pairs: st.bridges.map((b) => [b.from.id, b.to.id]) }) });
+    st.bridges = d.bridges || []; renderBridgeList(); renderBridges();
+  }
+  async function addBridge() {
+    const f = resolveSys($id('smt-bridge-from')?.value), t = resolveSys($id('smt-bridge-to')?.value), s = $id('smt-bridge-status');
+    if (!f || !t) { if (s) s.textContent = 'Enter two valid systems.'; return; }
+    st.bridges.push({ from: { id: f.id, name: f.name, region: f.region }, to: { id: t.id, name: t.name, region: t.region } });
+    if ($id('smt-bridge-from')) $id('smt-bridge-from').value = ''; if ($id('smt-bridge-to')) $id('smt-bridge-to').value = '';
+    try { await saveBridges(); if (s) s.textContent = `${st.bridges.length} bridge(s)`; } catch (e) { if (s) s.textContent = 'Save failed'; }
+  }
+  async function pasteBridges() {
+    const box = $id('smt-bridge-pastebox'), s = $id('smt-bridge-status'); let added = 0;
+    for (const line of (box?.value || '').split('\n')) {
+      const found = [];
+      for (const tok of line.split(/[^0-9A-Za-z-]+/)) { const sys = resolveSys(tok); if (sys && !found.some((x) => x.id === sys.id)) { found.push(sys); if (found.length === 2) break; } }
+      if (found.length === 2) { st.bridges.push({ from: { id: found[0].id, name: found[0].name, region: found[0].region }, to: { id: found[1].id, name: found[1].name, region: found[1].region } }); added++; }
+    }
+    if (added) { try { await saveBridges(); if (box) { box.value = ''; box.hidden = true; } } catch (_) {} }
+    if (s) s.textContent = `Added ${added} · ${st.bridges.length} total`;
+  }
+  function renderBridgeList() {
+    const box = $id('smt-bridge-list'); if (!box) return;
+    if (!st.bridges.length) { box.innerHTML = '<span class="muted small">No jump bridges yet. Add a pair above, or paste a list.</span>'; return; }
+    box.innerHTML = st.bridges.map((b, i) => `<div class="smt-bridge-row"><button class="smt-bridge-jump" data-region="${esc(b.from.region || '')}" data-id="${b.from.id}">${esc(b.from.name)}</button> ⇄ <button class="smt-bridge-jump" data-region="${esc(b.to.region || '')}" data-id="${b.to.id}">${esc(b.to.name)}</button> <button class="smt-bridge-del linklike" data-i="${i}" title="Remove">✕</button></div>`).join('');
+  }
+  function renderBridges() {
+    const root = $id('smt-root'); if (!root) return;
+    root.querySelectorAll('.smt-blayer').forEach((e) => e.remove());
+    if (!st.layout) return;
+    const byId = new Map(st.layout.systems.map((s) => [String(s.id), s]));
+    const layer = document.createElementNS(SVGNS, 'g'); layer.setAttribute('class', 'smt-blayer');
+    for (const b of st.bridges) {
+      const s = byId.get(String(b.from.id)), d = byId.get(String(b.to.id));
+      if (s && d) { const ln = document.createElementNS(SVGNS, 'line'); ln.setAttribute('class', 'sm-bridge'); ln.setAttribute('x1', s.x); ln.setAttribute('y1', s.y); ln.setAttribute('x2', d.x); ln.setAttribute('y2', d.y); layer.appendChild(ln); }
+      else if (s || d) { const n = s || d, other = s ? b.to : b.from; const g = document.createElementNS(SVGNS, 'g'); g.setAttribute('class', 'sm-bridge-stub'); g.setAttribute('transform', `translate(${n.x},${n.y})`); g.innerHTML = `<circle r="9" class="sm-bridge-ring" /><text class="sm-bridge-lbl" x="11" y="13">⇄ ${esc(other.name || '')}</text>`; layer.appendChild(g); }
+    }
+    root.appendChild(layer);
+  }
+
+  // ---- routing (bridge-aware) ----
+  async function runRoute() {
+    const from = ($id('smt-route-from')?.value || '').trim(), to = ($id('smt-route-to')?.value || '').trim();
+    const pref = $id('smt-route-pref')?.value || 'shortest', info = $id('smt-route-info');
+    if (!from || !to) { if (info) info.textContent = 'Enter both systems.'; return; }
+    if (info) info.textContent = 'Routing…';
+    try {
+      const r = await j(`/api/smt/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&prefer=${pref}`);
+      if (r.error) { if (info) info.textContent = r.error; st.route = null; renderRoute(); return; }
+      st.route = r.systems;
+      if (info) info.textContent = `${r.jumps} jump${r.jumps === 1 ? '' : 's'}${r.bridges ? ` · ${r.bridges} via bridge` : ''}`;
+      const start = r.systems[0];
+      if (start && start.region && start.region !== st.region) await showRegion(start.region, start.id);
+      else renderRoute();
+      if (start) centerOn(start.id);
+    } catch (e) { if (info) info.textContent = `Route failed: ${e.message || e}`; }
+  }
+  function clearRoute() { st.route = null; renderRoute(); const i = $id('smt-route-info'); if (i) i.textContent = ''; ['smt-route-from', 'smt-route-to'].forEach((id) => { const e = $id(id); if (e) e.value = ''; }); }
+  function renderRoute() {
+    const root = $id('smt-root'); if (!root) return;
+    root.querySelectorAll('.smt-rlayer').forEach((e) => e.remove());
+    st.nodeEls.forEach((el) => el.classList.remove('sm-on-route'));
+    if (!st.route || !st.layout) return;
+    const byId = new Map(st.layout.systems.map((s) => [String(s.id), s]));
+    const layer = document.createElementNS(SVGNS, 'g'); layer.setAttribute('class', 'smt-rlayer');
+    for (let i = 0; i < st.route.length - 1; i++) {
+      const a = byId.get(String(st.route[i].id)), b = byId.get(String(st.route[i + 1].id));
+      if (a && b) { const ln = document.createElementNS(SVGNS, 'line'); ln.setAttribute('class', st.route[i + 1].via_bridge ? 'sm-route sm-route-bridge' : 'sm-route'); ln.setAttribute('x1', a.x); ln.setAttribute('y1', a.y); ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y); layer.appendChild(ln); }
+    }
+    root.appendChild(layer);
+    const set = new Set(st.route.map((s) => String(s.id)));
+    st.nodeEls.forEach((el, id) => el.classList.toggle('sm-on-route', set.has(id)));
+  }
+
   // ---- config (chat-logs folder + channels) ----
   async function loadConfig() {
     try {
@@ -287,6 +368,19 @@
       if (b.dataset.ov === 'chars') { if (st.ov.chars) pollChars(); else { renderCharChips(); renderCharMarkers(); } }
     }));
     $id('smt-chars')?.addEventListener('click', (e) => { const c = e.target.closest('.smt-char-chip'); if (c && c.dataset.region) showRegion(c.dataset.region, c.dataset.id); });
+    // route + bridges panels
+    $id('smt-route-btn')?.addEventListener('click', () => { const b = $id('smt-route-bar'); if (b) b.hidden = !b.hidden; });
+    $id('smt-bridges-btn')?.addEventListener('click', () => { const b = $id('smt-bridges-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadBridges(); } });
+    $id('smt-route-go')?.addEventListener('click', runRoute);
+    $id('smt-route-clear')?.addEventListener('click', clearRoute);
+    $id('smt-route-from')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRoute(); });
+    $id('smt-route-to')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRoute(); });
+    $id('smt-bridge-add')?.addEventListener('click', addBridge);
+    $id('smt-bridge-paste')?.addEventListener('click', () => { const b = $id('smt-bridge-pastebox'); if (b) { b.hidden = !b.hidden; if (!b.hidden) b.focus(); else pasteBridges(); } });
+    $id('smt-bridge-list')?.addEventListener('click', (e) => {
+      const del = e.target.closest('.smt-bridge-del'); if (del) { st.bridges.splice(+del.dataset.i, 1); saveBridges(); return; }
+      const jmp = e.target.closest('.smt-bridge-jump'); if (jmp && jmp.dataset.region) showRegion(jmp.dataset.region, jmp.dataset.id);
+    });
     $id('smt-follow')?.addEventListener('change', (e) => { st.follow = e.target.checked; });
     $id('smt-config-btn')?.addEventListener('click', () => { const c = $id('smt-config'); if (c) { c.hidden = !c.hidden; if (!c.hidden) loadConfig(); } });
     $id('smt-save')?.addEventListener('click', saveConfig);
@@ -302,7 +396,7 @@
     if (!st.loaded) {
       st.loaded = true; wire();
       Promise.all([loadRegions(), loadIndex()]).then(() => showRegion($id('smt-region')?.value || 'Delve')).catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
-      loadConfig();
+      loadConfig(); loadBridges();
       pollLayers(); pollChars();
       st.poll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollLayers(); }, 4000);
       st.charPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollChars(); }, 8000);

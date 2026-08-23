@@ -105,10 +105,12 @@ def _sec_band(sec):
     return 'high' if sec >= 0.45 else ('low' if sec > 0.0 else 'null')
 
 
-def route(src, dst, prefer='shortest'):
-    """Stargate route from src to dst (names or ids). ``prefer``:
+def route(src, dst, prefer='shortest', extra_edges=None):
+    """Route from src to dst (names or ids), optionally over extra jump-bridge
+    edges (``extra_edges`` = iterable of (a, b) system-id pairs). ``prefer``:
     ``shortest`` (fewest jumps), ``safe`` (prefer high-sec), ``unsafe`` (prefer
-    low/null). Returns {jumps, systems:[{id,name,region,sec}]} or {error}."""
+    low/null). Returns {jumps, bridges, systems:[{id,name,region,sec,via_bridge}]}
+    or {error}."""
     a, b = resolve_system(src), resolve_system(dst)
     if not a:
         return {'error': f'Unknown system: {src}'}
@@ -116,9 +118,24 @@ def route(src, dst, prefer='shortest'):
         return {'error': f'Unknown system: {dst}'}
     d = load_map()
     systems = d['systems']
-    adj = _adjacency()
+    base = _adjacency()
     if a == b:
         return {'jumps': 0, 'systems': [system_brief(a)]}
+
+    bridges = set()
+    if extra_edges:
+        adj = {k: set(v) for k, v in base.items()}
+        for x, y in extra_edges:
+            x, y = str(x), str(y)
+            if x in systems and y in systems:
+                adj.setdefault(x, set()).add(y)
+                adj.setdefault(y, set()).add(x)
+                bridges.add(frozenset((x, y)))
+    else:
+        adj = base
+
+    def via_bridge(u, v):
+        return frozenset((u, v)) in bridges and v not in base.get(u, ())
 
     def weight(sid):
         if prefer == 'shortest':
@@ -152,4 +169,10 @@ def route(src, dst, prefer='shortest'):
     while path[-1] != a:
         path.append(prev[path[-1]])
     path.reverse()
-    return {'jumps': len(path) - 1, 'prefer': prefer, 'systems': [system_brief(s) for s in path]}
+    out = []
+    for i, s in enumerate(path):
+        rec = system_brief(s)
+        rec['via_bridge'] = bool(i > 0 and via_bridge(path[i - 1], s))
+        out.append(rec)
+    return {'jumps': len(path) - 1, 'prefer': prefer, 'systems': out,
+            'bridges': sum(1 for r in out if r.get('via_bridge'))}

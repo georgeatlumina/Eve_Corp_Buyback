@@ -2039,3 +2039,24 @@ body.popout-calc .pib-calc > summary { display: none; }
 .smt-char.offline .smt-char-pill { stroke: #5b6b78; }
 .smt-char.fleet .smt-char-pill { stroke: #e0a83a; }
 .smt-char-lbl { fill: #dce8f2; font-size: 8px; font-family: "Segoe UI", system-ui, sans-serif; pointer-events: none; }
+
+/* SMT route + jump bridges */
+.smt-route-bar, .smt-bridges-bar { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; padding: 0.45em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.smt-route-bar[hidden], .smt-bridges-bar[hidden] { display: none; }
+.smt-bridges-bar { flex-direction: column; align-items: stretch; }
+.smt-bridges-add { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; }
+.smt-route-bar input, .smt-bridges-bar input, .smt-route-bar select { background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.3em 0.5em; }
+.smt-route-arrow { color: #789; }
+.smt-bridge-pastebox { width: 100%; min-height: 80px; background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.4em; font-family: monospace; font-size: 0.85em; resize: vertical; }
+.smt-bridge-list { display: flex; flex-direction: column; gap: 0.15em; max-height: 160px; overflow-y: auto; }
+.smt-bridge-row { display: flex; align-items: center; gap: 0.35em; font-size: 0.86em; color: #cde; }
+.smt-bridge-jump { background: #16232b; border: 1px solid #2f5a6b; color: #9fdce6; border-radius: 4px; padding: 0 0.4em; cursor: pointer; }
+.smt-bridge-jump:hover { background: #1f333d; }
+.smt-bridge-del { color: #e88; margin-left: 0.2em; }
+/* on-map bridges + route */
+.sm-bridge { stroke: #35c6d6; stroke-width: 1.4; stroke-dasharray: 4 3; opacity: 0.85; }
+.sm-bridge-ring { fill: none; stroke: #35c6d6; stroke-width: 1.2; stroke-dasharray: 3 2; }
+.sm-bridge-lbl { fill: #9fdce6; font-size: 8px; pointer-events: none; }
+.sm-route { stroke: #f0c040; stroke-width: 2.6; stroke-linecap: round; opacity: 0.95; }
+.sm-route-bridge { stroke: #35c6d6; stroke-dasharray: 5 3; }
+.sm-n.sm-on-route .sm-dot { stroke: #f0c040; stroke-width: 1.8; }

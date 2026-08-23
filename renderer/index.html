@@ -962,8 +962,31 @@
           <button class="smt-ov on" type="button" data-ov="chars" title="Show your SMT characters + fleet on the map">Chars</button>
         </div>
         <label class="smt-follow" title="Jump the map to wherever the newest intel is"><input type="checkbox" id="smt-follow" /> Follow intel</label>
+        <button id="smt-route-btn" class="secondary" type="button" title="Plan a route (bridge-aware)">Route…</button>
+        <button id="smt-bridges-btn" class="secondary" type="button" title="Manage your jump-bridge network">Bridges…</button>
         <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
         <span id="smt-status" class="muted small"></span>
+      </div>
+      <div id="smt-route-bar" class="smt-route-bar" hidden>
+        <input id="smt-route-from" list="smt-syslist" type="text" placeholder="From system" spellcheck="false" autocomplete="off" />
+        <span class="smt-route-arrow">→</span>
+        <input id="smt-route-to" list="smt-syslist" type="text" placeholder="To system" spellcheck="false" autocomplete="off" />
+        <select id="smt-route-pref" title="Routing preference"><option value="shortest">Shortest</option><option value="safe">Prefer high-sec</option><option value="unsafe">Prefer low / null</option></select>
+        <button id="smt-route-go" type="button">Route</button>
+        <button id="smt-route-clear" class="secondary" type="button">Clear</button>
+        <span id="smt-route-info" class="muted small"></span>
+      </div>
+      <div id="smt-bridges-bar" class="smt-bridges-bar" hidden>
+        <div class="smt-bridges-add">
+          <input id="smt-bridge-from" list="smt-syslist" type="text" placeholder="From system" spellcheck="false" autocomplete="off" />
+          <span class="smt-route-arrow">⇄</span>
+          <input id="smt-bridge-to" list="smt-syslist" type="text" placeholder="To system" spellcheck="false" autocomplete="off" />
+          <button id="smt-bridge-add" type="button">+ Add bridge</button>
+          <button id="smt-bridge-paste" class="secondary" type="button" title="Paste a list — one 'A - B' or 'A » B' per line">Paste list…</button>
+          <span id="smt-bridge-status" class="muted small"></span>
+        </div>
+        <textarea id="smt-bridge-pastebox" class="smt-bridge-pastebox" placeholder="Paste jump bridges, one per line (e.g. 1DQ1-A - ROIR-Y) …" hidden></textarea>
+        <div id="smt-bridge-list" class="smt-bridge-list"></div>
       </div>
       <div id="smt-config" class="smt-config" hidden>
         <label class="smt-config-row">Chat-logs folder <input id="smt-logdir" type="text" placeholder="…/Documents/EVE/logs/Chatlogs" spellcheck="false" autocomplete="off" /> <button id="smt-detect" class="secondary" type="button">Detect</button></label>

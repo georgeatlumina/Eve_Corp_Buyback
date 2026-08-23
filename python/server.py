@@ -957,6 +957,62 @@ def smt_characters():
     return {'characters': chars, 'fleet': fleet_info, 'fleet_members': fleet_members, 'authed': len(slots)}
 
 
+class SMTBridges(BaseModel):
+    pairs: list[list[int]] = []
+
+
+def _smt_bridges():
+    out = []
+    for p in (load_config().get('smt_jump_bridges') or []):
+        if isinstance(p, (list, tuple)) and len(p) == 2:
+            try:
+                out.append((int(p[0]), int(p[1])))
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _smt_sys_rec(sid):
+    s = eve_map.load_map()['systems'].get(str(sid)) or {}
+    return {'id': int(sid), 'name': s.get('name'), 'region': s.get('region'), 'sec': s.get('sec')}
+
+
+@app.get('/api/smt/bridges')
+def smt_bridges_get():
+    """The saved jump-bridge network — drawn on the SMT map and used for routing."""
+    return {'bridges': [{'from': _smt_sys_rec(a), 'to': _smt_sys_rec(b)} for a, b in _smt_bridges()]}
+
+
+@app.post('/api/smt/bridges')
+def smt_bridges_set(req: SMTBridges):
+    """Replace the jump-bridge network (a list of [from_id, to_id] pairs)."""
+    systems = eve_map.load_map()['systems']
+    clean, seen = [], set()
+    for p in (req.pairs or []):
+        if len(p) != 2:
+            continue
+        a, b = int(p[0]), int(p[1])
+        if str(a) not in systems or str(b) not in systems or a == b:
+            continue
+        key = frozenset((a, b))
+        if key not in seen:
+            seen.add(key)
+            clean.append([a, b])
+    cfg = load_config()
+    cfg['smt_jump_bridges'] = clean
+    save_config(cfg)
+    return smt_bridges_get()
+
+
+@app.get('/api/smt/route')
+def smt_route(src: str = Query(..., alias='from'), dst: str = Query(..., alias='to'),
+             prefer: str = 'shortest'):
+    """Bridge-aware route between two systems, over stargates + your saved bridges."""
+    if prefer not in ('shortest', 'safe', 'unsafe'):
+        prefer = 'shortest'
+    return eve_map.route(src, dst, prefer, extra_edges=_smt_bridges())
+
+
 _pi_price_cache: dict[int, dict] = {}
 _PI_PRICE_TTL = 300  # 5 min — plenty fresh for a per-day/month value estimate
 
