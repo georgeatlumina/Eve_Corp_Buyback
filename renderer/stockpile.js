@@ -193,11 +193,105 @@
     if (!sp.loaded) loadStockpile(false);
   }
 
+  const HANGAR_REASON_MESSAGES = {
+    missing_scope: 'Re-auth a Director character on the Auth tab — needs the esi-assets.read_corporation_assets.v1 scope.',
+    no_home_structure: 'Set your home structure ID in Config first.',
+    no_credentials: 'Auth credentials missing — check Config.',
+    fetch_failed: 'ESI fetch failed. Check the sidecar log.',
+  };
+
+  async function scanCorpHangars() {
+    const btn = $('#stockpile-corp-load');
+    const statusEl = $('#stockpile-corp-status');
+    const breakdownEl = $('#stockpile-corp-breakdown');
+    if (!btn || !statusEl || !breakdownEl) return;
+    btn.disabled = true;
+    statusEl.textContent = 'Loading corp inventory…';
+    breakdownEl.hidden = true;
+    breakdownEl.innerHTML = '';
+
+    let data, selection;
+    try {
+      const [assetsRes, selectionRes] = await Promise.all([
+        fetch(`${API}/api/corp/assets`),
+        fetch(`${API}/api/hangar-selection`),
+      ]);
+      data = await assetsRes.json();
+      selection = await selectionRes.json().catch(() => ({ selected_flags: [] }));
+    } catch (e) {
+      statusEl.textContent = 'Failed to reach sidecar.';
+      btn.disabled = false;
+      return;
+    }
+
+    if (!data.ok) {
+      statusEl.textContent = HANGAR_REASON_MESSAGES[data.reason] || `Error: ${data.reason}`;
+      btn.disabled = false;
+      return;
+    }
+
+    statusEl.textContent = '';
+    const hangars = data.hangars || [];
+    const totalItems = hangars.reduce((s, h) => s + h.item_count, 0);
+
+    breakdownEl.innerHTML = `
+      <div class="muted" style="margin-bottom:0.5rem">${totalItems.toLocaleString()} items across ${hangars.length} hangar division${hangars.length !== 1 ? 's' : ''} at the home structure</div>
+      <div id="stockpile-corp-picker"></div>
+      <div class="actions" style="margin-top:0.6rem">
+        <button id="stockpile-corp-replace" type="button">Replace stockpile</button>
+        <button id="stockpile-corp-cancel" type="button" class="link-btn">Cancel</button>
+      </div>`;
+    breakdownEl.hidden = false;
+
+    const getSelectedFlags = buildHangarPicker(
+      $('#stockpile-corp-picker'), hangars, selection.selected_flags || []
+    );
+
+    $('#stockpile-corp-replace').addEventListener('click', async () => {
+      const flags = getSelectedFlags();
+      const items = filterItemsByHangar(hangars, flags).map((i) => ({
+        type_id: i.type_id, name: i.name, quantity: i.quantity,
+        group_id: i.group_id, category_id: i.category_id,
+      }));
+      if (!items.length) { statusEl.textContent = 'No items in the selected hangars.'; return; }
+      const replaceBtn = $('#stockpile-corp-replace');
+      replaceBtn.disabled = true;
+      statusEl.textContent = 'Importing…';
+      try {
+        const res = await fetch(`${API}/api/stockpile/import-hangars`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items, note: 'ESI hangar scan' }),
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(result.detail || `HTTP ${res.status}`);
+        sp.data = result;
+        sp.loaded = true;
+        render();
+        statusEl.textContent = `Replaced stockpile with ${items.length.toLocaleString()} item(s) from corp hangars.`;
+      } catch (e) {
+        statusEl.textContent = `Import failed: ${e.message || e}`;
+      } finally {
+        replaceBtn.disabled = false;
+        breakdownEl.hidden = true;
+      }
+      fetch(`${API}/api/hangar-selection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flags }),
+      }).catch(() => {});
+    });
+
+    $('#stockpile-corp-cancel').addEventListener('click', () => { breakdownEl.hidden = true; });
+    btn.disabled = false;
+  }
+
   // ---- static wiring (elements exist at load) ----
   $('#stockpile-refresh')?.addEventListener('click', () => loadStockpile(true));
   $('#stockpile-search')?.addEventListener('input', (e) => { sp.search = e.target.value; renderSections(); });
   $('#stockpile-category')?.addEventListener('change', (e) => { sp.category = e.target.value; renderSections(); });
   $('#stockpile-save')?.addEventListener('click', saveStockpile);
   $('#stockpile-janice')?.addEventListener('click', copyJaniceAppraisal);
+  $('#stockpile-corp-load')?.addEventListener('click', scanCorpHangars);
   document.querySelector('.tab-btn[data-tab="stockpile"]')?.addEventListener('click', initStockpileTab);
 })();

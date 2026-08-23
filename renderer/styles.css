@@ -968,6 +968,9 @@ body.liq-full main { max-width: none; }
 .hangar-picker-count { color: #7d8ea3; font-size: 0.85em; }
 .hangar-picker-row.unchecked { opacity: 0.55; }
 
+.stockpile-hangar-scan { margin-top: 1.2em; padding-top: 1em; border-top: 1px solid #3a3a3a; }
+.stockpile-hangar-scan > .muted { margin-bottom: 0.5em; }
+
 /* ============================ Indy section ============================ */
 .error-text { color: #e07a5f; }
 .linklike { background: none; border: 0; color: #7ab7ff; cursor: pointer; padding: 0; font: inherit; }
