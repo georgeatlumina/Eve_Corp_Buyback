@@ -125,6 +125,7 @@ import pi as pi_planner
 import pi_layout
 import smt as smt_intel
 import stockpile
+import hangar_selection
 try:
     import pyfa_engine  # vendored Pyfa eos fitting engine (optional; needs deps + eve.db)
 except Exception as _e:  # pragma: no cover - keeps the sidecar up if eos/deps missing
@@ -4716,6 +4717,73 @@ def _stockpile_remote_cfg(cfg):
     """GitHub location for the stock store, in the shared alliance repo."""
     rc = _share_remote_cfg(cfg)
     return {**rc, 'path': _STOCKPILE_STORE_PATH} if rc else None
+
+
+_HANGAR_SELECTION_PATH = 'hangar-selection.json'
+
+
+def _hangar_selection_remote_cfg(cfg):
+    """GitHub location for the shared hangar-division selection, in the same
+    alliance repo as stockpile/doctrine-stock/builds."""
+    rc = _share_remote_cfg(cfg)
+    return {**rc, 'path': _HANGAR_SELECTION_PATH} if rc else None
+
+
+def _hangar_selection_read():
+    """Return (selection, rc). Prefers GitHub, falls back to the local cache
+    on any remote failure — same convention as _stockpile_read_store."""
+    cfg = load_config()
+    rc = _hangar_selection_remote_cfg(cfg)
+    if not rc:
+        return hangar_selection.load_selection_local(), None
+    ua = get_user_agent()
+    try:
+        text, _sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                          rc['path'], rc['read_pat'], ua)
+        selection = hangar_selection.normalize(json.loads(text))
+        hangar_selection.save_selection_local(selection)  # refresh cache
+        return selection, rc
+    except FileNotFoundError:
+        return hangar_selection.empty_selection(), rc  # first write creates the file
+    except Exception:
+        return hangar_selection.load_selection_local(), rc
+
+
+@app.get('/api/hangar-selection')
+def get_hangar_selection():
+    selection, rc = _hangar_selection_read()
+    return {**selection, 'storage': 'github' if rc else 'local'}
+
+
+class HangarSelectionSave(BaseModel):
+    flags: list[str] = []
+
+
+@app.post('/api/hangar-selection')
+def save_hangar_selection(req: HangarSelectionSave):
+    cfg = load_config()
+    if not cfg.get('hangar_selection_allow_push'):
+        raise HTTPException(403, 'Hangar-selection sync is disabled (enable it in Config).')
+    selection = hangar_selection.normalize({
+        'selected_flags': req.flags,
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    })
+    hangar_selection.save_selection_local(selection)
+    rc = _hangar_selection_remote_cfg(cfg)
+    if rc and rc.get('write_pat'):
+        ua = get_user_agent()
+        try:
+            try:
+                _text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                                  rc['path'], rc['read_pat'], ua)
+            except FileNotFoundError:
+                sha = None  # first write creates the file
+            _github_contents_put(rc['owner'], rc['repo'], rc['branch'], rc['path'],
+                                 json.dumps(selection, indent=2), sha, rc['write_pat'],
+                                 ua, 'hangar-selection: update')
+        except Exception:
+            pass  # non-fatal — the local save above already succeeded
+    return {**selection, 'storage': 'github' if (rc and rc.get('write_pat')) else 'local'}
 
 
 def _stockpile_totals(store):
