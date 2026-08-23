@@ -5675,10 +5675,14 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
   breakdownEl.hidden = true;
   breakdownEl.innerHTML = '';
 
-  let data;
+  let data, selection;
   try {
-    const res = await fetch(`${API}/api/corp/assets`);
-    data = await res.json();
+    const [assetsRes, selectionRes] = await Promise.all([
+      fetch(`${API}/api/corp/assets`),
+      fetch(`${API}/api/hangar-selection`),
+    ]);
+    data = await assetsRes.json();
+    selection = await selectionRes.json().catch(() => ({ selected_flags: [] }));
   } catch (e) {
     statusEl.textContent = 'Failed to reach sidecar.';
     btn.disabled = false;
@@ -5695,21 +5699,23 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
   const hangars = data.hangars || [];
   const totalItems = hangars.reduce((s, h) => s + h.item_count, 0);
 
-  // Build hangar summary lines
-  const hangarLines = hangars.map((h) => `${h.name} · ${h.item_count.toLocaleString()} items`).join(' &nbsp;|&nbsp; ');
-
-  // Flatten all items from all hangars
-  const allItems = hangars.flatMap((h) => h.items);
-
   breakdownEl.innerHTML = `
-    <div style="color:#8899aa;margin-bottom:0.4rem">${totalItems.toLocaleString()} items across ${hangars.length} hangar division${hangars.length !== 1 ? 's' : ''} &nbsp;—&nbsp; ${hangarLines}</div>
-    <div style="display:flex;gap:0.5rem">
+    <div style="color:#8899aa;margin-bottom:0.5rem">${totalItems.toLocaleString()} items across ${hangars.length} hangar division${hangars.length !== 1 ? 's' : ''} at the home structure</div>
+    <div id="acq-corp-picker"></div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
       <button id="acq-corp-add" class="btn">Add to inventory</button>
       <button id="acq-corp-replace" class="btn">Replace inventory</button>
+      <button id="acq-corp-cancel" class="link-btn" style="color:#8899aa">Cancel</button>
     </div>`;
   breakdownEl.hidden = false;
 
+  const getSelectedFlags = buildHangarPicker(
+    breakdownEl.querySelector('#acq-corp-picker'), hangars, selection.selected_flags || []
+  );
+
   const applyCorpItems = async (mode) => {
+    const flags = getSelectedFlags();
+    const allItems = filterItemsByHangar(hangars, flags);
     const hulls = allItems.filter((i) => i.category_id === 6);
     const items = allItems.filter((i) => i.category_id !== 6);
     if (mode === 'replace') {
@@ -5733,10 +5739,16 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
     statusEl.textContent = mode === 'replace' ? 'Replaced inventory with corp inventory.' : 'Added corp inventory to existing inventory.';
     setTimeout(() => { statusEl.textContent = ''; }, 3000);
     breakdownEl.hidden = true;
+    fetch(`${API}/api/hangar-selection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flags }),
+    }).catch(() => {});
   };
 
   breakdownEl.querySelector('#acq-corp-add').addEventListener('click', () => applyCorpItems('add'));
   breakdownEl.querySelector('#acq-corp-replace').addEventListener('click', () => applyCorpItems('replace'));
+  breakdownEl.querySelector('#acq-corp-cancel').addEventListener('click', () => { breakdownEl.hidden = true; });
   btn.disabled = false;
 }
 
