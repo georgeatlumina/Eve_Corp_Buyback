@@ -105,29 +105,45 @@ def _sec_band(sec):
     return 'high' if sec >= 0.45 else ('low' if sec > 0.0 else 'null')
 
 
-def route(src, dst, prefer='shortest', extra_edges=None):
-    """Route from src to dst (names or ids), optionally over extra jump-bridge
-    edges (``extra_edges`` = iterable of (a, b) system-id pairs). ``prefer``:
-    ``shortest`` (fewest jumps), ``safe`` (prefer high-sec), ``unsafe`` (prefer
-    low/null). Returns {jumps, bridges, systems:[{id,name,region,sec,via_bridge}]}
-    or {error}."""
-    a, b = resolve_system(src), resolve_system(dst)
+def route(src, dst, prefer='shortest', extra_edges=None, virtual=None):
+    """Route from src to dst (names or ids), optionally over extra edges
+    (``extra_edges`` = iterable of (a, b) system-id pairs — jump bridges,
+    Thera/Turnur connections). ``virtual`` = {id: name} for nodes not in the
+    bundled dataset (e.g. Thera). ``prefer``: ``shortest`` (fewest jumps),
+    ``safe`` (prefer high-sec), ``unsafe`` (prefer low/null). Returns
+    {jumps, bridges, systems:[{id,name,region,sec,via_bridge}]} or {error}."""
+    virtual = {str(k): v for k, v in (virtual or {}).items()}
+    d = load_map()
+    systems = d['systems']
+    base = _adjacency()
+
+    def resolvable(sid):
+        return sid in systems or sid in virtual
+
+    def resolve(token):
+        r = resolve_system(token)
+        if r:
+            return r
+        s = str(token).strip()
+        if s in virtual:
+            return s
+        low = s.lower()
+        return next((vid for vid, nm in virtual.items() if (nm or '').lower() == low), None)
+
+    a, b = resolve(src), resolve(dst)
     if not a:
         return {'error': f'Unknown system: {src}'}
     if not b:
         return {'error': f'Unknown system: {dst}'}
-    d = load_map()
-    systems = d['systems']
-    base = _adjacency()
     if a == b:
-        return {'jumps': 0, 'systems': [system_brief(a)]}
+        return {'jumps': 0, 'systems': [_route_brief(a, virtual)]}
 
     bridges = set()
     if extra_edges:
         adj = {k: set(v) for k, v in base.items()}
         for x, y in extra_edges:
             x, y = str(x), str(y)
-            if x in systems and y in systems:
+            if resolvable(x) and resolvable(y):
                 adj.setdefault(x, set()).add(y)
                 adj.setdefault(y, set()).add(x)
                 bridges.add(frozenset((x, y)))
@@ -140,7 +156,7 @@ def route(src, dst, prefer='shortest', extra_edges=None):
     def weight(sid):
         if prefer == 'shortest':
             return 1
-        band = _sec_band(systems.get(sid, {}).get('sec'))
+        band = _sec_band((systems.get(sid) or {}).get('sec'))   # virtual -> null band
         if prefer == 'safe':
             return 1 if band == 'high' else 5000
         if prefer == 'unsafe':
@@ -171,8 +187,16 @@ def route(src, dst, prefer='shortest', extra_edges=None):
     path.reverse()
     out = []
     for i, s in enumerate(path):
-        rec = system_brief(s)
+        rec = _route_brief(s, virtual)
         rec['via_bridge'] = bool(i > 0 and via_bridge(path[i - 1], s))
         out.append(rec)
     return {'jumps': len(path) - 1, 'prefer': prefer, 'systems': out,
             'bridges': sum(1 for r in out if r.get('via_bridge'))}
+
+
+def _route_brief(sid, virtual):
+    """system_brief that also handles virtual (Thera/off-map) nodes."""
+    sid = str(sid)
+    if sid in (virtual or {}):
+        return {'id': int(sid) if sid.isdigit() else sid, 'name': virtual[sid], 'region': 'Wormhole', 'sec': None}
+    return system_brief(sid)

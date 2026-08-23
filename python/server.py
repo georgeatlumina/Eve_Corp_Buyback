@@ -1004,13 +1004,47 @@ def smt_bridges_set(req: SMTBridges):
     return smt_bridges_get()
 
 
+@app.get('/api/smt/thera')
+def smt_thera():
+    """Live Thera + Turnur wormhole connections to k-space (from eve-scout),
+    each with wh type, max ship size and remaining life."""
+    return smt_intel.get_thera()
+
+
 @app.get('/api/smt/route')
 def smt_route(src: str = Query(..., alias='from'), dst: str = Query(..., alias='to'),
-             prefer: str = 'shortest'):
-    """Bridge-aware route between two systems, over stargates + your saved bridges."""
+             prefer: str = 'shortest', wh: bool = True):
+    """Route between two systems over stargates + your saved jump bridges, and
+    (when ``wh``) live Thera/Turnur wormhole connections. Each hop is tagged
+    ``via`` = gate | bridge | thera | turnur."""
     if prefer not in ('shortest', 'safe', 'unsafe'):
         prefer = 'shortest'
-    return eve_map.route(src, dst, prefer, extra_edges=_smt_bridges())
+    bridge_edges = _smt_bridges()
+    thera = smt_intel.thera_edges() if wh else []
+    r = eve_map.route(src, dst, prefer, extra_edges=bridge_edges + thera,
+                      virtual=(smt_intel.THERA_VIRTUAL if wh else {}))
+    if r.get('error'):
+        return r
+    bridge_set = {frozenset((str(a), str(b))) for a, b in bridge_edges}
+    syss = r['systems']
+    for i in range(1, len(syss)):
+        if not syss[i].get('via_bridge'):
+            syss[i]['via'] = 'gate'
+            continue
+        pair = frozenset((str(syss[i - 1]['id']), str(syss[i]['id'])))
+        ids = {syss[i - 1]['id'], syss[i]['id']}
+        if pair in bridge_set:
+            syss[i]['via'] = 'bridge'
+        elif 31000005 in ids:
+            syss[i]['via'] = 'thera'
+        elif 30002086 in ids:
+            syss[i]['via'] = 'turnur'
+        else:
+            syss[i]['via'] = 'bridge'
+    if syss:
+        syss[0]['via'] = 'start'
+    r['wh_hops'] = sum(1 for s in syss if s.get('via') in ('thera', 'turnur'))
+    return r
 
 
 _pi_price_cache: dict[int, dict] = {}

@@ -13,7 +13,7 @@
   const st = {
     region: null, layout: null, index: null, byName: null, nodeEls: new Map(),
     intel: new Map(), kills: new Map(), feed: [],
-    chars: [], fleet: null, fleetMembers: [], bridges: [], route: null,
+    chars: [], fleet: null, fleetMembers: [], bridges: [], thera: [], route: null,
     intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true },
     follow: false, loaded: false, poll: null, tick: null, charPoll: null,
     view: { s: 1, tx: 0, ty: 0 },
@@ -61,6 +61,7 @@
       applyLayers();
       renderCharMarkers();
       renderBridges();
+      renderTheraOnMap();
       renderRoute();
       setStatus('');
       if (focusId) centerOn(focusId);
@@ -277,13 +278,16 @@
   async function runRoute() {
     const from = ($id('smt-route-from')?.value || '').trim(), to = ($id('smt-route-to')?.value || '').trim();
     const pref = $id('smt-route-pref')?.value || 'shortest', info = $id('smt-route-info');
+    const wh = $id('smt-route-wh')?.checked ? 1 : 0;
     if (!from || !to) { if (info) info.textContent = 'Enter both systems.'; return; }
     if (info) info.textContent = 'Routing…';
     try {
-      const r = await j(`/api/smt/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&prefer=${pref}`);
+      const r = await j(`/api/smt/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&prefer=${pref}&wh=${wh}`);
       if (r.error) { if (info) info.textContent = r.error; st.route = null; renderRoute(); return; }
       st.route = r.systems;
-      if (info) info.textContent = `${r.jumps} jump${r.jumps === 1 ? '' : 's'}${r.bridges ? ` · ${r.bridges} via bridge` : ''}`;
+      const bridgeHops = (r.systems || []).filter((s) => s.via === 'bridge').length;
+      const extra = [bridgeHops ? `${bridgeHops} bridge` : '', r.wh_hops ? `${r.wh_hops} WH` : ''].filter(Boolean).join(' · ');
+      if (info) info.textContent = `${r.jumps} jump${r.jumps === 1 ? '' : 's'}${extra ? ` · ${extra}` : ''}`;
       const start = r.systems[0];
       if (start && start.region && start.region !== st.region) await showRegion(start.region, start.id);
       else renderRoute();
@@ -300,11 +304,46 @@
     const layer = document.createElementNS(SVGNS, 'g'); layer.setAttribute('class', 'smt-rlayer');
     for (let i = 0; i < st.route.length - 1; i++) {
       const a = byId.get(String(st.route[i].id)), b = byId.get(String(st.route[i + 1].id));
-      if (a && b) { const ln = document.createElementNS(SVGNS, 'line'); ln.setAttribute('class', st.route[i + 1].via_bridge ? 'sm-route sm-route-bridge' : 'sm-route'); ln.setAttribute('x1', a.x); ln.setAttribute('y1', a.y); ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y); layer.appendChild(ln); }
+      if (a && b) { const via = st.route[i + 1].via; const cls = via === 'thera' || via === 'turnur' ? ' sm-route-wh' : (via === 'bridge' ? ' sm-route-bridge' : ''); const ln = document.createElementNS(SVGNS, 'line'); ln.setAttribute('class', 'sm-route' + cls); ln.setAttribute('x1', a.x); ln.setAttribute('y1', a.y); ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y); layer.appendChild(ln); }
     }
     root.appendChild(layer);
     const set = new Set(st.route.map((s) => String(s.id)));
     st.nodeEls.forEach((el, id) => el.classList.toggle('sm-on-route', set.has(id)));
+  }
+
+  // ---- Thera / Turnur connections (eve-scout) ----
+  async function loadThera() {
+    try {
+      const d = await j('/api/smt/thera');
+      st.thera = d.connections || [];
+      renderTheraList(d.error, d.ts);
+      renderTheraOnMap();
+    } catch (_) { /* transient */ }
+  }
+  function renderTheraList(err, ts) {
+    const box = $id('smt-thera-list'), stt = $id('smt-thera-status');
+    if (stt) stt.textContent = err ? `— ${err}` : (st.thera.length ? `· ${st.thera.length} connection(s)${ts ? ' · ' + new Date(ts * 1000).toLocaleTimeString() : ''}` : '');
+    if (!box) return;
+    if (!st.thera.length) { box.innerHTML = '<span class="muted small">No connections right now (or eve-scout unreachable).</span>'; return; }
+    box.innerHTML = st.thera.map((c) => `<div class="smt-thera-row">
+      <span class="smt-thera-hub ${c.hub === 'Thera' ? 'is-thera' : 'is-turnur'}">${esc(c.hub)}</span> →
+      <button class="smt-thera-sys" data-region="${esc(c.region || '')}" data-id="${c.system_id}">${esc(c.system)}</button>
+      <span class="muted">${esc(c.region || '')} · ${esc(c.wh_type || '')} · ${esc(c.max_ship_size || '')} · ${c.remaining_hours != null ? c.remaining_hours + 'h' : '?'}</span></div>`).join('');
+  }
+  function renderTheraOnMap() {
+    const root = $id('smt-root'); if (!root) return;
+    root.querySelectorAll('.smt-tlayer').forEach((e) => e.remove());
+    if (!st.layout || !st.thera.length) return;
+    const byId = new Map(st.layout.systems.map((s) => [String(s.id), s]));
+    const layer = document.createElementNS(SVGNS, 'g'); layer.setAttribute('class', 'smt-tlayer');
+    for (const c of st.thera) {
+      const n = byId.get(String(c.system_id)); if (!n) continue;
+      const g = document.createElementNS(SVGNS, 'g'); g.setAttribute('class', 'sm-thera ' + (c.hub === 'Thera' ? 'is-thera' : 'is-turnur'));
+      g.setAttribute('transform', `translate(${n.x},${n.y})`);
+      g.innerHTML = `<circle r="8" class="sm-thera-ring" /><text class="sm-thera-lbl" x="10" y="-6">⨀ ${esc(c.hub)}</text>`;
+      layer.appendChild(g);
+    }
+    root.appendChild(layer);
   }
 
   // ---- config (chat-logs folder + channels) ----
@@ -371,6 +410,8 @@
     // route + bridges panels
     $id('smt-route-btn')?.addEventListener('click', () => { const b = $id('smt-route-bar'); if (b) b.hidden = !b.hidden; });
     $id('smt-bridges-btn')?.addEventListener('click', () => { const b = $id('smt-bridges-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadBridges(); } });
+    $id('smt-thera-btn')?.addEventListener('click', () => { const b = $id('smt-thera-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadThera(); } });
+    $id('smt-thera-list')?.addEventListener('click', (e) => { const s = e.target.closest('.smt-thera-sys'); if (s && s.dataset.region) showRegion(s.dataset.region, s.dataset.id); });
     $id('smt-route-go')?.addEventListener('click', runRoute);
     $id('smt-route-clear')?.addEventListener('click', clearRoute);
     $id('smt-route-from')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRoute(); });
@@ -396,8 +437,9 @@
     if (!st.loaded) {
       st.loaded = true; wire();
       Promise.all([loadRegions(), loadIndex()]).then(() => showRegion($id('smt-region')?.value || 'Delve')).catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
-      loadConfig(); loadBridges();
+      loadConfig(); loadBridges(); loadThera();
       pollLayers(); pollChars();
+      st.theraPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadThera(); }, 120000);
       st.poll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollLayers(); }, 4000);
       st.charPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollChars(); }, 8000);
       st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) applyLayers(); }, 1000);

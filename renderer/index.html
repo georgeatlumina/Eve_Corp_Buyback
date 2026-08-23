@@ -962,8 +962,9 @@
           <button class="smt-ov on" type="button" data-ov="chars" title="Show your SMT characters + fleet on the map">Chars</button>
         </div>
         <label class="smt-follow" title="Jump the map to wherever the newest intel is"><input type="checkbox" id="smt-follow" /> Follow intel</label>
-        <button id="smt-route-btn" class="secondary" type="button" title="Plan a route (bridge-aware)">Route…</button>
+        <button id="smt-route-btn" class="secondary" type="button" title="Plan a route (bridge / Thera-aware)">Route…</button>
         <button id="smt-bridges-btn" class="secondary" type="button" title="Manage your jump-bridge network">Bridges…</button>
+        <button id="smt-thera-btn" class="secondary" type="button" title="Live Thera / Turnur connections (eve-scout)">Thera…</button>
         <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
         <span id="smt-status" class="muted small"></span>
       </div>
@@ -972,9 +973,14 @@
         <span class="smt-route-arrow">→</span>
         <input id="smt-route-to" list="smt-syslist" type="text" placeholder="To system" spellcheck="false" autocomplete="off" />
         <select id="smt-route-pref" title="Routing preference"><option value="shortest">Shortest</option><option value="safe">Prefer high-sec</option><option value="unsafe">Prefer low / null</option></select>
+        <label class="smt-route-wh" title="Allow Thera / Turnur wormhole connections"><input type="checkbox" id="smt-route-wh" checked /> via WH</label>
         <button id="smt-route-go" type="button">Route</button>
         <button id="smt-route-clear" class="secondary" type="button">Clear</button>
         <span id="smt-route-info" class="muted small"></span>
+      </div>
+      <div id="smt-thera-bar" class="smt-thera-bar" hidden>
+        <div class="smt-thera-h muted small">Live Thera / Turnur connections to k-space <span id="smt-thera-status"></span></div>
+        <div id="smt-thera-list" class="smt-thera-list"></div>
       </div>
       <div id="smt-bridges-bar" class="smt-bridges-bar" hidden>
         <div class="smt-bridges-add">

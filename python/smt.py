@@ -197,6 +197,63 @@ def _poll_zkill_once():
         time.sleep(5)
 
 
+# ---- Thera / Turnur wormhole connections (eve-scout) ------------------------
+_HUBS = {31000005: 'Thera', 30002086: 'Turnur'}
+_thera = {'ts': 0.0, 'conns': [], 'err': None}
+_THERA_TTL = 180.0
+
+
+def _fetch_thera():
+    r = requests.get('https://api.eve-scout.com/v2/public/signatures',
+                     headers={'User-Agent': _UA, 'Accept': 'application/json'}, timeout=25)
+    r.raise_for_status()
+    sysd = eve_map.load_map()['systems']
+    conns = []
+    for s in (r.json() or []):
+        if s.get('signature_type') != 'wormhole':
+            continue
+        a, b = s.get('in_system_id'), s.get('out_system_id')
+        an, bn = s.get('in_system_name'), s.get('out_system_name')
+        if a in _HUBS:
+            hub, hub_name, other, other_name = a, _HUBS[a], b, bn
+        elif b in _HUBS:
+            hub, hub_name, other, other_name = b, _HUBS[b], a, an
+        else:
+            continue
+        if not other or str(other) not in sysd:   # only k-space exits are routable here
+            continue
+        rec = sysd.get(str(other)) or {}
+        conns.append({'hub_id': hub, 'hub': hub_name, 'system_id': int(other),
+                      'system': other_name or rec.get('name'), 'region': rec.get('region'),
+                      'sec': rec.get('sec'), 'wh_type': s.get('wh_type'),
+                      'max_ship_size': s.get('max_ship_size'),
+                      'remaining_hours': s.get('remaining_hours'), 'expires_at': s.get('expires_at')})
+    conns.sort(key=lambda c: (c['hub'], c['region'] or '~', c['system'] or ''))
+    return conns
+
+
+def get_thera(force=False):
+    now = time.time()
+    if not force and _thera['conns'] and now - _thera['ts'] < _THERA_TTL:
+        return {'connections': _thera['conns'], 'ts': _thera['ts'], 'error': _thera['err']}
+    try:
+        _thera['conns'] = _fetch_thera()
+        _thera['ts'] = now
+        _thera['err'] = None
+    except Exception as e:  # noqa: BLE001
+        _thera['err'] = f'{type(e).__name__}: {e}'
+    return {'connections': _thera['conns'], 'ts': _thera['ts'], 'error': _thera['err']}
+
+
+def thera_edges():
+    """(hub_id, system_id) pairs for routing. Turnur is a real system; Thera
+    (31000005) is virtual (see THERA_VIRTUAL)."""
+    return [(c['hub_id'], c['system_id']) for c in get_thera()['connections']]
+
+
+THERA_VIRTUAL = {31000005: 'Thera'}
+
+
 # ---- lifecycle ---------------------------------------------------------------
 def _intel_loop():
     while True:

@@ -2060,3 +2060,22 @@ body.popout-calc .pib-calc > summary { display: none; }
 .sm-route { stroke: #f0c040; stroke-width: 2.6; stroke-linecap: round; opacity: 0.95; }
 .sm-route-bridge { stroke: #35c6d6; stroke-dasharray: 5 3; }
 .sm-n.sm-on-route .sm-dot { stroke: #f0c040; stroke-width: 1.8; }
+
+/* SMT Thera / Turnur connections */
+.smt-route-wh { display: inline-flex; align-items: center; gap: 0.3em; color: #cbb6e6; font-size: 0.86em; }
+.smt-thera-bar { padding: 0.45em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.smt-thera-bar[hidden] { display: none; }
+.smt-thera-h { margin-bottom: 0.3em; }
+.smt-thera-list { display: flex; flex-direction: column; gap: 0.15em; max-height: 220px; overflow-y: auto; }
+.smt-thera-row { display: flex; align-items: center; gap: 0.4em; font-size: 0.85em; color: #cde; flex-wrap: wrap; }
+.smt-thera-hub { font-weight: 600; padding: 0 0.4em; border-radius: 10px; font-size: 0.9em; }
+.smt-thera-hub.is-thera { background: #2a1c3a; color: #c79be6; border: 1px solid #5a3a7a; }
+.smt-thera-hub.is-turnur { background: #1c2a30; color: #7fd0d6; border: 1px solid #2f5a63; }
+.smt-thera-sys { background: #221a30; border: 1px solid #5a3a7a; color: #d6b8f0; border-radius: 4px; padding: 0 0.4em; cursor: pointer; }
+.smt-thera-sys:hover { background: #2c2340; }
+/* on-map Thera/Turnur markers + route */
+.sm-thera-ring { fill: none; stroke: #b072e0; stroke-width: 1.4; }
+.sm-thera.is-turnur .sm-thera-ring { stroke: #4fc6cf; }
+.sm-thera-lbl { fill: #d6b8f0; font-size: 8px; pointer-events: none; }
+.sm-thera.is-turnur .sm-thera-lbl { fill: #9fe0e6; }
+.sm-route-wh { stroke: #b072e0; stroke-dasharray: 6 3; stroke-width: 2.6; }
