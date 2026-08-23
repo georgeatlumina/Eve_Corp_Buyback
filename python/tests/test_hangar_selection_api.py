@@ -102,3 +102,4 @@ class TestSaveHangarSelection:
             resp = client.post('/api/hangar-selection', json={'flags': ['CorpSAG7']})
         assert resp.status_code == 200  # non-fatal, unlike stockpile's push
         assert local_store.load_selection_local()['selected_flags'] == ['CorpSAG7']
+        assert resp.json()['storage'] == 'local'  # push failed silently; must not claim 'github'

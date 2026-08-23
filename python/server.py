@@ -4770,6 +4770,7 @@ def save_hangar_selection(req: HangarSelectionSave):
     })
     hangar_selection.save_selection_local(selection)
     rc = _hangar_selection_remote_cfg(cfg)
+    pushed = False
     if rc and rc.get('write_pat'):
         ua = get_user_agent()
         try:
@@ -4781,9 +4782,10 @@ def save_hangar_selection(req: HangarSelectionSave):
             _github_contents_put(rc['owner'], rc['repo'], rc['branch'], rc['path'],
                                  json.dumps(selection, indent=2), sha, rc['write_pat'],
                                  ua, 'hangar-selection: update')
+            pushed = True
         except Exception:
             pass  # non-fatal — the local save above already succeeded
-    return {**selection, 'storage': 'github' if (rc and rc.get('write_pat')) else 'local'}
+    return {**selection, 'storage': 'github' if pushed else 'local'}
 
 
 def _stockpile_totals(store):
