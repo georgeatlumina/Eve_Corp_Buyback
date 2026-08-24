@@ -1124,9 +1124,9 @@ body.liq-full main { max-width: none; }
 .indy-demand-chip.demand-partial { background: #3a331c; color: #ecd58a; border-color: #6b5f2f; }
 .indy-demand-chip.demand-ok { background: #1c3a2a; color: #8fd6b0; border-color: #2f6b4f; }
 
-/* Plan HaulX tab */
-.haulx-metric { color: #4a8; transition: color 0.15s; }
-.haulx-metric.haulx-over { color: #ef4444; }
+/* Plan PushX tab */
+.pushx-metric { color: #4a8; transition: color 0.15s; }
+.pushx-metric.pushx-over { color: #ef4444; }
 
 /* Doctrine Module Sorter tab */
 .ms-input textarea { width: 100%; min-height: 140px; padding: 0.6em; background: #1e1e1e; color: #eee; border: 1px solid #444; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; resize: vertical; box-sizing: border-box; }

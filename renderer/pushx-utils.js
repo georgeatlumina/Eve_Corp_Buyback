@@ -1,13 +1,13 @@
 'use strict';
 
-// Pure HaulX planning maths, shared by the HaulX tab (loaded as a plain script
+// Pure PushX planning maths, shared by the PushX tab (loaded as a plain script
 // before app.js) and the Jest suite. Keep this the single source of truth —
 // app.js used to carry its own copy of the fill loop, which drifted.
 
-const HAULX_MAX_VOLUME = 360000;             // m³ (360 km³) — PushX per-haul cap
-const HAULX_MAX_COLLATERAL = 5_000_000_000;  // ISK — PushX per-haul cap
-const HAULX_SHIPPING_COST = 400_000_000;     // ISK, flat per haul
-const HAULX_SELL_MARKUP = 1.20;              // what the alliance sells fits at
+const PUSHX_MAX_VOLUME = 360000;             // m³ (360 km³) — PushX per-haul cap
+const PUSHX_MAX_COLLATERAL = 5_000_000_000;  // ISK — PushX per-haul cap
+const PUSHX_SHIPPING_COST = 400_000_000;     // ISK, flat per haul
+const PUSHX_SELL_MARKUP = 1.20;              // what the alliance sells fits at
 
 /**
  * Why a ship can't be added to a haul, or '' when it can.
@@ -16,7 +16,7 @@ const HAULX_SELL_MARKUP = 1.20;              // what the alliance sells fits at
  * fit volume and the full fit price must be known. A hull-only fallback would
  * understate the real cost, so it is deliberately not used here.
  */
-function haulxBlockReason(priceEntry, hasFit) {
+function pushxBlockReason(priceEntry, hasFit) {
   if (!hasFit) return 'no fit in Auth';
   if (priceEntry?.fit_price == null) return 'no price';
   if (priceEntry?.fit_volume == null) return 'no volume';
@@ -24,7 +24,7 @@ function haulxBlockReason(priceEntry, hasFit) {
 }
 
 /** True when a ship has both a full fit volume and a full fit price. */
-function haulxIsAddable(priceEntry) {
+function pushxIsAddable(priceEntry) {
   return priceEntry?.fit_volume != null && priceEntry?.fit_price != null;
 }
 
@@ -35,7 +35,7 @@ function haulxIsAddable(priceEntry) {
  * something for any row that predates a price lookup; `sellValue`/`buyValue`
  * only count fully-priced fits, since the profit line must not mix the two.
  */
-function haulxTotals(qty, priceCache) {
+function pushxTotals(qty, priceCache) {
   let vol = 0, isk = 0, sellValue = 0, buyValue = 0;
   for (const [tid, q] of Object.entries(qty || {})) {
     if (!q) continue;
@@ -50,7 +50,7 @@ function haulxTotals(qty, priceCache) {
 }
 
 /** Estimated profit on a haul: what it sells for, less what it cost and shipping. */
-function haulxProfit(sellValue, buyValue, shipping = HAULX_SHIPPING_COST, markup = HAULX_SELL_MARKUP) {
+function pushxProfit(sellValue, buyValue, shipping = PUSHX_SHIPPING_COST, markup = PUSHX_SELL_MARKUP) {
   return (sellValue * markup) - buyValue - shipping;
 }
 
@@ -60,7 +60,7 @@ function haulxProfit(sellValue, buyValue, shipping = HAULX_SHIPPING_COST, markup
  * Ships without a full fit volume and price are skipped entirely — they are
  * the same rows the table locks to 0.
  */
-function haulxFillByPriority(quotas, priceCache, overQuota, maxVol = HAULX_MAX_VOLUME, maxIsk = HAULX_MAX_COLLATERAL) {
+function pushxFillByPriority(quotas, priceCache, overQuota, maxVol = PUSHX_MAX_VOLUME, maxIsk = PUSHX_MAX_COLLATERAL) {
   const qty = {};
   let vol = 0, isk = 0;
   for (const q of quotas || []) {
@@ -68,7 +68,7 @@ function haulxFillByPriority(quotas, priceCache, overQuota, maxVol = HAULX_MAX_V
     if (!overQuota && missing <= 0) continue;
     const tid = String(q.ship_type_id);
     const p = priceCache[tid];
-    if (!haulxIsAddable(p)) continue;
+    if (!pushxIsAddable(p)) continue;
     const unitVol = p.fit_volume;
     const unitIsk = p.fit_price;
     let canFit = overQuota ? 999 : missing;
@@ -91,7 +91,7 @@ function haulxFillByPriority(quotas, priceCache, overQuota, maxVol = HAULX_MAX_V
  * the server's type-info lookup threw and swallowed the error behind a 200.
  * Only failures are worth retrying.
  */
-function haulxClassifySell(ok, status, data) {
+function pushxClassifySell(ok, status, data) {
   if (!ok) return { minSell: null, vol: null, failed: true };
   const minSell = data?.min_sell ?? null;
   const vol = data?.packaged_volume ?? null;
@@ -106,23 +106,23 @@ function haulxClassifySell(ok, status, data) {
  * would count as failed and the retry button would offer hundreds of lookups
  * that can only fail again.
  */
-function haulxClassifyBuy(ok, status, data) {
+function pushxClassifyBuy(ok, status, data) {
   if (!ok) return { maxBuy: null, failed: status !== 422 };
   return { maxBuy: data?.max_buy ?? null, failed: false };
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    haulxTotals,
-    haulxFillByPriority,
-    haulxBlockReason,
-    haulxIsAddable,
-    haulxProfit,
-    haulxClassifySell,
-    haulxClassifyBuy,
-    HAULX_MAX_VOLUME,
-    HAULX_MAX_COLLATERAL,
-    HAULX_SHIPPING_COST,
-    HAULX_SELL_MARKUP,
+    pushxTotals,
+    pushxFillByPriority,
+    pushxBlockReason,
+    pushxIsAddable,
+    pushxProfit,
+    pushxClassifySell,
+    pushxClassifyBuy,
+    PUSHX_MAX_VOLUME,
+    PUSHX_MAX_COLLATERAL,
+    PUSHX_SHIPPING_COST,
+    PUSHX_SELL_MARKUP,
   };
 }

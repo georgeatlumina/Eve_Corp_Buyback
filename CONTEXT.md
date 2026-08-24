@@ -222,7 +222,7 @@ that takes a pasted EVE inventory (or any multibuy list) and splits it into
 renderer feature — **no new endpoint**. The doctrine set is the union of every
 item across every fit in the **Market Readiness scan** (`readinessState.scan` in
 localStorage, read as a cross-script global — the same source the Market
-doctrine lens and HaulX use), matched by normalised (trim / lowercase /
+doctrine lens and PushX use), matched by normalised (trim / lowercase /
 whitespace-collapsed) name since EVE emits the same spelling on both sides.
 The paste parser handles tab-separated inventory rows (`Name⇥Qty⇥Group⇥…`),
 `Name xN` multibuy, and bare names, summing duplicate stacks; output is sorted
