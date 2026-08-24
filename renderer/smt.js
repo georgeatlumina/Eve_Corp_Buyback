@@ -16,6 +16,7 @@
     chars: [], fleet: null, fleetMembers: [], bridges: [], thera: [], sov: null, route: null,
     intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true, sov: false },
     follow: false, loaded: false, poll: null, tick: null, charPoll: null,
+    alertJumps: new Map(), alertKey: null, alertsOwned: false, loopsOn: false,
     view: { s: 1, tx: 0, ty: 0 },
   };
   const $id = (x) => document.getElementById(x);
@@ -128,6 +129,7 @@
           st.feed.unshift(e);
         }
         if (st.feed.length > 200) st.feed.length = 200;
+        if (!st.alertsOwned) SmtAlerts.intel(d.events, st.alertJumps);
         if (d.events.length) { renderFeed(); if (st.follow) followLatest(); }
         setStatus(d.watching ? '' : (d.log_dir_ok ? 'No intel channels selected — open ⚙ Logs.' : 'Set your EVE chat-logs folder in ⚙ Logs to see intel.'));
       }
@@ -135,6 +137,7 @@
         const d = await j(`/api/smt/kills?since=${st.killSince}`);
         st.killSince = d.ts;
         for (const k of d.kills) st.kills.set(String(k.system_id), { ts: k.ts * 1000, value: k.value });
+        if (!st.alertsOwned) SmtAlerts.kills(d.kills, st.alertJumps);
       }
     } catch (_) { /* transient */ }
     applyLayers();
@@ -163,12 +166,13 @@
 
   // ---- characters + fleet ----
   async function pollChars() {
-    if (!st.ov.chars) { renderCharChips(); renderCharMarkers(); return; }
+    if (!st.ov.chars && !alarmArmed()) { renderCharChips(); renderCharMarkers(); return; }
     try {
       const d = await j('/api/smt/characters');
       st.chars = d.characters || []; st.fleet = d.fleet; st.fleetMembers = d.fleet_members || [];
       st.charsAuthed = d.authed;
       renderCharChips(); renderCharMarkers();
+      refreshAlertRange();
     } catch (_) { /* transient */ }
   }
   function renderCharChips() {
@@ -400,6 +404,103 @@
     });
   }
 
+  // ---- intel alarm ----
+  // Settings live in the sidecar so this tab and the overlay window agree. The
+  // overlay takes ownership while it's open, so a report never alarms twice.
+  async function loadAlerts() {
+    try { SmtAlerts.setConfig(await j('/api/smt/alerts')); } catch (_) { /* defaults stand */ }
+    renderAlerts();
+  }
+  const soundOpts = (sel) => SmtAlerts.sounds.map((n) => `<option value="${n}"${n === sel ? ' selected' : ''}>${n}</option>`).join('');
+  function renderAlerts() {
+    const a = SmtAlerts.config();
+    for (const [id, val] of [['smt-al-clear-sound', a.clear_sound], ['smt-al-kill-sound', a.kill_sound]]) {
+      const el = $id(id); if (!el) continue;
+      el.innerHTML = soundOpts(val);
+    }
+    const set = (id, prop, v) => { const el = $id(id); if (el) el[prop] = v; };
+    set('smt-al-enabled', 'checked', !!a.enabled);
+    set('smt-al-hostile', 'checked', !!a.hostile);
+    set('smt-al-clear', 'checked', !!a.clear);
+    set('smt-al-kills', 'checked', !!a.kills);
+    set('smt-al-gap', 'value', a.gap);
+    set('smt-al-vol', 'value', a.volume);
+    renderTiers();
+    const el = $id('smt-al-status');
+    if (el) {
+      const reach = SmtAlerts.reach();
+      el.textContent = !a.enabled ? 'Alarm off'
+        : st.alertsOwned ? 'Overlay is sounding the alarm'
+        : (reach < 0 ? 'Alarming on every report' : `Alarming out to ${reach} jump(s)`);
+    }
+  }
+  function renderTiers() {
+    const box = $id('smt-al-tiers'); if (!box) return;
+    const flashOpt = (sel) => SmtAlerts.flashes.map((f) => `<option value="${f}"${f === sel ? ' selected' : ''}>${f === 'none' ? 'no flash' : f + ' flash'}</option>`).join('');
+    box.innerHTML = SmtAlerts.tiers().map((t, i) => `<div class="smt-al-tier" data-i="${i}">
+      <span class="smt-al-lead">${t.max < 0 ? 'any distance' : t.max === 0 ? 'your system' : `\u2264 ${t.max} jump${t.max === 1 ? '' : 's'}`}</span>
+      <input type="number" class="smt-al-max" min="-1" max="10" step="1" value="${t.max}" title="Furthest jump distance this tier covers (-1 = any)" />
+      <select class="smt-al-sound" title="Sound for this distance">${soundOpts(t.sound)}</select>
+      <button class="secondary smt-al-test" type="button" data-test="${i}">Test</button>
+      <input type="color" class="smt-al-col" value="${esc(t.colour)}" title="Overlay highlight colour at this distance" />
+      <select class="smt-al-flash" title="Flash the overlay marker at this distance">${flashOpt(t.flash)}</select>
+      <input type="text" class="smt-al-custom" value="${esc(t.custom || '')}" placeholder="Optional sound file for this tier\u2026" spellcheck="false" autocomplete="off" />
+      <button class="secondary smt-al-browse" type="button" data-i="${i}">\u2026</button>
+      <button class="smt-al-del" type="button" data-i="${i}" title="Remove this tier">\u2715</button>
+    </div>`).join('');
+  }
+  function readTiers() {
+    return [...document.querySelectorAll('#smt-al-tiers .smt-al-tier')].map((row) => ({
+      max: Number(row.querySelector('.smt-al-max').value),
+      sound: row.querySelector('.smt-al-sound').value,
+      colour: row.querySelector('.smt-al-col').value,
+      flash: row.querySelector('.smt-al-flash').value,
+      custom: row.querySelector('.smt-al-custom').value.trim(),
+    }));
+  }
+  async function saveAlerts(tiers) {
+    const num = (id, d) => { const v = Number(($id(id) || {}).value); return Number.isFinite(v) ? v : d; };
+    const body = {
+      enabled: !!($id('smt-al-enabled') || {}).checked,
+      hostile: !!($id('smt-al-hostile') || {}).checked,
+      clear: !!($id('smt-al-clear') || {}).checked,
+      kills: !!($id('smt-al-kills') || {}).checked,
+      gap: num('smt-al-gap', 3), volume: num('smt-al-vol', 0.6),
+      clear_sound: ($id('smt-al-clear-sound') || {}).value || 'chime',
+      kill_sound: ($id('smt-al-kill-sound') || {}).value || 'thud',
+      tiers: tiers || readTiers(),
+    };
+    try {
+      SmtAlerts.setConfig(await j('/api/smt/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+      st.alertKey = null;            // tiers changed → refetch the in-range set
+      await refreshAlertRange();
+      startLoops();                  // enabling the alarm starts the loops if the tab was never opened
+      if (window.api && window.api.alertsChanged) window.api.alertsChanged();
+    } catch (e) { const el = $id('smt-al-status'); if (el) el.textContent = `Failed: ${e.message || e}`; return; }
+    renderAlerts();
+  }
+  // How far each system is from your character, so reports can be tiered by
+  // distance. Covers the furthest tier; "any distance" needs no map at all.
+  async function refreshAlertRange() {
+    const a = SmtAlerts.config();
+    const reach = SmtAlerts.reach();
+    if (!a.enabled || reach < 0) { st.alertJumps = new Map(); st.alertKey = null; return; }
+    const c = st.chars.find((x) => x.online && x.system_id) || st.chars.find((x) => x.system_id);
+    const sys = c && c.system_id ? String(c.system_id) : null;
+    if (!sys) { st.alertJumps = new Map(); st.alertKey = null; return; }
+    const key = `${sys}|${reach}`;
+    if (key === st.alertKey) return;
+    st.alertKey = key;
+    try {
+      const d = await j(`/api/smt/overlay?system=${sys}&jumps=${Math.max(1, reach)}`);
+      st.alertJumps = d.error ? new Map() : new Map((d.systems || []).map((x) => [String(x.id), x.jumps]));
+    } catch (_) { st.alertKey = null; }
+  }
+  // The alarm has to keep working when the SMT tab isn't the one on screen —
+  // otherwise it only ever fires when you're already looking at the map.
+  function alarmArmed() { return !st.alertsOwned && SmtAlerts.config().enabled; }
+  function pollActive() { const p = $id('tab-smt-intel'); return (p && p.offsetParent !== null) || alarmArmed(); }
+
   // ---- config (chat-logs folder + channels) ----
   async function loadConfig() {
     try {
@@ -485,6 +586,21 @@
       if (window.api && window.api.openOverlay) window.api.openOverlay();
       else setStatus('The overlay needs the desktop app.', true);
     });
+    $id('smt-alerts-btn')?.addEventListener('click', () => { const b = $id('smt-alerts-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadAlerts(); } });
+    $id('smt-alerts-bar')?.addEventListener('change', (e) => { if (e.target.closest('input, select')) saveAlerts(); });
+    $id('smt-alerts-bar')?.addEventListener('click', (e) => {
+      const t = e.target.closest('.smt-al-test'); if (t) { SmtAlerts.test(t.dataset.test); return; }
+      const b = e.target.closest('.smt-al-browse'); if (b) { pickSound(+b.dataset.i); return; }
+      const d = e.target.closest('.smt-al-del'); if (d) { const ts = readTiers(); ts.splice(+d.dataset.i, 1); saveAlerts(ts); return; }
+      if (e.target.id === 'smt-al-add') {
+        const ts = readTiers();
+        const far = ts.reduce((m, x) => Math.max(m, x.max), 0);
+        ts.push({ max: Math.min(10, far + 2), sound: 'blip', colour: '#8fb4d8', flash: 'none', custom: '' });
+        saveAlerts(ts);
+        return;
+      }
+      if (e.target.id === 'smt-al-reset') saveAlerts(SmtAlerts.defaults().tiers);
+    });
     $id('smt-save')?.addEventListener('click', saveConfig);
     $id('smt-detect')?.addEventListener('click', detect);
     const search = $id('smt-search');
@@ -493,20 +609,47 @@
     let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const p = $id('tab-smt-intel'); if (st.layout && p && p.offsetParent !== null) fitView(); }, 150); });
   }
 
+  async function pickSound(i) {
+    if (!window.api || !window.api.pickSound) return;
+    const f = await window.api.pickSound();
+    if (!f) return;
+    const ts = readTiers();
+    if (!ts[i]) return;
+    ts[i].custom = f;
+    saveAlerts(ts);
+  }
+
+  // The live loops. Started when the tab is first opened, or straight away at
+  // app start when the alarm is armed, so intel can alarm from any tab.
+  function startLoops() {
+    if (st.loopsOn) return;
+    st.loopsOn = true;
+    pollLayers(); pollChars();
+    st.poll = setInterval(() => { if (pollActive()) pollLayers(); }, 4000);
+    st.charPoll = setInterval(() => { if (pollActive()) pollChars(); }, 8000);
+    st.theraPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadThera(); }, 120000);
+    st.sovPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadSov(); }, 180000);
+    st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) { applyLayers(); tickSov(); } }, 1000);
+  }
+
   function initTab() {
     wirePanZoom();
     if (!st.loaded) {
       st.loaded = true; wire();
       Promise.all([loadRegions(), loadIndex()]).then(() => showRegion($id('smt-region')?.value || 'Delve')).catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
-      loadConfig(); loadBridges(); loadThera(); loadSov();
-      pollLayers(); pollChars();
-      st.theraPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadThera(); }, 120000);
-      st.sovPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadSov(); }, 180000);
-      st.poll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollLayers(); }, 4000);
-      st.charPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollChars(); }, 8000);
-      st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) { applyLayers(); tickSov(); } }, 1000);
+      loadConfig(); loadBridges(); loadThera(); loadSov(); loadAlerts();
+      startLoops();
     } else if (st.layout) { fitView(); }
   }
 
   document.querySelector('.tab-btn[data-tab="smt-intel"]')?.addEventListener('click', initTab);
+
+  // The overlay window owns the alarm while it's open, so the same report can't
+  // sound in both places.
+  if (window.api && window.api.onOverlayState) {
+    window.api.onOverlayState((open) => { st.alertsOwned = !!open; renderAlerts(); });
+  }
+  // Arm the alarm at app start (without loading the map) so intel can alarm
+  // before anyone visits the SMT tab.
+  loadAlerts().then(() => { if (SmtAlerts.config().enabled) startLoops(); });
 })();

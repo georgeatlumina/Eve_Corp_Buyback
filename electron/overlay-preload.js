@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('overlayApi', {
   // hit-testing while click-through is on.
   hoverUi: (over) => ipcRenderer.send('overlay:hover-ui', !!over),
   onClickThrough: (cb) => ipcRenderer.on('overlay:click-through', (_e, on) => cb(!!on)),
+  onAlertsChanged: (cb) => ipcRenderer.on('smt:alerts-changed', () => cb()),
 });

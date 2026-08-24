@@ -967,6 +967,7 @@
         <button id="smt-bridges-btn" class="secondary" type="button" title="Manage your jump-bridge network">Bridges…</button>
         <button id="smt-thera-btn" class="secondary" type="button" title="Live Thera / Turnur connections (eve-scout)">Thera…</button>
         <button id="smt-sov-btn" class="secondary" type="button" title="Active sov campaigns + faction-warfare timers">Sov…</button>
+        <button id="smt-alerts-btn" class="secondary" type="button" title="Intel alarm — play a sound when intel lands near you">🔔 Alerts</button>
         <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
         <button id="smt-overlay-btn" class="secondary" type="button" title="Pop out the transparent intel overlay to sit over your EVE client (Ctrl+Alt+M to hide/show)">&#8862; Overlay</button>
         <span id="smt-status" class="muted small"></span>
@@ -1000,6 +1001,34 @@
         </div>
         <textarea id="smt-bridge-pastebox" class="smt-bridge-pastebox" placeholder="Paste jump bridges, one per line (e.g. 1DQ1-A - ROIR-Y) …" hidden></textarea>
         <div id="smt-bridge-list" class="smt-bridge-list"></div>
+      </div>
+      <div id="smt-alerts-bar" class="smt-alerts-bar" hidden>
+        <div class="smt-alerts-row">
+          <label class="smt-al-t"><input type="checkbox" id="smt-al-enabled" /> <strong>Intel alarm</strong></label>
+          <label class="smt-al-t"><input type="checkbox" id="smt-al-hostile" /> Hostile reports</label>
+          <label class="smt-al-t"><input type="checkbox" id="smt-al-clear" /> "clr" reports</label>
+          <select id="smt-al-clear-sound" title="Sound for a clear report"></select>
+          <button class="secondary smt-al-test" type="button" data-test="clear">Test</button>
+          <label class="smt-al-t"><input type="checkbox" id="smt-al-kills" /> Kills</label>
+          <select id="smt-al-kill-sound" title="Sound for a kill in range"></select>
+          <button class="secondary smt-al-test" type="button" data-test="kill">Test</button>
+        </div>
+        <div class="smt-alerts-row">
+          <label class="smt-al-t">Volume <input type="range" id="smt-al-vol" min="0" max="1" step="0.05" /></label>
+          <label class="smt-al-t">Min gap <input type="number" id="smt-al-gap" min="0" max="60" step="1" title="Minimum seconds between alarms" /> s</label>
+          <span id="smt-al-status" class="muted small"></span>
+        </div>
+        <div class="smt-al-tiers-h muted small">
+          <strong>Distance tiers</strong> — the first tier that covers a report decides its sound, its
+          highlight colour on the overlay, and whether it flashes. Anything past the last tier is out of
+          range: no sound, and drawn plain rather than in a tier colour.
+        </div>
+        <div id="smt-al-tiers" class="smt-al-tiers"></div>
+        <div class="smt-alerts-row">
+          <button id="smt-al-add" class="secondary" type="button">+ Add tier</button>
+          <button id="smt-al-reset" class="secondary" type="button" title="Back to the default three tiers">Reset tiers</button>
+        </div>
+        <div class="muted small">Distance is measured from your first online <strong>SMT character</strong> (or the overlay's pinned system). With neither, reports fall into the furthest tier. The overlay window takes over the alarm while it's open, so you never hear it twice.</div>
       </div>
       <div id="smt-config" class="smt-config" hidden>
         <label class="smt-config-row">Chat-logs folder <input id="smt-logdir" type="text" placeholder="…/Documents/EVE/logs/Chatlogs" spellcheck="false" autocomplete="off" /> <button id="smt-detect" class="secondary" type="button">Detect</button></label>
@@ -1693,6 +1722,7 @@
   <script src="zkill.js"></script>
   <script src="assets.js"></script>
   <script src="structures.js"></script>
+  <script src="smt-alerts.js"></script>
   <script src="smt.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>

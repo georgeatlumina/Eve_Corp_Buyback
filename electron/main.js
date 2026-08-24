@@ -280,6 +280,9 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // The SMT intel alarm plays without a click first, which Chromium blocks
+      // by default.
+      autoplayPolicy: 'no-user-gesture-required',
       webviewTag: true, // in-app side-panel link viewer (<webview> in renderer)
     },
   });
@@ -304,7 +307,7 @@ function createWindow() {
 const OVERLAY_DEFAULTS = {
   width: 460, height: 500, x: null, y: null,
   jumps: 5, opacity: 0.9, clickThrough: false, alwaysOnTop: true,
-  labels: true, feed: true, follow: true, system: '',
+  labels: true, feed: true, follow: true, system: '', muted: false,
 };
 
 function overlayStatePath() {
@@ -359,17 +362,44 @@ function registerOverlayShortcuts() {
     });
     globalShortcut.register('Control+Alt+M', () => {
       if (!overlayWindow || overlayWindow.isDestroyed()) { openOverlayWindow(); return; }
-      if (overlayWindow.isVisible()) overlayWindow.hide();
-      else overlayWindow.showInactive();
+      if (overlayWindow.isVisible()) { overlayWindow.hide(); broadcastOverlayState(false); }
+      else { overlayWindow.showInactive(); broadcastOverlayState(true); }
     });
   } catch (e) {
     logSidecar(`overlay: hotkey registration failed: ${e.message}`);
   }
 }
 
+// Only one window should sound the intel alarm. The overlay takes it while
+// it's open (it's the one you're looking at); the main window takes it back
+// when the overlay closes.
+function broadcastOverlayState(open) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('overlay:state', !!open); } catch (_) {}
+  }
+}
+
+// Alarm settings changed in the main window — push them to the overlay rather
+// than making it wait for its next settings poll.
+ipcMain.on('smt:alerts-changed', () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    try { overlayWindow.webContents.send('smt:alerts-changed'); } catch (_) {}
+  }
+});
+
+// Let the user point the alarm at their own sound file.
+ipcMain.handle('smt:pick-sound', async () => {
+  const r = await dialog.showOpenDialog(mainWindow || undefined, {
+    title: 'Pick an alarm sound',
+    properties: ['openFile'],
+    filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg', 'm4a', 'flac'] }],
+  });
+  return r.canceled || !r.filePaths.length ? '' : r.filePaths[0];
+});
+
 function openOverlayWindow() {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
-    if (!overlayWindow.isVisible()) overlayWindow.showInactive();
+    if (!overlayWindow.isVisible()) { overlayWindow.showInactive(); broadcastOverlayState(true); }
     overlayWindow.focus();
     return;
   }
@@ -397,6 +427,7 @@ function openOverlayWindow() {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
   overlayWindow.setMenuBarVisibility(false);
@@ -409,11 +440,13 @@ function openOverlayWindow() {
   // showInactive: popping the overlay must never steal focus from EVE.
   overlayWindow.once('ready-to-show', () => {
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
+    broadcastOverlayState(true);
   });
   overlayWindow.on('moved', saveOverlayBounds);
   overlayWindow.on('resized', saveOverlayBounds);
   overlayWindow.on('closed', () => {
     overlayWindow = null;
+    broadcastOverlayState(false);
     globalShortcut.unregister('Control+Alt+O');
     globalShortcut.unregister('Control+Alt+M');
   });

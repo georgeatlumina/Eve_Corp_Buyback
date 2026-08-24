@@ -2093,3 +2093,23 @@ body.popout-calc .pib-calc > summary { display: none; }
 .sm-adm.high { fill: #7fd6a0; }
 .sm-camp { fill: none; stroke: #ff5a5a; stroke-width: 1.6; opacity: 0.9; animation: smt-camp-pulse 1.6s ease-in-out infinite; }
 @keyframes smt-camp-pulse { 0%,100% { r: 9; opacity: 0.85; } 50% { r: 13; opacity: 0.35; } }
+
+/* ---- SMT intel alarm panel ---- */
+.smt-alerts-bar { display: flex; flex-direction: column; gap: 0.45em; padding: 0.5em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.smt-alerts-bar[hidden] { display: none; }
+.smt-alerts-row { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; }
+.smt-al-t { display: inline-flex; align-items: center; gap: 0.35em; color: #cde; font-size: 0.88em; }
+.smt-alerts-bar select, .smt-alerts-bar input[type="text"], .smt-alerts-bar input[type="number"] { background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.25em 0.4em; }
+.smt-alerts-bar input[type="number"] { width: 4em; }
+.smt-alerts-bar input[type="range"] { accent-color: #b23b3b; width: 90px; }
+.smt-al-test { padding: 0.2em 0.6em; }
+.smt-al-tiers-h { line-height: 1.45; max-width: 70em; }
+.smt-al-tiers { display: flex; flex-direction: column; gap: 0.3em; }
+.smt-al-tier { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; background: #1a1d22; border: 1px solid #2b2f36; border-radius: 5px; padding: 0.3em 0.45em; }
+.smt-al-tier .smt-al-lead { color: #9fb0c0; min-width: 5.2em; }
+.smt-al-tier input[type="number"] { width: 4em; }
+.smt-al-tier input[type="color"] { width: 2.2em; height: 1.7em; padding: 0; background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 4px; cursor: pointer; }
+.smt-al-tier input[type="text"] { flex: 1 1 14em; min-width: 8em; }
+.smt-al-del { color: #d88; background: transparent; border: 0; cursor: pointer; padding: 0 0.3em; }
+.smt-al-del:hover { color: #ff8b8b; }
+.smt-al-swatch { display: inline-block; width: 0.85em; height: 0.85em; border-radius: 50%; border: 1px solid #0006; }

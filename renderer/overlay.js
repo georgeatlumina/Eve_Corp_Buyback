@@ -25,6 +25,7 @@
     intelSince: 0, killSince: 0,
     chars: [], charSys: null, watching: null,
     clickThrough: false, hoverUi: false, loadKey: null, err: '',
+    alertJumps: new Map(), alertKey: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -61,6 +62,7 @@
       st.jumpsOf = new Map(st.systems.map((s) => [String(s.id), s.jumps]));
       layout();
       render();
+      refreshAlertRange();
     } catch (e) {
       st.err = `Sidecar unreachable: ${e.message || e}`;
       st.loadKey = null;   // retry on the next tick
@@ -150,6 +152,7 @@
         + ` transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})">`
         + `<title>${esc(s.name)} · ${s.jumps}j · ${s.sec == null ? '?' : s.sec.toFixed(1)} · ${esc(s.region || '')}</title>`
         + `<circle class="ov-halo" r="0" />`
+        + `<circle class="ov-pulse" r="${(NR * 2.6).toFixed(1)}" stroke-width="${(U / 9).toFixed(1)}" />`
         + (home ? `<circle class="ov-ringmk" r="${NR * 2.1}" stroke-width="${U / 11}" />` : '')
         + `<circle class="ov-dot" r="${NR}" style="fill:${secCol(s.sec)}" stroke-width="${U / 22}" />`
         + (chars.has(String(s.id)) && !home ? `<circle class="ov-chr" cx="${NR * 1.6}" cy="${-NR * 1.6}" r="${NR * 0.7}" />` : '')
@@ -173,12 +176,14 @@
         st.feed.unshift(e);
       }
       if (st.feed.length > 60) st.feed.length = 60;
+      SmtAlerts.intel(d.events, st.alertJumps);
       if (d.events.length) renderFeed();
     } catch (_) { /* transient — the tick keeps decaying what we have */ }
     try {
       const d = await j(`/api/smt/kills?since=${st.killSince}`);
       st.killSince = d.ts;
       for (const k of d.kills) st.kills.set(String(k.system_id), { ts: k.ts * 1000, value: k.value });
+      SmtAlerts.kills(d.kills, st.alertJumps);
     } catch (_) { /* transient */ }
     applyLayers();
   }
@@ -193,12 +198,16 @@
       const halo = el.querySelector('.ov-halo');
       const iv = st.intel.get(id), kv = st.kills.get(id);
       const R = Number(el.closest('svg').viewBox.baseVal.width) / 2 || 560;
-      let r = 0, fill = 'transparent', op = 0;
+      let r = 0, fill = 'transparent', op = 0, flash = 'none';
       if (iv) {
         const t = Math.max(0, 1 - (now - iv.ts) / DECAY);
         if (t > 0) {
           r = R / 42 + t * (R / 28); op = 0.15 + t * 0.55;
-          fill = iv.clear ? '#3ad07a' : '#ff3b3b';
+          // Hostile reports take the colour (and flash) of the distance tier
+          // they fall into; a "clr" is always the same calm green.
+          const tier = iv.clear ? null : SmtAlerts.tierFor(st.jumpsOf.get(id));
+          fill = iv.clear ? '#3ad07a' : ((tier && tier.colour) || '#ff3b3b');
+          if (tier && tier.flash) flash = tier.flash;
           if (!iv.clear) {
             const jm = st.jumpsOf.get(id);
             if (jm != null && (nearest == null || jm < nearest)) nearest = jm;
@@ -213,11 +222,17 @@
       halo.style.fill = fill;
       halo.style.fillOpacity = op;
       el.classList.toggle('hot', r > 0);
+      el.classList.toggle('flash-slow', flash === 'slow');
+      el.classList.toggle('flash-fast', flash === 'fast');
+      if (flash !== 'none') el.style.setProperty('--pulse', fill);
     });
     const warn = $('ov-warn');
     if (warn) {
       warn.hidden = nearest == null;
       warn.textContent = nearest == null ? '' : (nearest === 0 ? '⚠ HERE' : `⚠ ${nearest}j`);
+      const tier = nearest == null ? null : SmtAlerts.tierFor(nearest);
+      warn.style.color = (tier && tier.colour) || '';
+      warn.style.borderColor = (tier && tier.colour) || '';
     }
   }
 
@@ -250,6 +265,31 @@
     }).join('');
   }
 
+  // ---- intel alarm -------------------------------------------------------
+  // Settings come from the sidecar, shared with the Intel Map tab. While this
+  // window is open it owns the alarm, so nothing sounds twice.
+  async function loadAlerts() {
+    try { SmtAlerts.setConfig(await j('/api/smt/alerts')); } catch (_) { /* defaults stand */ }
+    SmtAlerts.setMuted(!!st.prefs.muted);
+    st.alertKey = null;
+    refreshAlertRange();
+    updateBar();
+  }
+  // The alarm's range is set independently of how far the map is drawn, so it
+  // needs its own distance map rather than reusing the drawn one.
+  async function refreshAlertRange() {
+    const a = SmtAlerts.config();
+    const reach = SmtAlerts.reach();
+    if (!a.enabled || reach < 0 || !st.origin) { st.alertJumps = new Map(); st.alertKey = null; return; }
+    const key = `${st.origin.id}|${reach}`;
+    if (key === st.alertKey) return;
+    st.alertKey = key;
+    try {
+      const d = await j(`/api/smt/overlay?system=${st.origin.id}&jumps=${Math.max(1, reach)}`);
+      st.alertJumps = d.error ? new Map() : new Map((d.systems || []).map((x) => [String(x.id), x.jumps]));
+    } catch (_) { st.alertKey = null; }
+  }
+
   // ---- characters --------------------------------------------------------
   async function pollChars() {
     try {
@@ -278,6 +318,12 @@
     $('ov-feed-t').classList.toggle('on', !!st.prefs.feed);
     $('ov-pin').classList.toggle('on', !!st.prefs.alwaysOnTop);
     $('ov-click').classList.toggle('on', !!st.clickThrough);
+    const mute = $('ov-mute');
+    const alarm = SmtAlerts.config();
+    mute.classList.toggle('muted', !!st.prefs.muted || !alarm.enabled);
+    mute.textContent = (st.prefs.muted || !alarm.enabled) ? '🔕' : '🔔';
+    mute.title = !alarm.enabled ? 'Intel alarm is switched off in the SMT tab'
+      : st.prefs.muted ? 'Intel alarm muted — click to unmute' : 'Intel alarm on — click to mute';
     // Following with nothing to follow would otherwise hide the only way out.
     $('ov-pin-row').hidden = !!st.prefs.follow && !!st.origin;
   }
@@ -324,6 +370,12 @@
       st.prefs.opacity = v;
       if (ovApi.setOpacity) ovApi.setOpacity(v);
     });
+    $('ov-mute').addEventListener('click', () => {
+      savePrefs({ muted: !st.prefs.muted });
+      SmtAlerts.setMuted(!!st.prefs.muted);
+      if (!st.prefs.muted) SmtAlerts.test(0);   // confirm it's audible
+      updateBar();
+    });
     $('ov-close').addEventListener('click', () => { if (ovApi.close) ovApi.close(); });
     $('ov-home').addEventListener('click', () => { st.loadKey = null; loadMap(true); });
     $('ov-sys').addEventListener('change', (e) => pinSystem(e.target.value));
@@ -345,6 +397,7 @@
       if (over !== st.hoverUi) { st.hoverUi = over; ovApi.hoverUi(over); }
     });
     if (ovApi.onClickThrough) ovApi.onClickThrough((on) => { st.clickThrough = on; updateBar(); });
+    if (ovApi.onAlertsChanged) ovApi.onAlertsChanged(() => loadAlerts().then(applyLayers));
     let rz;
     window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(render, 150); });
   }
@@ -356,12 +409,14 @@
     $('ov-op').value = st.prefs.opacity;
     wire();
     updateBar();
+    await loadAlerts();
     await pollChars();
     await loadMap();
     pollLayers();
     renderFeed();
     setInterval(pollLayers, 4000);
     setInterval(pollChars, 10000);
+    setInterval(loadAlerts, 30000);
     setInterval(() => { applyLayers(); renderFeed(); }, 2000);
     // Cheap self-heal: if the sidecar was down (or the origin never resolved),
     // keep trying rather than sitting on an error until the window is reopened.

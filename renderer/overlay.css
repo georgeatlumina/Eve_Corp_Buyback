@@ -91,6 +91,7 @@ html, body { height: 100%; }
 }
 .ov-t:hover { color: #cfe0ee; }
 .ov-t.on { background: rgba(47, 111, 159, 0.35); border-color: #3f7fae; color: #cfe8ff; }
+.ov-t.muted { color: #6a5050; opacity: 0.55; }
 
 .ov-op { width: 54px; accent-color: #2f6f9f; }
 
@@ -139,6 +140,18 @@ html, body { height: 100%; }
 .ov-halo { pointer-events: none; }
 .ov-node.hot .ov-lbl { fill: #ffd3d3; font-weight: 600; }
 .ov-chr { fill: #35d07a; stroke: #05080b; stroke-width: 1; }
+
+/* Distance flash. The pulse is its own ring so the halo underneath can keep
+   fading with the report's age — the two would fight over one element.
+   Each node group is translated to its position and the circle sits at its
+   local origin, so scale() pulses about the system itself. */
+.ov-pulse { fill: none; stroke: var(--pulse, #ff3b3b); opacity: 0; }
+.ov-node.flash-slow .ov-pulse { animation: ov-ping 1.8s ease-out infinite; }
+.ov-node.flash-fast .ov-pulse { animation: ov-ping 0.75s ease-out infinite; }
+@keyframes ov-ping {
+  0%   { opacity: 0.85; transform: scale(0.55); }
+  100% { opacity: 0;    transform: scale(1.7); }
+}
 
 /* ---- intel ticker ---- */
 .ov-feed {

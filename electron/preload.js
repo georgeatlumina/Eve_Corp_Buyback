@@ -14,5 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   openLinkWindow: (url) => ipcRenderer.invoke('open-link-window', url),
   popOutTab: (tab, opts) => ipcRenderer.invoke('pop-out-tab', tab, opts),
   openOverlay: () => ipcRenderer.invoke('overlay:open'),
+  pickSound: () => ipcRenderer.invoke('smt:pick-sound'),
+  alertsChanged: () => ipcRenderer.send('smt:alerts-changed'),
+  onOverlayState: (cb) => ipcRenderer.on('overlay:state', (_e, open) => cb(!!open)),
   log: (line) => ipcRenderer.invoke('log:append', line),
 });

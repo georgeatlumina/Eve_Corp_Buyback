@@ -2,6 +2,7 @@ import gzip
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import threading
@@ -1075,6 +1076,101 @@ def smt_sov():
         out['fw_error'] = f'{type(e).__name__}: {e}'
     _sov_cache.update(ts=now, data=out)
     return out
+
+
+# Distance tiers: the first tier whose `max` covers the report's jump distance
+# decides how it sounds and how it's drawn on the overlay. `max` of -1 means
+# "any distance" and only makes sense on the last tier. Anything past the last
+# tier is out of range — no alarm, no highlight.
+SMT_ALERT_TIER_DEFAULTS = [
+    {'max': 0, 'sound': 'siren', 'colour': '#ff2d2d', 'flash': 'fast', 'custom': ''},
+    {'max': 2, 'sound': 'klaxon', 'colour': '#ff6a1a', 'flash': 'fast', 'custom': ''},
+    {'max': 5, 'sound': 'beep', 'colour': '#e8c33a', 'flash': 'slow', 'custom': ''},
+]
+SMT_ALERT_DEFAULTS = {
+    'enabled': True,
+    'tiers': SMT_ALERT_TIER_DEFAULTS,
+    'hostile': True,     # a normal intel report
+    'clear': False,      # a "clr" report
+    'kills': False,      # a live zKill in range
+    'volume': 0.6,
+    'clear_sound': 'chime',
+    'kill_sound': 'thud',
+    'gap': 3,            # min seconds between alarms, so a busy channel can't machine-gun
+}
+_SMT_FLASH = ('none', 'slow', 'fast')
+_SMT_HEX = re.compile(r'^#[0-9a-fA-F]{6}$')
+
+
+class SMTAlertTier(BaseModel):
+    max: int = 5
+    sound: str = 'klaxon'
+    colour: str = '#ff3b3b'
+    flash: str = 'none'
+    custom: str = ''
+
+
+class SMTAlerts(BaseModel):
+    enabled: bool = True
+    tiers: list[SMTAlertTier] = []
+    hostile: bool = True
+    clear: bool = False
+    kills: bool = False
+    volume: float = 0.6
+    clear_sound: str = 'chime'
+    kill_sound: str = 'thud'
+    gap: int = 3
+
+
+def _smt_alerts():
+    out = {k: (list(v) if isinstance(v, list) else v) for k, v in SMT_ALERT_DEFAULTS.items()}
+    saved = load_config().get('smt_alerts')
+    if isinstance(saved, dict):
+        out.update({k: v for k, v in saved.items() if k in SMT_ALERT_DEFAULTS})
+    if not out.get('tiers'):
+        out['tiers'] = [dict(t) for t in SMT_ALERT_TIER_DEFAULTS]
+    return out
+
+
+def _clean_tiers(tiers):
+    """Clamp, de-dupe and order the distance tiers. Nearest first; an
+    "any distance" tier (-1) always sorts last because nothing is further."""
+    clean, seen = [], set()
+    for t in tiers[:8]:
+        d = t.model_dump() if hasattr(t, 'model_dump') else dict(t)
+        mx = max(-1, min(int(d.get('max', 5)), 10))
+        if mx in seen:
+            continue
+        seen.add(mx)
+        clean.append({
+            'max': mx,
+            'sound': str(d.get('sound') or 'klaxon')[:32],
+            'colour': d.get('colour') if _SMT_HEX.match(str(d.get('colour') or '')) else '#ff3b3b',
+            'flash': d.get('flash') if d.get('flash') in _SMT_FLASH else 'none',
+            'custom': str(d.get('custom') or '')[:512],
+        })
+    clean.sort(key=lambda t: (t['max'] < 0, t['max']))
+    return clean
+
+
+@app.get('/api/smt/alerts')
+def smt_alerts_get():
+    """Intel alarm settings, shared by the Intel Map and the overlay window so
+    both fire — and colour the map — on the same rules."""
+    return _smt_alerts()
+
+
+@app.post('/api/smt/alerts')
+def smt_alerts_set(req: SMTAlerts):
+    """Save the intel alarm settings."""
+    a = req.model_dump()
+    a['tiers'] = _clean_tiers(req.tiers) or [dict(t) for t in SMT_ALERT_TIER_DEFAULTS]
+    a['volume'] = max(0.0, min(float(a['volume']), 1.0))
+    a['gap'] = max(0, min(int(a['gap']), 60))
+    cfg = load_config()
+    cfg['smt_alerts'] = a
+    save_config(cfg)
+    return _smt_alerts()
 
 
 @app.get('/api/smt/overlay')

@@ -4,6 +4,24 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.1 — SMT intel alarms, tiered by distance
+
+- **🔔 Alerts** on the SMT toolbar — the Intel Map and the overlay can now sound an alarm when intel
+  lands near you, configured as **distance tiers**. The first tier covering a report's jump distance
+  decides its **sound**, its **highlight colour on the overlay** and whether it **flashes** (none /
+  slow / fast). Past the last tier is out of range: silent, drawn plain. Defaults: siren + red + fast
+  in your own system, klaxon + orange + fast to 2 jumps, beep + yellow + slow to 5.
+- Tiers are fully editable (distance, sound, colour picker, flash speed) with a per-tier **Test**, and
+  any tier can play a **sound file of your own** instead of a built-in one. Add / remove / reset tiers.
+- Separate toggles + sounds for **"clr" reports** and **kills in range**, a master **volume**, and a
+  **minimum gap** between alarms so a busy channel can't machine-gun you.
+- The overlay tints its `⚠ 2j` nearest-hostile badge to the matching tier and pulses markers at the
+  tier's flash speed; a **🔔 button** mutes the alarm without changing the settings.
+- The alarm runs **from any tab**, not only the SMT one. While the overlay is open it owns the alarm
+  and the main window stays quiet, so nothing sounds twice.
+- Sounds are synthesised in-app (WebAudio) rather than shipped as audio files — nothing extra to
+  download, and the same sounds in both windows.
+
 ## v3.12.0 — SMT: characters, bridges, Thera, sovereignty, and the intel overlay
 
 The rest of the SMT port, on top of v3.11.0's Intel Map.

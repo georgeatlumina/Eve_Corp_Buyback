@@ -1,53 +1,44 @@
-# v3.12.0 — SMT: characters, bridges, Thera, sovereignty, and the intel overlay
+# v3.12.1 — SMT intel alarms, tiered by distance
 
-The rest of the **SMT** (Slazanger's Eve Map Tool) port, on top of v3.11.0's Intel Map — everything
-from the "coming next" list, plus the transparent overlay window.
+The Intel Map and the overlay can now make a noise when intel lands near you, and how near it is
+decides what you hear and how it looks.
 
-## Characters & fleet on the map
-Authorize characters under **Auth → SMT Characters** (location / ship / online, plus fleet) and they
-appear live on the Intel Map: a chip row with each character's system and online state, and a marker
-on the map itself. If you're in a fleet, its members are plotted too. Click a chip to jump the map to
-that character. These scopes are separate from the rest of the app's auth, so an intel alt only ever
-grants location.
+## Distance tiers
+Under **🔔 Alerts** on the SMT toolbar you build a short list of tiers. The first tier that covers a
+report's jump distance decides three things at once: **which sound plays**, **what colour it glows on
+the overlay**, and **whether it flashes**. Anything past the last tier is out of range — no sound, and
+drawn plain instead of in a tier colour.
 
-## Jump-bridge network + bridge-aware routing
-**Bridges…** manages your alliance's jump-bridge network — add pairs by name, or **Paste list…** a
-whole network in one go (one `A - B` per line). Bridges draw on the map and are used for routing.
+Out of the box:
 
-**Route…** plans between any two systems with a preference of **Shortest**, **Prefer high-sec** or
-**Prefer low / null**; each hop is tagged with how you take it (gate, bridge, wormhole).
+| Distance | Sound | Colour | Flash |
+|---|---|---|---|
+| Your system | siren | red | fast |
+| ≤ 2 jumps | klaxon | orange | fast |
+| ≤ 5 jumps | beep | yellow | slow |
 
-## Thera / Turnur connections
-**Thera…** lists the live Thera and Turnur wormhole connections to k-space from **eve-scout**, each
-with its wormhole type, max ship size and remaining life. Routing can use them — tick **via WH** in
-the route bar and the planner will drop you through Thera when that's genuinely shorter.
+Each tier is fully editable — jump distance, one of eight built-in sounds, a colour picker, flash speed
+(none / slow / fast), and a **sound file of your own** if you'd rather hear that. Add, remove or reset
+tiers as you like. Every row has a **Test** button.
 
-## Sovereignty layer
-The **Sov** layer colours the map by alliance holder, prints each system's **ADM** under its dot, and
-rings systems with an active campaign. **Sov…** lists **active sovereignty campaigns** with live
-countdowns to (and through) their timers, and contested **faction-warfare** systems are flagged too.
+Separate toggles and sounds cover **"clr" reports** and **kills in range**, plus a master volume and a
+**minimum gap** between alarms so a busy intel channel can't machine-gun you.
 
-## Transparent intel overlay
-**⊞ Overlay** pops out a frameless, transparent, always-on-top window built to sit over your EVE
-client. It draws the systems **within N jumps of you** as rings around your position and lights them
-up as intel and kills land — red for a report, green for a "clr", orange for kills, all fading over
-~10 minutes like the main map. The toolbar carries the **nearest live hostile report as a `⚠ 2j`
-badge**, and an intel ticker below it shows only the reports for systems in range, each tagged with
-its jump distance.
+## On the overlay
+Markers take their tier's colour and pulse at its flash speed, and the `⚠ 2j` nearest-hostile badge is
+tinted to match — so how bad it is reads before you've read the number. A **🔔 button** mutes the alarm
+without touching your settings.
 
-The origin follows your first online SMT character, or you can pin a system by hand (type it, or
-click a node). Range (2–6 jumps), labels, ticker and opacity are all on the toolbar, and the window
-remembers its size, position and settings.
+## Where it runs
+The alarm works from any tab, not just the SMT one — arm it and it keeps listening in the background.
+While the overlay window is open **it** sounds the alarm and the main window stays quiet, so a report
+never fires twice.
 
-**Click-through** (👆) lets clicks pass straight through to EVE. Because a click-through window can't
-be clicked, two global hotkeys are the way back:
+Distance is measured from your first online **SMT character**, or from the overlay's pinned system.
+With neither, reports fall into the furthest tier so you still hear something.
 
-| Hotkey | Does |
-|---|---|
-| `Ctrl+Alt+O` | Toggle click-through |
-| `Ctrl+Alt+M` | Hide / show the overlay |
-
-It sits above a windowed-fullscreen client, and closes with the app.
+Sounds are generated in the app rather than shipped as audio files, so there's nothing to install and
+nothing extra to download.
 
 ---
 
