@@ -842,7 +842,7 @@ def smt_config_get():
     return {'log_dir': cfg['log_dir'], 'channels': cfg['channels'],
             'available': smt_intel.list_channels(),
             'log_dir_ok': bool(cfg['log_dir'] and os.path.isdir(cfg['log_dir'])),
-            'defaults': [d for d in smt_intel.DEFAULT_LOG_DIRS if os.path.isdir(d)]}
+            'defaults': [d for d in smt_intel.default_log_dirs() if os.path.isdir(d)]}
 
 
 @app.post('/api/smt/config')

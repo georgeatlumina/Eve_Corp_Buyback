@@ -8,6 +8,7 @@ server.py exposes the polling endpoints. Pure collectors — no FastAPI here.
 import glob
 import os
 import re
+import sys
 import threading
 import time
 import uuid
@@ -33,11 +34,56 @@ _CLEAR_MARKERS = ('clr', 'clear')
 # [ 2017.05.01 18:24:28 ] Charname > message
 _LINE_RE = re.compile(r'^﻿?\[\s*[\d.]+\s+[\d:]+\s*\]\s*[^>]*>\s*(.*)$')
 
-DEFAULT_LOG_DIRS = [
-    os.path.expanduser('~/Documents/EVE/logs/Chatlogs'),
-    os.path.expanduser('~/EVE/logs/Chatlogs'),
-    os.path.expanduser('~/Library/Application Support/EVE Online/p_drive/User/My Documents/EVE/logs/Chatlogs'),
+# Where EVE keeps its chat logs. Windows/macOS have fixed spots; on Linux the
+# game runs under Wine/Proton, so the logs sit inside a bottle whose path
+# depends on the launcher (Steam, Flatpak Steam, plain Wine, Lutris) and, for
+# Proton, on the Steam app id. Globbing the prefix roots beats hardcoding any
+# single layout — and beats hardcoding an app id that could change.
+_LINUX_LOG_GLOBS = [
+    '~/.steam/steam/steamapps/compatdata/*/pfx/drive_c/users/*/Documents/EVE/logs/Chatlogs',
+    '~/.local/share/Steam/steamapps/compatdata/*/pfx/drive_c/users/*/Documents/EVE/logs/Chatlogs',
+    '~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/*/pfx/drive_c/users/*/Documents/EVE/logs/Chatlogs',
+    '~/.steam/root/steamapps/compatdata/*/pfx/drive_c/users/*/Documents/EVE/logs/Chatlogs',
+    '~/.wine/drive_c/users/*/Documents/EVE/logs/Chatlogs',
+    '~/Games/*/drive_c/users/*/Documents/EVE/logs/Chatlogs',
+    '~/.local/share/lutris/runners/*/*/drive_c/users/*/Documents/EVE/logs/Chatlogs',
+    # Some bottles redirect Documents into the Wine user's home instead.
+    '~/.wine/drive_c/users/*/My Documents/EVE/logs/Chatlogs',
 ]
+
+_FIXED_LOG_DIRS = [
+    '~/Documents/EVE/logs/Chatlogs',
+    '~/EVE/logs/Chatlogs',
+    # Windows Documents is often redirected into OneDrive.
+    '~/OneDrive/Documents/EVE/logs/Chatlogs',
+    '~/Library/Application Support/EVE Online/p_drive/User/My Documents/EVE/logs/Chatlogs',
+]
+
+
+def default_log_dirs():
+    """Candidate chat-log folders for this machine, existing ones first. Scanned
+    fresh each call so a bottle created after startup is still found."""
+    out, seen = [], set()
+
+    def add(path):
+        if path and path not in seen:
+            seen.add(path)
+            out.append(path)
+
+    for d in _FIXED_LOG_DIRS:
+        add(os.path.expanduser(d))
+    if sys.platform.startswith('linux'):
+        for pat in _LINUX_LOG_GLOBS:
+            try:
+                for hit in sorted(glob.glob(os.path.expanduser(pat))):
+                    add(hit)
+            except OSError:
+                continue
+    return out
+
+
+# Kept for callers that just want the list; prefer default_log_dirs().
+DEFAULT_LOG_DIRS = default_log_dirs()
 
 # ---- system-name matching (ported from SMT EveManager.cs) --------------------
 _NAME_LIST = None  # [(name_lower, name, system_id)]
@@ -288,7 +334,7 @@ def ensure_started():
             return
         _started = True
         if not _CFG['log_dir']:
-            _CFG['log_dir'] = next((d for d in DEFAULT_LOG_DIRS if os.path.isdir(d)), None)
+            _CFG['log_dir'] = next((d for d in default_log_dirs() if os.path.isdir(d)), None)
     threading.Thread(target=_intel_loop, daemon=True, name='smt-intel').start()
     threading.Thread(target=_zkill_loop, daemon=True, name='smt-zkill').start()
 

@@ -228,7 +228,12 @@
       const s = byId.get(String(sid)); if (!s) return;
       const g = document.createElementNS(SVGNS, 'g'); g.setAttribute('class', 'smt-char ' + cls);
       g.setAttribute('transform', `translate(${s.x},${s.y})`);
-      g.innerHTML = `<circle class="smt-char-mk" r="6" /><rect class="smt-char-pill" x="9" y="-9" rx="3" ry="3" height="14" width="${9 + label.length * 5.6}" /><text class="smt-char-lbl" x="13" y="1.5">${esc(label)}</text>`;
+      // Sit the name pill above the dot rather than beside it: the system's own
+      // label runs to the right of the dot, and a pill there hides it.
+      const w = 9 + label.length * 5.6;
+      g.innerHTML = `<circle class="smt-char-mk" r="6" />`
+        + `<rect class="smt-char-pill" x="${(-w / 2).toFixed(1)}" y="-21" rx="3" ry="3" height="13" width="${w.toFixed(1)}" />`
+        + `<text class="smt-char-lbl" x="0" y="-11.5">${esc(label)}</text>`;
       layer.appendChild(g);
     };
     const bySys = {};

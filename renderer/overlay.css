@@ -10,7 +10,9 @@ html, body { height: 100%; }
   margin: 0;
   background: transparent;
   color: #dbe4ec;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* Emoji fallbacks last: a bare Linux install has no emoji font in the
+     default stack, and the toolbar glyphs would render as tofu. */
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif, "Segoe UI Emoji", "Noto Color Emoji", "Noto Emoji";
   font-size: 12px;
   overflow: hidden;
   user-select: none;

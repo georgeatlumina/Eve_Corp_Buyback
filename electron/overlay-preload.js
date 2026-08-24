@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // the overlay can't do for itself (opacity, always-on-top, click-through).
 contextBridge.exposeInMainWorld('overlayApi', {
   base: 'http://127.0.0.1:8766',
+  platform: process.platform,
   getState: () => ipcRenderer.invoke('overlay:state'),
   save: (patch) => ipcRenderer.invoke('overlay:save', patch),
   close: () => ipcRenderer.invoke('overlay:close'),

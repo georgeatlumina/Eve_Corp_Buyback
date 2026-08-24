@@ -1,57 +1,47 @@
-# v3.12.2 — SMT intel alarms, and an overlay you can actually tune
+# v3.12.3 — SMT on Linux, and two map-readability fixes
 
-Intel can now make a noise when it lands near you, and how near it is drives what you hear *and* what
-you see. The overlay picked up a second layout, a zoom, and a lot of knobs; the Intel Map now opens
-where your character actually is.
+The original SMT is Windows-only. This port now works on **Linux** too, with the platform differences
+handled rather than assumed away — plus two fixes for labels covering things they shouldn't.
 
-## Distance tiers
-Under **🔔 Alerts** on the SMT toolbar you build a short list of tiers. The first tier covering a
-report's jump distance decides everything about it at once — **the sound**, **the highlight colour**,
-**how big the highlight is**, **how long it takes to fade**, and **whether it flashes**. Anything past
-the last tier is out of range: no sound, and drawn plain instead of in a tier colour.
+## Linux support
 
-Out of the box:
+**⚙ Logs finds your Wine/Proton bottle.** EVE on Linux writes its chat logs *inside* the prefix, so
+auto-detection now scans the layouts people actually use:
 
-| Distance | Sound | Colour | Size | Fades after | Flash |
-|---|---|---|---|---|---|
-| Your system | siren | red | ×1.7 | 15 min | fast + whole window |
-| ≤ 2 jumps | klaxon | orange | ×1.3 | 10 min | fast |
-| ≤ 5 jumps | beep | yellow | ×1.0 | 5 min | slow |
+| Launcher | Where it looks |
+|---|---|
+| Steam / Proton | `~/.steam/steam`, `~/.local/share/Steam`, `~/.steam/root` → `steamapps/compatdata/*/pfx/…` |
+| Flatpak Steam | `~/.var/app/com.valvesoftware.Steam/…` |
+| Plain Wine | `~/.wine/drive_c/users/*/Documents` (and `My Documents` layouts) |
+| Lutris | `~/Games/*/drive_c/users/*/…` |
 
-Every field is editable, each row has a **Test**, and any tier can play a **sound file of your own**.
-Add, remove or reset tiers freely.
+The Steam app id isn't hardcoded, so your bottle is found whatever its number. Windows picked up the
+common **OneDrive-redirected Documents** path in the same pass.
 
-**Flash the whole overlay** is a per-tier checkbox: tick it and a report at that distance flashes the
-entire window in the tier's colour — a six-second burst, so it grabs you without strobing for the ten
-minutes the marker lives. Separate toggles and sounds cover **"clr" reports** and **kills in range**,
-plus master volume and a **minimum gap** between alarms.
+**Click-through can always be released.** The overlay's hover-to-release relies on an Electron option
+that exists only on macOS and Windows, and the `Ctrl+Alt+O` hotkey needs an X11-style session — neither
+is guaranteed on Linux, and under Wayland both can be unavailable. Pressing **⊞ Overlay** in the app now
+releases click-through on any platform, so you can't end up with an overlay you can't click out of. The
+button's tooltip names whichever escape works where you're running.
 
-Muting silences the alarm but *keeps* the visuals — that's the point of muting.
+Emoji font fallbacks were added so the toolbar glyphs don't render as empty boxes on a bare install.
 
-## Overlay
-- **Two layouts**, toggled from the toolbar: the **jump-ring map** (rings by distance from you) and the
-  **flat SMT region map** — the same Dotlan layout the Intel Map tab draws.
-- **Zoom slider** and a **label text-size slider**. Zoom centres on *your* system, so closing in follows
-  you rather than the middle of the region. Both persist across restarts, along with the layout you
-  picked, the window's size and position, and everything else on the bar.
-- The `⚠ 2j` nearest-hostile badge is tinted to the matching tier, so how bad it is reads before the
-  number does. **🔔** mutes without touching your settings.
+**Linux caveats worth knowing** (environmental — not something the app can fix):
 
-## Intel Map
-- **⤢ Pop out** opens the Intel Map in its own window, and every pop-out window now has a **📌 pin** to
-  keep it above the game.
-- The map **opens on the region your character is in** instead of a fixed default, and the character
-  it's following is called out with their **portrait and name**, highlighted both in the character row
-  and on the map. Click any character to follow them instead.
+- The transparent overlay needs a **compositing window manager**. Without one it may draw on a solid
+  background.
+- **Global hotkeys don't fire under Wayland.** Use the ⊞ Overlay button instead.
+- Electron's "hide from taskbar" and "float above fullscreen" are macOS/Windows-only, so the overlay
+  appears in your taskbar and should sit over a **windowed / borderless** EVE client rather than a true
+  fullscreen one.
 
-## Where the alarm runs
-From any tab, not just the SMT one — arm it and it keeps listening in the background. While the overlay
-is open **it** sounds the alarm and the main window stays quiet, so a report never fires twice.
+## Map readability
 
-Distance is measured from your first online **SMT character**, or the overlay's pinned system. With
-neither, reports fall into the furthest tier so you still hear something.
-
-Sounds are generated in the app rather than shipped as audio files — nothing extra to download.
+- The **character name pill** on the Intel Map now sits **above** the system dot instead of beside it,
+  where it was covering the system's own name.
+- **Flat SMT map labels** were sized from the region's overall span, which made them roughly as wide as
+  the gap between systems. They now use the same calibrated sizing the Intel Map tab uses for those same
+  layouts, and the overlay's label-size slider goes down to **0.3×** for smaller text still.
 
 ---
 

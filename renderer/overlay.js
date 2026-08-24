@@ -219,9 +219,11 @@
     let half = 1;
     for (const s of sys) half = Math.max(half, Math.abs(s.x - cx), Math.abs(s.y - cy));
     half *= 1.08;
-    // Text and markers scale off the span so they stay legible whatever shape
-    // and size the region is.
-    const U = half / 13, NR = half / 65;
+    // These layouts share the coordinate space the Intel Map tab draws in, so
+    // borrow its calibrated sizes (9px labels, r=4.5 dots) instead of deriving
+    // them from the region's span — span-derived text came out as wide as the
+    // gaps between systems (~55 units against a ~70-unit median jump).
+    const U = 11.25, NR = 4.5;
     const nodes = sys.map((s) => ({ ...s, jumps: st.jumpsOf.get(String(s.id)) }));
     const maxD = nodes.reduce((m, s) => Math.max(m, s.jumps == null ? 0 : s.jumps), 0) || 1;
     return { cx, cy, half, U, NR, rings: '', maxD, nodes,
@@ -427,7 +429,16 @@
     $('ov-labels').classList.toggle('on', !!st.prefs.labels);
     $('ov-feed-t').classList.toggle('on', !!st.prefs.feed);
     $('ov-pin').classList.toggle('on', !!st.prefs.alwaysOnTop);
-    $('ov-click').classList.toggle('on', !!st.clickThrough);
+    const ct = $('ov-click');
+    ct.classList.toggle('on', !!st.clickThrough);
+    // On Linux the pointer can't be handed back by hovering (that needs the
+    // forward option, which is macOS/Windows only), so point at the escapes
+    // that do work everywhere.
+    ct.title = st.clickThrough
+      ? (ovApi.platform === 'linux'
+        ? 'Click-through is ON — press Ctrl+Alt+O, or the ⊞ Overlay button in the app, to release it'
+        : 'Click-through is ON — hover this bar, or press Ctrl+Alt+O, to release it')
+      : 'Click-through — let clicks pass to EVE (Ctrl+Alt+O)';
     const mute = $('ov-mute');
     const alarm = SmtAlerts.config();
     mute.classList.toggle('muted', !!st.prefs.muted || !alarm.enabled);
@@ -509,6 +520,8 @@
     // swallow these controls — so hand hit-testing back as the pointer crosses
     // any interactive strip, and drop it again on the way out.
     document.addEventListener('mousemove', (e) => {
+      // Linux never delivers these while click-through is on (no forward
+      // option), which is why the hotkey and the app button exist.
       if (!st.clickThrough || !ovApi.hoverUi) return;
       const over = !!(e.target.closest && e.target.closest('.ov-hit'));
       if (over !== st.hoverUi) { st.hoverUi = over; ovApi.hoverUi(over); }

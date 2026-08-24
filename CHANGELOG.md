@@ -4,6 +4,37 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.3 — SMT on Linux, and two map-readability fixes
+
+**Linux support for the SMT tab.** The original SMT is Windows-only; this port now works on Linux, with
+the platform differences handled rather than assumed away:
+
+- **Chat-log auto-detection finds your Wine/Proton bottle.** EVE on Linux writes its logs inside a
+  prefix, so ⚙ Logs now scans **Steam Proton** (`~/.steam/steam`, `~/.local/share/Steam`, `~/.steam/root`),
+  **Flatpak Steam**, **plain Wine** (`~/.wine`, incl. `My Documents` layouts) and **Lutris**. The Steam
+  app id isn't hardcoded, so any bottle is found. Windows also gained the common **OneDrive-redirected
+  Documents** path.
+- **Click-through can always be released.** The overlay's hover-to-release needs
+  `setIgnoreMouseEvents({forward})`, which Electron supports on macOS/Windows only, and the `Ctrl+Alt+O`
+  hotkey needs a global-shortcut-capable session (X11, not Wayland). Pressing **⊞ Overlay** in the app
+  now releases click-through on any platform, so a Linux user can't get stuck with an unclickable
+  overlay. The button's tooltip names the escape that works on your platform.
+- Emoji font fallbacks added, so toolbar glyphs don't render as tofu on a bare Linux install.
+
+Known Linux caveats (environmental, not fixable in the app): the transparent overlay needs a
+**compositing window manager**; global hotkeys don't fire under **Wayland**; and Electron's
+`skipTaskbar` / "float above fullscreen" are macOS/Windows-only, so the overlay shows in the taskbar and
+should sit over a **windowed/borderless** client rather than true fullscreen.
+
+**Map readability**
+
+- The character name pill on the Intel Map now sits **above** the dot instead of beside it, where it was
+  covering the system's own name.
+- Flat SMT map labels were scaled from the region's overall span, which made them about as wide as the
+  gap between systems (~55 units against a ~70-unit median jump). They now use the same calibrated
+  9px/r4.5 sizing the Intel Map tab uses for the same layouts, and the overlay's font slider goes down
+  to 0.3× for even smaller text.
+
 ## v3.12.2 — SMT intel alarms, and an overlay you can actually tune
 
 - **🔔 Alerts** on the SMT toolbar — intel now sounds an alarm, configured as **distance tiers**. The

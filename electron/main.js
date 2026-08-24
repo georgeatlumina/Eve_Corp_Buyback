@@ -469,7 +469,17 @@ function closeOverlayWindow() {
   overlayWindow = null;
 }
 
-ipcMain.handle('overlay:open', () => { openOverlayWindow(); });
+ipcMain.handle('overlay:open', () => {
+  // Also the guaranteed way out of click-through. The overlay's own hover
+  // escape needs setIgnoreMouseEvents({forward}), which is macOS/Windows only,
+  // and the Ctrl+Alt+O hotkey needs a global-shortcut-capable session (X11, not
+  // Wayland) — so on Linux this button can be the only reachable release.
+  if (overlayWindow && !overlayWindow.isDestroyed() && readOverlayState().clickThrough) {
+    setOverlayClickThrough(false);
+    try { overlayWindow.webContents.send('overlay:click-through', false); } catch (_) {}
+  }
+  openOverlayWindow();
+});
 ipcMain.handle('overlay:close', () => { closeOverlayWindow(); });
 ipcMain.handle('overlay:state', () => readOverlayState());
 ipcMain.handle('overlay:save', (_event, patch) => writeOverlayState(patch || {}));

@@ -1,5 +1,5 @@
 * { box-sizing: border-box; }
-body { font-family: -apple-system, system-ui, "Segoe UI", sans-serif; margin: 0; background: #1e1e1e; color: #eee; }
+body { font-family: -apple-system, system-ui, "Segoe UI", sans-serif, "Segoe UI Emoji", "Noto Color Emoji", "Noto Emoji"; margin: 0; background: #1e1e1e; color: #eee; }
 header { padding: 1.2em 2em; background: #111; border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 100; }
 header h1 { margin: 0 0 0.6em; font-size: 1.4em; }
 .app-version { display: inline-block; margin-left: 0.5em; padding: 0.15em 0.55em; font-size: 0.55em; font-weight: 500; color: #cfd; background: #1a3a2a; border: 1px solid #2d5a44; border-radius: 999px; vertical-align: middle; letter-spacing: 0.3px; }
@@ -2038,7 +2038,7 @@ body.popout-calc .pib-calc > summary { display: none; }
 .smt-char-pill { fill: rgba(18,26,34,0.9); stroke: #2f9fe0; stroke-width: 0.6; }
 .smt-char.offline .smt-char-pill { stroke: #5b6b78; }
 .smt-char.fleet .smt-char-pill { stroke: #e0a83a; }
-.smt-char-lbl { fill: #dce8f2; font-size: 8px; font-family: "Segoe UI", system-ui, sans-serif; pointer-events: none; }
+.smt-char-lbl { fill: #dce8f2; font-size: 8px; font-family: "Segoe UI", system-ui, sans-serif; pointer-events: none; text-anchor: middle; }
 
 /* SMT route + jump bridges */
 .smt-route-bar, .smt-bridges-bar { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; padding: 0.45em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
