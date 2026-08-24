@@ -4,6 +4,30 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.0 — SMT: characters, bridges, Thera, sovereignty, and the intel overlay
+
+The rest of the SMT port, on top of v3.11.0's Intel Map.
+
+- **Characters & fleet on the map** — authorize characters under **Auth → SMT Characters** (location /
+  ship / online + fleet) and they plot live on the Intel Map, as a chip row and as markers; fleet
+  members are plotted too. Click a chip to jump the map to that character.
+- **Jump-bridge network** — manage your alliance's bridges under **Bridges…** (add pairs, or paste a
+  whole network, one `A - B` per line). They draw on the map and are used for routing.
+- **Routing** — **Route…** plans between two systems with **Shortest** / **Prefer high-sec** /
+  **Prefer low-null**, over gates, your jump bridges and (with **via WH**) live wormhole connections;
+  every hop is tagged with how it's taken.
+- **Thera / Turnur** — **Thera…** lists live connections to k-space from **eve-scout** with wormhole
+  type, max ship size and remaining life.
+- **Sovereignty layer** — the **Sov** layer colours the map by alliance holder, prints per-system
+  **ADM**, and rings systems under an active campaign; **Sov…** lists active sov campaigns with live
+  timer countdowns plus contested faction-warfare systems.
+- **Transparent intel overlay** — **⊞ Overlay** pops out a frameless always-on-top window for over the
+  EVE client: the systems within N jumps of you as rings around your position, lighting up as intel
+  and kills land (same ~10 min decay), a **nearest-hostile `⚠ 2j` badge**, and an intel ticker
+  filtered to systems in range with per-report jump distances. Follows your character or a system you
+  pin; range/labels/ticker/opacity on the toolbar; size, position and prefs persist.
+  **Click-through** lets clicks pass to EVE — `Ctrl+Alt+O` toggles it back off, `Ctrl+Alt+M` hides/shows.
+
 ## v3.11.0 — SMT tab: Intel Map (live intel + kills)
 
 First slice of an SMT (Slazanger's Eve Map Tool) port, in a new **SMT** tab group.
