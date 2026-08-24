@@ -27,6 +27,15 @@ html, body { height: 100%; }
   overflow: hidden;
 }
 
+/* Whole-window alarm flash: a burst when a report lands at a distance the user
+   ticked "flash overlay" for. Tinted to that tier's colour via --flash-col. */
+.ov-shell.alarm-flash { animation: ov-shell-flash 0.55s ease-in-out infinite; }
+@keyframes ov-shell-flash {
+  0%, 100% { background: rgba(9, 12, 16, 0.82); border-color: rgba(90, 110, 130, 0.45); box-shadow: none; }
+  50%      { background: var(--flash-bg, rgba(120, 20, 20, 0.55)); border-color: var(--flash-col, #ff3b3b);
+             box-shadow: 0 0 14px 2px var(--flash-col, #ff3b3b); }
+}
+
 /* ---- toolbar (also the window's drag handle) ---- */
 .ov-bar {
   display: flex;
@@ -35,8 +44,15 @@ html, body { height: 100%; }
   padding: 0.25em 0.35em;
   background: rgba(16, 21, 27, 0.9);
   border-bottom: 1px solid rgba(70, 88, 105, 0.4);
+  /* The bar carries a lot of controls; let it wrap rather than clip them when
+     the window is narrow. */
+  flex-wrap: wrap;
+  row-gap: 0.15em;
   -webkit-app-region: drag;
 }
+.ov-sl { display: inline-flex; align-items: center; gap: 0.15em; -webkit-app-region: no-drag; }
+.ov-sl > span { color: #7d8e9e; font-size: 0.9em; }
+.ov-sl input[type="range"] { width: 52px; accent-color: #2f6f9f; }
 .ov-bar button, .ov-bar input { -webkit-app-region: no-drag; }
 .ov-spacer { flex: 1 1 auto; }
 

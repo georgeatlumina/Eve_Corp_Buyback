@@ -4,6 +4,31 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.2 — SMT intel alarms, and an overlay you can actually tune
+
+- **🔔 Alerts** on the SMT toolbar — intel now sounds an alarm, configured as **distance tiers**. The
+  first tier covering a report's jump distance decides its **sound**, **highlight colour**, **highlight
+  size**, **fade time** and **flash** (marker, whole window, or both). Past the last tier is out of
+  range: silent, drawn plain. Defaults run siren/red/×1.7/15min/window-flash in your own system down to
+  beep/yellow/×1.0/5min at 5 jumps.
+- Tiers are fully editable with a per-tier **Test**, and any tier can play a **sound file of your own**.
+  Separate toggles + sounds for **"clr" reports** and **kills**, master **volume**, and a **minimum
+  gap** between alarms. Muting silences the sound but keeps the visuals.
+- **Overlay layouts** — toggle between the **jump-ring map** and the **flat SMT region map** (the same
+  Dotlan layout the Intel Map tab draws).
+- **Overlay zoom + label size sliders**, both persisted across restarts along with the chosen layout.
+  Zoom centres on your own system, so closing in follows you rather than the region's middle.
+- The overlay's `⚠ 2j` badge is tinted to the matching tier; **🔔** mutes without changing settings.
+- **⤢ Pop out** for the Intel Map, and a **📌 pin** on every pop-out window to keep it above the game.
+- The Intel Map **opens on your character's region** instead of a fixed default, and the character it
+  follows is shown with their **portrait and name**, highlighted in the character row and on the map.
+  Click any character to follow them instead.
+- The alarm runs **from any tab**. While the overlay is open it owns the alarm and the main window stays
+  quiet, so nothing sounds twice.
+- Sounds are synthesised in-app (WebAudio) rather than shipped as audio files.
+- Fix: `save_config` filters to an allowlist, so the new alarm settings were silently dropped and every
+  save came back as defaults until `smt_alerts` was added to it.
+
 ## v3.12.1 — SMT intel alarms, tiered by distance
 
 - **🔔 Alerts** on the SMT toolbar — the Intel Map and the overlay can now sound an alarm when intel

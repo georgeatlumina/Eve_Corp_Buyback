@@ -969,7 +969,9 @@
         <button id="smt-sov-btn" class="secondary" type="button" title="Active sov campaigns + faction-warfare timers">Sov…</button>
         <button id="smt-alerts-btn" class="secondary" type="button" title="Intel alarm — play a sound when intel lands near you">🔔 Alerts</button>
         <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
+        <button class="popout-btn secondary" data-popout="smt-intel" type="button" title="Open the Intel Map in its own window">⤢ Pop out</button>
         <button id="smt-overlay-btn" class="secondary" type="button" title="Pop out the transparent intel overlay to sit over your EVE client (Ctrl+Alt+M to hide/show)">&#8862; Overlay</button>
+        <span id="smt-focus" class="smt-focus"></span>
         <span id="smt-status" class="muted small"></span>
       </div>
       <div id="smt-route-bar" class="smt-route-bar" hidden>
@@ -1019,9 +1021,10 @@
           <span id="smt-al-status" class="muted small"></span>
         </div>
         <div class="smt-al-tiers-h muted small">
-          <strong>Distance tiers</strong> — the first tier that covers a report decides its sound, its
-          highlight colour on the overlay, and whether it flashes. Anything past the last tier is out of
-          range: no sound, and drawn plain rather than in a tier colour.
+          <strong>Distance tiers</strong> — the first tier that covers a report decides its sound, and how
+          the overlay draws it: colour, how big the highlight is, how long it takes to fade, and whether it
+          flashes (the marker, the whole window, or both). Anything past the last tier is out of range: no
+          sound, and drawn plain rather than in a tier colour.
         </div>
         <div id="smt-al-tiers" class="smt-al-tiers"></div>
         <div class="smt-alerts-row">
@@ -1749,6 +1752,20 @@
         }
         var btn = document.querySelector('.tab-btn[data-tab="' + tabToClick + '"]');
         if (btn) btn.click();
+        // Pop-outs are meant to sit beside the game, so give every one of them a
+        // pin toggle. Rendered here rather than per-tab so all pop-outs get it.
+        var pin = document.createElement('button');
+        pin.className = 'popout-pin';
+        pin.type = 'button';
+        pin.textContent = '\uD83D\uDCCC';
+        pin.title = 'Keep this window on top';
+        pin.addEventListener('click', function () {
+          var on = !pin.classList.contains('on');
+          pin.classList.toggle('on', on);
+          pin.title = on ? 'On top — click to release' : 'Keep this window on top';
+          if (window.api && window.api.pinWindow) window.api.pinWindow(on);
+        });
+        document.body.appendChild(pin);
         if (t === 'pi-calc') { var d = document.querySelector('.pib-calc'); if (d) d.open = true; }
       }
     })();

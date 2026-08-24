@@ -52,6 +52,14 @@ ipcMain.handle('pop-out-tab', (_event, tab, opts) => {
   if (mem != null && mem >= 0 && mem <= 99) query += `&mem=${mem}`;
   win.loadURL(`${fileUrl}${query}`);
 });
+// Keep a popped-out tab above other windows — the same "watch it while you fly"
+// job the overlay does, for a full tab. Scoped to the calling window, so each
+// pop-out pins independently.
+ipcMain.handle('popout:pin', (event, on) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) win.setAlwaysOnTop(!!on, 'screen-saver');
+  return !!on;
+});
 ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
 ipcMain.handle('app:install-version', (_event, tag) => installVersion(tag));
 let pythonProcess = null;
@@ -307,7 +315,8 @@ function createWindow() {
 const OVERLAY_DEFAULTS = {
   width: 460, height: 500, x: null, y: null,
   jumps: 5, opacity: 0.9, clickThrough: false, alwaysOnTop: true,
-  labels: true, feed: true, follow: true, system: '', muted: false,
+  labels: true, feed: true, follow: true, system: '', muted: false, mode: 'radial',
+  zoom: 1, labelScale: 1,
 };
 
 function overlayStatePath() {

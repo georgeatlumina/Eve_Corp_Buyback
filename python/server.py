@@ -1083,9 +1083,12 @@ def smt_sov():
 # "any distance" and only makes sense on the last tier. Anything past the last
 # tier is out of range — no alarm, no highlight.
 SMT_ALERT_TIER_DEFAULTS = [
-    {'max': 0, 'sound': 'siren', 'colour': '#ff2d2d', 'flash': 'fast', 'custom': ''},
-    {'max': 2, 'sound': 'klaxon', 'colour': '#ff6a1a', 'flash': 'fast', 'custom': ''},
-    {'max': 5, 'sound': 'beep', 'colour': '#e8c33a', 'flash': 'slow', 'custom': ''},
+    {'max': 0, 'sound': 'siren', 'colour': '#ff2d2d', 'flash': 'fast', 'custom': '',
+     'flash_window': True, 'size': 1.7, 'fade': 900},
+    {'max': 2, 'sound': 'klaxon', 'colour': '#ff6a1a', 'flash': 'fast', 'custom': '',
+     'flash_window': False, 'size': 1.3, 'fade': 600},
+    {'max': 5, 'sound': 'beep', 'colour': '#e8c33a', 'flash': 'slow', 'custom': '',
+     'flash_window': False, 'size': 1.0, 'fade': 300},
 ]
 SMT_ALERT_DEFAULTS = {
     'enabled': True,
@@ -1108,6 +1111,9 @@ class SMTAlertTier(BaseModel):
     colour: str = '#ff3b3b'
     flash: str = 'none'
     custom: str = ''
+    flash_window: bool = False   # flash the whole overlay, not just the marker
+    size: float = 1.0            # highlight radius multiplier on the overlay
+    fade: int = 600              # seconds until the highlight has faded out
 
 
 class SMTAlerts(BaseModel):
@@ -1148,6 +1154,9 @@ def _clean_tiers(tiers):
             'colour': d.get('colour') if _SMT_HEX.match(str(d.get('colour') or '')) else '#ff3b3b',
             'flash': d.get('flash') if d.get('flash') in _SMT_FLASH else 'none',
             'custom': str(d.get('custom') or '')[:512],
+            'flash_window': bool(d.get('flash_window')),
+            'size': round(max(0.3, min(float(d.get('size', 1.0) or 1.0), 3.0)), 2),
+            'fade': max(5, min(int(d.get('fade', 600) or 600), 3600)),
         })
     clean.sort(key=lambda t: (t['max'] < 0, t['max']))
     return clean

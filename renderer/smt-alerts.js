@@ -7,7 +7,8 @@
 // sidecar (/api/smt/alerts) so the two windows always agree on the rules.
 //
 // Everything is keyed on **distance tiers**: the first tier whose `max` covers
-// the report decides its sound, its highlight colour and whether it flashes.
+// the report decides its sound, and how the overlay draws it — colour, size,
+// how long it takes to fade, and whether it flashes.
 // Past the last tier a report is out of range: no alarm, and the overlay
 // draws it in its plain default red rather than a tier colour.
 //
@@ -17,9 +18,9 @@
 
 window.SmtAlerts = (function () {
   const TIER_DEFAULTS = [
-    { max: 0, sound: 'siren', colour: '#ff2d2d', flash: 'fast', custom: '' },
-    { max: 2, sound: 'klaxon', colour: '#ff6a1a', flash: 'fast', custom: '' },
-    { max: 5, sound: 'beep', colour: '#e8c33a', flash: 'slow', custom: '' },
+    { max: 0, sound: 'siren', colour: '#ff2d2d', flash: 'fast', custom: '', flash_window: true, size: 1.7, fade: 900 },
+    { max: 2, sound: 'klaxon', colour: '#ff6a1a', flash: 'fast', custom: '', flash_window: false, size: 1.3, fade: 600 },
+    { max: 5, sound: 'beep', colour: '#e8c33a', flash: 'slow', custom: '', flash_window: false, size: 1.0, fade: 300 },
   ];
   const DEFAULTS = {
     enabled: true, tiers: TIER_DEFAULTS, hostile: true, clear: false, kills: false,
@@ -150,7 +151,7 @@ window.SmtAlerts = (function () {
     return false;
   }
 
-  function armed() { return st.cfg.enabled && !st.muted; }
+  const armed = () => st.cfg.enabled;
 
   return {
     sounds: SOUND_NAMES,
@@ -173,10 +174,13 @@ window.SmtAlerts = (function () {
       if (t) emit(t.sound, t.custom);
     },
 
-    // Feed the intel events from one poll. Returns how many alarms fired.
+    // Feed the intel events from one poll. Returns one entry per report that
+    // triggered, so the caller can drive visuals (the whole-overlay flash) off
+    // the same decision that made the sound. Muting silences the sound only —
+    // the visuals still fire, which is the point of muting.
     intel(events, jumpsOf) {
-      if (!armed() || !events || !events.length) return 0;
-      let fired = 0;
+      if (!armed() || !events || !events.length) return [];
+      const fired = [];
       for (const e of events) {
         const want = e.clear ? st.cfg.clear : st.cfg.hostile;
         if (!want) continue;
@@ -184,23 +188,26 @@ window.SmtAlerts = (function () {
         const m = match(e.systems, jumpsOf);
         if (!m.tier) continue;                           // out of range
         if (throttled()) break;
-        if (e.clear) emit(st.cfg.clear_sound, '');
-        else emit(m.tier.sound, m.tier.custom);
-        fired++;
+        if (!st.muted) {
+          if (e.clear) emit(st.cfg.clear_sound, '');
+          else emit(m.tier.sound, m.tier.custom);
+        }
+        fired.push({ tier: m.tier, jumps: m.jumps, clear: !!e.clear });
       }
       return fired;
     },
 
     // Feed the kills from one poll.
     kills(kills, jumpsOf) {
-      if (!armed() || !st.cfg.kills || !kills || !kills.length) return 0;
+      if (!armed() || !st.cfg.kills || !kills || !kills.length) return [];
       for (const k of kills) {
-        if (!match([k.system_id], jumpsOf).tier) continue;
+        const m = match([k.system_id], jumpsOf);
+        if (!m.tier) continue;
         if (throttled()) break;
-        emit(st.cfg.kill_sound, '');
-        return 1;
+        if (!st.muted) emit(st.cfg.kill_sound, '');
+        return [{ tier: m.tier, jumps: m.jumps, kill: true }];
       }
-      return 0;
+      return [];
     },
   };
 })();

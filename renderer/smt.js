@@ -17,6 +17,7 @@
     intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true, sov: false },
     follow: false, loaded: false, poll: null, tick: null, charPoll: null,
     alertJumps: new Map(), alertKey: null, alertsOwned: false, loopsOn: false,
+    focusId: null, centred: false,
     view: { s: 1, tx: 0, ty: 0 },
   };
   const $id = (x) => document.getElementById(x);
@@ -40,7 +41,9 @@
     const sel = $id('smt-region'); if (!sel || sel.options.length) return;
     const d = await j('/api/map/regions');
     sel.innerHTML = d.regions.map((r) => `<option value="${esc(r.name)}">${esc(r.name)} (${r.count})</option>`).join('');
-    if ([...sel.options].some((o) => o.value === 'Delve')) sel.value = 'Delve';
+    // Only a starting value for the picker — never override a region we've
+    // already navigated to (e.g. the one our character is in).
+    if (!st.region && [...sel.options].some((o) => o.value === 'Delve')) sel.value = 'Delve';
   }
   async function loadIndex() {
     if (st.index) return;
@@ -171,9 +174,25 @@
       const d = await j('/api/smt/characters');
       st.chars = d.characters || []; st.fleet = d.fleet; st.fleetMembers = d.fleet_members || [];
       st.charsAuthed = d.authed;
+      // Follow the first online character unless the user has picked someone.
+      if (!st.chars.some((c) => String(c.character_id) === String(st.focusId))) {
+        const pick = st.chars.find((c) => c.online && c.system_id) || st.chars.find((c) => c.system_id);
+        st.focusId = pick ? pick.character_id : null;
+      }
+      maybeCentre();
       renderCharChips(); renderCharMarkers();
       refreshAlertRange();
     } catch (_) { /* transient */ }
+  }
+  // First fix on a character wins the opening view — far more useful than
+  // dumping everyone in a fixed default region. Only once the map index exists,
+  // and only until the user (or a fallback) has settled the view.
+  function maybeCentre() {
+    if (st.centred || !st.index || !st.focusId) return;
+    const c = st.chars.find((x) => String(x.character_id) === String(st.focusId));
+    if (!c || !c.region || !c.system_id) return;
+    st.centred = true;
+    showRegion(c.region, c.system_id);
   }
   function renderCharChips() {
     const box = $id('smt-chars'); if (!box) return;
@@ -183,9 +202,21 @@
         : '<span class="muted small">No SMT characters — add them in Auth → SMT Characters to plot them here.</span>';
       return;
     }
-    const chip = (c) => `<button class="smt-char-chip${c.online ? ' on' : ''}${c.region === st.region ? ' here' : ''}" data-region="${esc(c.region || '')}" data-id="${c.system_id || ''}" title="${esc([c.ship_type_name, c.docked ? 'docked' : '', c.error || ''].filter(Boolean).join(' · '))}">
-      <span class="smt-char-dot"></span>${esc(c.name || c.slot)} <span class="muted">${esc(c.system_name || '—')}</span></button>`;
+    const portrait = (c, size) => (c.character_id
+      ? `<img class="smt-char-pic" loading="lazy" src="https://images.evetech.net/characters/${c.character_id}/portrait?size=${size}" alt="" onerror="this.style.visibility='hidden'">`
+      : '');
+    const chip = (c) => `<button class="smt-char-chip${c.online ? ' on' : ''}${c.region === st.region ? ' here' : ''}${String(c.character_id) === String(st.focusId) ? ' focused' : ''}" data-region="${esc(c.region || '')}" data-id="${c.system_id || ''}" data-char="${esc(c.character_id || '')}" title="${esc([c.ship_type_name, c.docked ? 'docked' : '', c.error || ''].filter(Boolean).join(' · '))}">
+      <span class="smt-char-dot"></span>${portrait(c, 32)}${esc(c.name || c.slot)} <span class="muted">${esc(c.system_name || '—')}</span></button>`;
     box.innerHTML = st.chars.map(chip).join('') + (st.fleet ? `<span class="smt-fleet-tag" title="You're in a fleet of ${st.fleet.size}">⛴ fleet ${st.fleet.size}</span>` : '');
+    // Whoever the map is following, called out plainly with their portrait.
+    const f = $id('smt-focus');
+    if (f) {
+      const c = st.chars.find((x) => String(x.character_id) === String(st.focusId));
+      f.classList.toggle('on', !!c);
+      f.innerHTML = c ? `${portrait(c, 64)}<strong>${esc(c.name || c.slot)}</strong>
+        <span class="sys">${esc(c.system_name || '—')}</span>${c.region ? `<span class="muted">${esc(c.region)}</span>` : ''}` : '';
+      f.title = c ? 'The character the Intel Map is following — click a chip to follow another' : '';
+    }
   }
   function renderCharMarkers() {
     const root = $id('smt-root'); if (!root) return;
@@ -202,7 +233,12 @@
     };
     const bySys = {};
     for (const c of st.chars) if (c.system_id && c.region === st.region) (bySys[c.system_id] = bySys[c.system_id] || []).push(c);
-    for (const sid in bySys) { const l = bySys[sid]; place(sid, l.map((c) => c.name).join(', '), l.some((c) => c.online) ? 'online' : 'offline'); }
+    for (const sid in bySys) {
+      const l = bySys[sid];
+      const cls = (l.some((c) => c.online) ? 'online' : 'offline')
+        + (l.some((c) => String(c.character_id) === String(st.focusId)) ? ' focused' : '');
+      place(sid, l.map((c) => c.name).join(', '), cls);
+    }
     const fleetBySys = {};
     for (const m of st.fleetMembers) if (m.system_id && m.region === st.region) (fleetBySys[m.system_id] = fleetBySys[m.system_id] || []).push(m);
     for (const sid in fleetBySys) { const l = fleetBySys[sid]; place(sid, l.length > 2 ? `${l.length} fleet` : l.map((m) => m.name || 'fleet').join(', '), 'fleet'); }
@@ -444,6 +480,9 @@
       <button class="secondary smt-al-test" type="button" data-test="${i}">Test</button>
       <input type="color" class="smt-al-col" value="${esc(t.colour)}" title="Overlay highlight colour at this distance" />
       <select class="smt-al-flash" title="Flash the overlay marker at this distance">${flashOpt(t.flash)}</select>
+      <label class="smt-al-t" title="Flash the whole overlay window when a report lands at this distance"><input type="checkbox" class="smt-al-wflash"${t.flash_window ? ' checked' : ''} /> flash overlay</label>
+      <label class="smt-al-t" title="Highlight size on the overlay — 1 is standard, higher is bigger">size <input type="number" class="smt-al-size" min="0.3" max="3" step="0.1" value="${t.size == null ? 1 : t.size}" />\u00d7</label>
+      <label class="smt-al-t" title="Seconds before the highlight has faded away">fade <input type="number" class="smt-al-fade" min="5" max="3600" step="5" value="${t.fade == null ? 600 : t.fade}" />s</label>
       <input type="text" class="smt-al-custom" value="${esc(t.custom || '')}" placeholder="Optional sound file for this tier\u2026" spellcheck="false" autocomplete="off" />
       <button class="secondary smt-al-browse" type="button" data-i="${i}">\u2026</button>
       <button class="smt-al-del" type="button" data-i="${i}" title="Remove this tier">\u2715</button>
@@ -456,6 +495,9 @@
       colour: row.querySelector('.smt-al-col').value,
       flash: row.querySelector('.smt-al-flash').value,
       custom: row.querySelector('.smt-al-custom').value.trim(),
+      flash_window: row.querySelector('.smt-al-wflash').checked,
+      size: Number(row.querySelector('.smt-al-size').value),
+      fade: Number(row.querySelector('.smt-al-fade').value),
     }));
   }
   async function saveAlerts(tiers) {
@@ -555,14 +597,20 @@
 
   // ---- wiring ----
   function wire() {
-    $id('smt-region')?.addEventListener('change', (e) => showRegion(e.target.value));
+    $id('smt-region')?.addEventListener('change', (e) => { st.centred = true; showRegion(e.target.value); });
     document.querySelectorAll('.smt-ov').forEach((b) => b.addEventListener('click', () => {
       b.classList.toggle('on'); st.ov[b.dataset.ov] = b.classList.contains('on');
       applyLayers();
       if (b.dataset.ov === 'chars') { if (st.ov.chars) pollChars(); else { renderCharChips(); renderCharMarkers(); } }
       if (b.dataset.ov === 'sov') { if (st.ov.sov && !st.sov) loadSov(); else applySov(); }
     }));
-    $id('smt-chars')?.addEventListener('click', (e) => { const c = e.target.closest('.smt-char-chip'); if (c && c.dataset.region) showRegion(c.dataset.region, c.dataset.id); });
+    $id('smt-chars')?.addEventListener('click', (e) => {
+      const c = e.target.closest('.smt-char-chip'); if (!c) return;
+      if (c.dataset.char) st.focusId = c.dataset.char;
+      st.centred = true;
+      renderCharChips(); renderCharMarkers();
+      if (c.dataset.region) showRegion(c.dataset.region, c.dataset.id);
+    });
     // route + bridges panels
     $id('smt-route-btn')?.addEventListener('click', () => { const b = $id('smt-route-bar'); if (b) b.hidden = !b.hidden; });
     $id('smt-bridges-btn')?.addEventListener('click', () => { const b = $id('smt-bridges-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadBridges(); } });
@@ -595,7 +643,7 @@
       if (e.target.id === 'smt-al-add') {
         const ts = readTiers();
         const far = ts.reduce((m, x) => Math.max(m, x.max), 0);
-        ts.push({ max: Math.min(10, far + 2), sound: 'blip', colour: '#8fb4d8', flash: 'none', custom: '' });
+        ts.push({ max: Math.min(10, far + 2), sound: 'blip', colour: '#8fb4d8', flash: 'none', custom: '', flash_window: false, size: 1, fade: 300 });
         saveAlerts(ts);
         return;
       }
@@ -636,7 +684,18 @@
     wirePanZoom();
     if (!st.loaded) {
       st.loaded = true; wire();
-      Promise.all([loadRegions(), loadIndex()]).then(() => showRegion($id('smt-region')?.value || 'Delve')).catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
+      // Open on whichever character we're following. pollChars centres the map
+      // the moment it has a fix; these two fallbacks only cover "there is no
+      // character" (quick) and "a character exists but never resolved a system"
+      // (slow), so a fix arriving a beat late still wins the opening view.
+      const fallback = () => { if (!st.centred) { st.centred = true; showRegion($id('smt-region')?.value || 'Delve'); } };
+      Promise.all([loadRegions(), loadIndex()])
+        .then(() => {
+          maybeCentre();                                        // a character fix may already be in
+          setTimeout(() => { if (!st.focusId) fallback(); }, 1500);
+          setTimeout(fallback, 6000);
+        })
+        .catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
       loadConfig(); loadBridges(); loadThera(); loadSov(); loadAlerts();
       startLoops();
     } else if (st.layout) { fitView(); }

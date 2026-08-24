@@ -2113,3 +2113,21 @@ body.popout-calc .pib-calc > summary { display: none; }
 .smt-al-del { color: #d88; background: transparent; border: 0; cursor: pointer; padding: 0 0.3em; }
 .smt-al-del:hover { color: #ff8b8b; }
 .smt-al-swatch { display: inline-block; width: 0.85em; height: 0.85em; border-radius: 50%; border: 1px solid #0006; }
+.smt-al-tier .smt-al-size, .smt-al-tier .smt-al-fade { width: 4.2em; }
+
+/* ---- pop-out window pin ---- */
+.popout-pin { position: fixed; top: 6px; right: 8px; z-index: 60; background: #1a1d22; color: #7d8e9e;
+  border: 1px solid #2b2f36; border-radius: 5px; padding: 0.15em 0.4em; cursor: pointer; font-size: 0.95em; opacity: 0.75; }
+.popout-pin:hover { opacity: 1; }
+.popout-pin.on { background: #2f6f9f; border-color: #3f7fae; color: #fff; opacity: 1; }
+
+/* ---- focused SMT character ---- */
+.smt-focus { display: none; align-items: center; gap: 0.4em; background: #16222e; border: 1px solid #2f6f9f;
+  border-radius: 14px; padding: 0.1em 0.6em 0.1em 0.15em; color: #cfe8ff; font-size: 0.86em; }
+.smt-focus.on { display: inline-flex; }
+.smt-focus img { width: 22px; height: 22px; border-radius: 50%; background: #0b0d10; }
+.smt-focus .sys { color: #9fc3e0; }
+.smt-char-chip img.smt-char-pic { width: 18px; height: 18px; border-radius: 50%; background: #0b0d10; }
+.smt-char-chip.focused { border-color: #2f6f9f; background: #16222e; box-shadow: 0 0 0 1px #2f6f9f inset; }
+.smt-char.focused .smt-char-mk { fill: #7fd4ff; stroke: #05080b; }
+.smt-char.focused .smt-char-pill { stroke: #7fd4ff; }

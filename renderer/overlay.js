@@ -6,6 +6,10 @@
 // them up as intel reports and kills land — so you can keep it over the EVE
 // client and see how far out the hostiles are without alt-tabbing.
 //
+// Two layouts, toggled from the toolbar: the jump-ring map (rings by distance
+// from you) and the flat SMT region map (the same Dotlan layout the Intel Map
+// tab draws). Both share the intel/kill layers and the distance tiers.
+//
 // Origin = your first online SMT-authed character (Follow), or a system you
 // pin by hand. Topology comes from /api/smt/overlay; the live layers are the
 // same /api/smt/intel + /api/smt/kills feeds the Intel Map polls, read here
@@ -26,6 +30,7 @@
     chars: [], charSys: null, watching: null,
     clickThrough: false, hoverUi: false, loadKey: null, err: '',
     alertJumps: new Map(), alertKey: null,
+    regionLayout: null, regionName: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -61,6 +66,7 @@
       st.origin = d.origin; st.systems = d.systems || []; st.edges = d.edges || [];
       st.jumpsOf = new Map(st.systems.map((s) => [String(s.id), s.jumps]));
       layout();
+      await loadRegion();
       render();
       refreshAlertRange();
     } catch (e) {
@@ -68,6 +74,19 @@
       st.loadKey = null;   // retry on the next tick
       render();
     }
+  }
+
+  // The flat map reuses the bundled Dotlan region layout — the same geometry the
+  // Intel Map tab draws, so switching between the two windows stays familiar.
+  // Distances still come from the jump map, so tiers work in both layouts.
+  async function loadRegion() {
+    if (st.prefs.mode !== 'region' || !st.origin || !st.origin.region) return;
+    if (st.regionName === st.origin.region && st.regionLayout) return;
+    try {
+      const d = await j(`/api/map/region/${encodeURIComponent(st.origin.region)}`);
+      st.regionLayout = d;
+      st.regionName = st.origin.region;
+    } catch (_) { st.regionLayout = null; st.regionName = null; }
   }
 
   // Radial layout: the origin at the centre, one ring per jump of distance.
@@ -123,46 +142,90 @@
       return;
     }
     empty.textContent = '';
-    const maxD = st.systems.reduce((m, s) => Math.max(m, s.jumps), 0) || 1;
-    const R = (maxD + 0.65) * RING;
-    const U = R / 20;        // label size, so text keeps its on-screen size
-    const NR = R / 85;       // node radius
-    svg.setAttribute('viewBox', `${-R} ${-R} ${2 * R} ${2 * R}`);
+    const g = st.prefs.mode === 'region' && st.regionLayout ? regionGeometry() : radialGeometry();
+    // Zoom shrinks the viewBox around the geometry's centre — which is your own
+    // system — so zooming in closes on you rather than on the region's middle.
+    const half = g.half / (Number(st.prefs.zoom) || 1);
+    svg.setAttribute('viewBox', `${g.cx - half} ${g.cy - half} ${2 * half} ${2 * half}`);
 
-    let rings = '';
-    for (let d = 1; d <= maxD; d++) {
-      rings += `<circle class="ov-ring" cx="0" cy="0" r="${d * RING}" stroke-width="${U / 14}" />`
-        + `<text class="ov-ring-lbl" x="0" y="${-d * RING + U * 0.5}" font-size="${U * 0.75}">${d}</text>`;
-    }
     let edges = '';
-    for (const [a, b, kind] of st.edges) {
-      const p = st.pos.get(String(a)), q = st.pos.get(String(b));
+    for (const [a, b, kind] of g.edges) {
+      const p = g.pos.get(String(a)), q = g.pos.get(String(b));
       if (p && q) {
         edges += `<line class="ov-edge${kind === 'bridge' ? ' bridge' : ''}" x1="${p.x.toFixed(1)}" y1="${p.y.toFixed(1)}"`
-          + ` x2="${q.x.toFixed(1)}" y2="${q.y.toFixed(1)}" stroke-width="${U / 12}" />`;
+          + ` x2="${q.x.toFixed(1)}" y2="${q.y.toFixed(1)}" stroke-width="${g.U / 12}" />`;
       }
     }
     const chars = new Set(st.chars.filter((c) => c.online && c.system_id).map((c) => String(c.system_id)));
+    const { U, NR } = g;
     let nodes = '';
-    for (const s of st.systems) {
-      const p = st.pos.get(String(s.id));
+    for (const s of g.nodes) {
+      const p = g.pos.get(String(s.id));
       if (!p) continue;
       const home = String(s.id) === String(st.origin.id);
+      // Systems past the jump map (only possible on the flat map) have no known
+      // distance — labelled and dimmed as such rather than guessed at.
+      const jl = s.jumps == null ? '—' : `${s.jumps}j`;
+      const dim = s.jumps == null ? 0.45 : (1 - 0.5 * (s.jumps / (g.maxD || 1)));
       nodes += `<g class="ov-node${home ? ' home' : ''}" data-id="${s.id}" data-name="${esc(s.name)}"`
         + ` transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})">`
-        + `<title>${esc(s.name)} · ${s.jumps}j · ${s.sec == null ? '?' : s.sec.toFixed(1)} · ${esc(s.region || '')}</title>`
+        + `<title>${esc(s.name)} · ${jl} · ${s.sec == null ? '?' : s.sec.toFixed(1)} · ${esc(s.region || '')}</title>`
         + `<circle class="ov-halo" r="0" />`
         + `<circle class="ov-pulse" r="${(NR * 2.6).toFixed(1)}" stroke-width="${(U / 9).toFixed(1)}" />`
         + (home ? `<circle class="ov-ringmk" r="${NR * 2.1}" stroke-width="${U / 11}" />` : '')
         + `<circle class="ov-dot" r="${NR}" style="fill:${secCol(s.sec)}" stroke-width="${U / 22}" />`
         + (chars.has(String(s.id)) && !home ? `<circle class="ov-chr" cx="${NR * 1.6}" cy="${-NR * 1.6}" r="${NR * 0.7}" />` : '')
-        + (st.prefs.labels ? `<text class="ov-lbl" y="${-NR * 1.9}" font-size="${U * 0.8}"`
-          + ` fill-opacity="${(1 - 0.5 * (s.jumps / maxD)).toFixed(2)}">${esc(s.name)}</text>` : '')
+        + (st.prefs.labels ? `<text class="ov-lbl" y="${-NR * 1.9}" font-size="${(U * 0.8 * (Number(st.prefs.labelScale) || 1)).toFixed(2)}"`
+          + ` fill-opacity="${dim.toFixed(2)}">${esc(s.name)}</text>` : '')
         + `</g>`;
     }
-    root.innerHTML = `<g>${rings}</g><g>${edges}</g><g>${nodes}</g>`;
+    root.innerHTML = `<g>${g.rings}</g><g>${edges}</g><g>${nodes}</g>`;
     applyLayers();
     updateBar();
+  }
+
+  // Jump-ring map: origin centred, one dashed ring per jump of distance.
+  function radialGeometry() {
+    const maxD = st.systems.reduce((m, s) => Math.max(m, s.jumps), 0) || 1;
+    const R = (maxD + 0.65) * RING;
+    const U = R / 20;        // label size, so text keeps its on-screen size
+    const NR = R / 85;       // node radius
+    let rings = '';
+    for (let d = 1; d <= maxD; d++) {
+      rings += `<circle class="ov-ring" cx="0" cy="0" r="${d * RING}" stroke-width="${U / 14}" />`
+        + `<text class="ov-ring-lbl" x="0" y="${-d * RING + U * 0.5}" font-size="${U * 0.75}">${d}</text>`;
+    }
+    return { cx: 0, cy: 0, half: R, U, NR, rings, maxD,
+             nodes: st.systems, edges: st.edges, pos: st.pos };
+  }
+
+  // Flat SMT map: the region's Dotlan layout, scaled to fit the window.
+  function regionGeometry() {
+    const sys = st.regionLayout.systems;
+    const pos = new Map(sys.map((s) => [String(s.id), { x: s.x, y: s.y }]));
+    // Centre on your own system so zooming closes on you. The half-span is the
+    // furthest node from there, so the whole region still fits at zoom 1 even
+    // when you're sitting in a corner of it.
+    const home = pos.get(String(st.origin.id));
+    let cx = home ? home.x : 0, cy = home ? home.y : 0;
+    if (!home) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const s of sys) {
+        minX = Math.min(minX, s.x); minY = Math.min(minY, s.y);
+        maxX = Math.max(maxX, s.x); maxY = Math.max(maxY, s.y);
+      }
+      cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
+    }
+    let half = 1;
+    for (const s of sys) half = Math.max(half, Math.abs(s.x - cx), Math.abs(s.y - cy));
+    half *= 1.08;
+    // Text and markers scale off the span so they stay legible whatever shape
+    // and size the region is.
+    const U = half / 13, NR = half / 65;
+    const nodes = sys.map((s) => ({ ...s, jumps: st.jumpsOf.get(String(s.id)) }));
+    const maxD = nodes.reduce((m, s) => Math.max(m, s.jumps == null ? 0 : s.jumps), 0) || 1;
+    return { cx, cy, half, U, NR, rings: '', maxD, nodes,
+             edges: (st.regionLayout.edges || []).map(([a, b]) => [a, b, 'gate']), pos };
   }
 
   // ---- live layers -------------------------------------------------------
@@ -176,14 +239,16 @@
         st.feed.unshift(e);
       }
       if (st.feed.length > 60) st.feed.length = 60;
-      SmtAlerts.intel(d.events, st.alertJumps);
+      for (const f of SmtAlerts.intel(d.events, st.alertJumps)) {
+        if (f.tier && f.tier.flash_window && !f.clear) flashWindow(f.tier.colour);
+      }
       if (d.events.length) renderFeed();
     } catch (_) { /* transient — the tick keeps decaying what we have */ }
     try {
       const d = await j(`/api/smt/kills?since=${st.killSince}`);
       st.killSince = d.ts;
       for (const k of d.kills) st.kills.set(String(k.system_id), { ts: k.ts * 1000, value: k.value });
-      SmtAlerts.kills(d.kills, st.alertJumps);
+      SmtAlerts.kills(d.kills, st.alertJumps);   // kills are sound-only, no window flash
     } catch (_) { /* transient */ }
     applyLayers();
   }
@@ -193,19 +258,28 @@
   function applyLayers() {
     const now = Date.now();
     let nearest = null;
+    // Marker sizes are relative to the map's own span, not the zoomed viewport,
+    // so zooming magnifies everything together instead of inflating highlights.
+    const svg = $('ov-svg');
+    const zoom = Number(st.prefs && st.prefs.zoom) || 1;
+    const baseR = (svg ? Number(svg.viewBox.baseVal.width) / 2 : 560) * zoom || 560;
     document.querySelectorAll('#ov-root .ov-node').forEach((el) => {
       const id = el.dataset.id;
       const halo = el.querySelector('.ov-halo');
       const iv = st.intel.get(id), kv = st.kills.get(id);
-      const R = Number(el.closest('svg').viewBox.baseVal.width) / 2 || 560;
+      const R = baseR;
       let r = 0, fill = 'transparent', op = 0, flash = 'none';
       if (iv) {
-        const t = Math.max(0, 1 - (now - iv.ts) / DECAY);
+        // Hostile reports take the whole look of the distance tier they fall
+        // into — colour, size and how long they take to fade. A "clr" is always
+        // the same calm green on the default fade.
+        const tier = iv.clear ? null : SmtAlerts.tierFor(st.jumpsOf.get(id));
+        const fade = (tier && tier.fade ? tier.fade * 1000 : DECAY);
+        const size = (tier && tier.size) || 1;
+        const t = Math.max(0, 1 - (now - iv.ts) / fade);
         if (t > 0) {
-          r = R / 42 + t * (R / 28); op = 0.15 + t * 0.55;
-          // Hostile reports take the colour (and flash) of the distance tier
-          // they fall into; a "clr" is always the same calm green.
-          const tier = iv.clear ? null : SmtAlerts.tierFor(st.jumpsOf.get(id));
+          r = (R / 42 + t * (R / 28)) * size;
+          op = 0.15 + t * 0.55;
           fill = iv.clear ? '#3ad07a' : ((tier && tier.colour) || '#ff3b3b');
           if (tier && tier.flash) flash = tier.flash;
           if (!iv.clear) {
@@ -224,7 +298,12 @@
       el.classList.toggle('hot', r > 0);
       el.classList.toggle('flash-slow', flash === 'slow');
       el.classList.toggle('flash-fast', flash === 'fast');
-      if (flash !== 'none') el.style.setProperty('--pulse', fill);
+      if (flash !== 'none') {
+        el.style.setProperty('--pulse', fill);
+        // Track the halo so a big close-range highlight doesn't get a tiny ring.
+        const pulse = el.querySelector('.ov-pulse');
+        if (pulse) pulse.setAttribute('r', Math.max(4, r * 0.62).toFixed(1));
+      }
     });
     const warn = $('ov-warn');
     if (warn) {
@@ -263,6 +342,29 @@
         + `<span class="sys">${esc(name)}</span><span class="d">${jumps}j</span>`
         + `<span class="txt">${esc(e.text)}</span></div>`;
     }).join('');
+  }
+
+  // A burst rather than a hold: a report stays live on the map for ~10 minutes,
+  // and flashing the whole window for that long would be unusable. Each new
+  // qualifying report restarts the burst.
+  const FLASH_MS = 6000;
+  let flashTimer = null;
+  function flashWindow(colour) {
+    const shell = document.querySelector('.ov-shell');
+    if (!shell) return;
+    const col = colour || '#ff3b3b';
+    shell.style.setProperty('--flash-col', col);
+    // Same hue as the tier, dropped to a background wash.
+    shell.style.setProperty('--flash-bg', hexToRgba(col, 0.5));
+    shell.classList.add('alarm-flash');
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => shell.classList.remove('alarm-flash'), FLASH_MS);
+  }
+  function hexToRgba(hex, a) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+    if (!m) return `rgba(120, 20, 20, ${a})`;
+    const n = parseInt(m[1], 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
   }
 
   // ---- intel alarm -------------------------------------------------------
@@ -313,6 +415,14 @@
       home.title = st.origin ? `${st.origin.name} · ${st.origin.region || ''} — click to re-centre` : 'Pick a system to watch';
     }
     document.querySelectorAll('.ov-j').forEach((b) => b.classList.toggle('on', Number(b.dataset.j) === st.prefs.jumps));
+    const region = st.prefs.mode === 'region';
+    const mode = $('ov-mode');
+    mode.classList.toggle('on', region);
+    mode.textContent = region ? '▦' : '◎';
+    mode.title = region ? 'Flat SMT region map — click for the jump-ring map' : 'Jump-ring map — click for the flat SMT region map';
+    // The jump-range buttons only shape the ring map; the flat map draws the
+    // whole region, and the range then only feeds the tiers and the ticker.
+    document.querySelectorAll('.ov-j').forEach((b) => { b.title = region ? 'Jump range used for alarm tiers and the ticker' : 'How many jumps out to draw'; });
     $('ov-follow').classList.toggle('on', !!st.prefs.follow);
     $('ov-labels').classList.toggle('on', !!st.prefs.labels);
     $('ov-feed-t').classList.toggle('on', !!st.prefs.feed);
@@ -353,6 +463,11 @@
       loadMap();
       updateBar();
     });
+    $('ov-mode').addEventListener('click', async () => {
+      savePrefs({ mode: st.prefs.mode === 'region' ? 'radial' : 'region' });
+      await loadRegion();
+      render();
+    });
     $('ov-labels').addEventListener('click', () => { savePrefs({ labels: !st.prefs.labels }); render(); });
     $('ov-feed-t').addEventListener('click', () => { savePrefs({ feed: !st.prefs.feed }); renderFeed(); updateBar(); });
     $('ov-pin').addEventListener('click', () => {
@@ -365,6 +480,8 @@
       if (ovApi.setClickThrough) ovApi.setClickThrough(st.clickThrough);
       updateBar();
     });
+    $('ov-zoom').addEventListener('input', (e) => { savePrefs({ zoom: Number(e.target.value) }); render(); });
+    $('ov-font').addEventListener('input', (e) => { savePrefs({ labelScale: Number(e.target.value) }); render(); });
     $('ov-op').addEventListener('input', (e) => {
       const v = Number(e.target.value);
       st.prefs.opacity = v;
@@ -407,6 +524,8 @@
       || { jumps: 5, opacity: 0.9, labels: true, feed: true, follow: true, system: '', alwaysOnTop: true, clickThrough: false };
     st.clickThrough = !!st.prefs.clickThrough;
     $('ov-op').value = st.prefs.opacity;
+    $('ov-zoom').value = st.prefs.zoom == null ? 1 : st.prefs.zoom;
+    $('ov-font').value = st.prefs.labelScale == null ? 1 : st.prefs.labelScale;
     wire();
     updateBar();
     await loadAlerts();
