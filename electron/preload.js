@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld('api', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openLinkWindow: (url) => ipcRenderer.invoke('open-link-window', url),
   popOutTab: (tab, opts) => ipcRenderer.invoke('pop-out-tab', tab, opts),
+  openOverlay: () => ipcRenderer.invoke('overlay:open'),
   log: (line) => ipcRenderer.invoke('log:append', line),
 });

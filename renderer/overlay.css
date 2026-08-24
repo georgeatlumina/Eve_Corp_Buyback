@@ -1,0 +1,163 @@
+/* SMT intel overlay — a frameless, transparent always-on-top window that sits
+   over the EVE client. Everything is drawn on a translucent panel; the window
+   itself must stay fully transparent so only the panel is visible. */
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+.ov-body {
+  margin: 0;
+  background: transparent;
+  color: #dbe4ec;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+.ov-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: rgba(9, 12, 16, 0.82);
+  border: 1px solid rgba(90, 110, 130, 0.45);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ---- toolbar (also the window's drag handle) ---- */
+.ov-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.25em 0.35em;
+  background: rgba(16, 21, 27, 0.9);
+  border-bottom: 1px solid rgba(70, 88, 105, 0.4);
+  -webkit-app-region: drag;
+}
+.ov-bar button, .ov-bar input { -webkit-app-region: no-drag; }
+.ov-spacer { flex: 1 1 auto; }
+
+.ov-home {
+  background: transparent;
+  border: 0;
+  color: #7fd4ff;
+  font-size: 1.05em;
+  font-weight: 600;
+  padding: 0.1em 0.3em;
+  cursor: pointer;
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-home:hover { color: #b6e8ff; }
+
+.ov-warn {
+  color: #ff8b8b;
+  font-weight: 600;
+  background: rgba(120, 30, 30, 0.5);
+  border: 1px solid #7a2c2c;
+  border-radius: 9px;
+  padding: 0 0.45em;
+  animation: ov-pulse 1.4s ease-in-out infinite;
+}
+.ov-warn[hidden] { display: none; }
+@keyframes ov-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+.ov-jumps { display: inline-flex; border: 1px solid rgba(70, 88, 105, 0.5); border-radius: 4px; overflow: hidden; }
+.ov-j {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid rgba(70, 88, 105, 0.4);
+  color: #8ea3b6;
+  padding: 0.1em 0.35em;
+  font-size: 0.95em;
+  cursor: pointer;
+}
+.ov-j:first-child { border-left: 0; }
+.ov-j.on { background: #2f6f9f; color: #fff; font-weight: 600; }
+
+.ov-t {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #7d8e9e;
+  padding: 0.1em 0.3em;
+  font-size: 0.95em;
+  cursor: pointer;
+}
+.ov-t:hover { color: #cfe0ee; }
+.ov-t.on { background: rgba(47, 111, 159, 0.35); border-color: #3f7fae; color: #cfe8ff; }
+
+.ov-op { width: 54px; accent-color: #2f6f9f; }
+
+.ov-x { background: transparent; border: 0; color: #8b98a4; cursor: pointer; padding: 0.1em 0.3em; }
+.ov-x:hover { color: #ff8b8b; }
+
+/* ---- pinned-system row ---- */
+.ov-pin-row { display: flex; align-items: center; gap: 0.4em; padding: 0.25em 0.4em; border-bottom: 1px solid rgba(70, 88, 105, 0.3); }
+.ov-pin-row[hidden] { display: none; }
+.ov-pin-row input {
+  flex: 1 1 auto;
+  background: rgba(20, 26, 33, 0.9);
+  color: #dbe4ec;
+  border: 1px solid rgba(70, 88, 105, 0.6);
+  border-radius: 4px;
+  padding: 0.2em 0.4em;
+  font-size: 0.95em;
+}
+.ov-sys-err { color: #ff8b8b; font-size: 0.9em; }
+
+/* ---- map ---- */
+.ov-canvas { position: relative; flex: 1 1 auto; min-height: 0; }
+#ov-svg { width: 100%; height: 100%; display: block; }
+.ov-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.2em;
+  color: #8b98a4;
+  line-height: 1.5;
+}
+.ov-empty:empty { display: none; }
+
+.ov-ring { fill: none; stroke: rgba(90, 110, 130, 0.22); stroke-dasharray: 4 6; }
+.ov-ring-lbl { fill: rgba(140, 160, 180, 0.4); text-anchor: middle; }
+.ov-edge { stroke: rgba(120, 145, 170, 0.35); }
+.ov-edge.bridge { stroke: rgba(150, 120, 220, 0.55); stroke-dasharray: 6 4; }
+.ov-node { cursor: pointer; }
+.ov-dot { stroke: #05080b; stroke-width: 1; }
+.ov-lbl { fill: #b9c8d6; text-anchor: middle; pointer-events: none; }
+.ov-node.home .ov-ringmk { fill: none; stroke: #7fd4ff; stroke-width: 2; }
+.ov-node.home .ov-lbl { fill: #7fd4ff; font-weight: 600; }
+.ov-halo { pointer-events: none; }
+.ov-node.hot .ov-lbl { fill: #ffd3d3; font-weight: 600; }
+.ov-chr { fill: #35d07a; stroke: #05080b; stroke-width: 1; }
+
+/* ---- intel ticker ---- */
+.ov-feed {
+  flex: 0 0 auto;
+  max-height: 34%;
+  overflow-y: auto;
+  border-top: 1px solid rgba(70, 88, 105, 0.4);
+  padding: 0.2em 0.4em;
+  background: rgba(13, 17, 22, 0.75);
+}
+.ov-feed[hidden] { display: none; }
+.ov-feed:empty { display: none; }
+.ov-row { display: flex; gap: 0.4em; align-items: baseline; padding: 0.1em 0; font-size: 0.95em; line-height: 1.3; }
+.ov-row .t { color: #6f7d8a; font-variant-numeric: tabular-nums; }
+.ov-row .sys { color: #ff9a9a; font-weight: 600; }
+.ov-row.clear .sys { color: #8fd6b0; }
+.ov-row .d { color: #d8b25a; }
+.ov-row .txt { color: #b3c0cc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-feed .muted { color: #6f7d8a; padding: 0.2em 0; display: block; }
+
+.ov-feed::-webkit-scrollbar { width: 6px; }
+.ov-feed::-webkit-scrollbar-thumb { background: rgba(90, 110, 130, 0.4); border-radius: 3px; }

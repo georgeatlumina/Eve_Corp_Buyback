@@ -6,6 +6,7 @@ fetched in server.py; this module is pure static topology.
 import heapq
 import json
 import os
+from collections import deque
 from functools import lru_cache
 
 DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'eve_map.json')
@@ -103,6 +104,57 @@ def _sec_band(sec):
     if sec is None:
         return 'null'
     return 'high' if sec >= 0.45 else ('low' if sec > 0.0 else 'null')
+
+
+def jumps_from(sid, depth=5, extra_edges=None):
+    """Every system within ``depth`` jumps of ``sid`` (BFS over stargates, plus
+    ``extra_edges`` = (a, b) id pairs for jump bridges), with each system's jump
+    distance from the origin and the edges between the systems in range. This is
+    the local slice the intel overlay draws as rings around you. Returns None if
+    the origin isn't in the bundled dataset."""
+    sid = str(sid)
+    systems = load_map()['systems']
+    if sid not in systems:
+        return None
+    depth = max(0, min(int(depth), 10))
+    extra = {}
+    for a, b in (extra_edges or ()):
+        a, b = str(a), str(b)
+        if a in systems and b in systems and a != b:
+            extra.setdefault(a, set()).add(b)
+            extra.setdefault(b, set()).add(a)
+    adj = _adjacency()
+    dist = {sid: 0}
+    order = [sid]
+    q = deque([sid])
+    while q:
+        cur = q.popleft()
+        if dist[cur] >= depth:
+            continue
+        for nb in sorted(adj.get(cur, set()) | extra.get(cur, set()), key=int):
+            if nb in dist or nb not in systems:
+                continue
+            dist[nb] = dist[cur] + 1
+            order.append(nb)
+            q.append(nb)
+    edges = []
+    seen = set()
+    for a, b in load_map()['edges']:
+        if a in dist and b in dist:
+            seen.add(frozenset((a, b)))
+            edges.append([int(a), int(b), 'gate'])
+    for a, nbs in extra.items():
+        for b in nbs:
+            key = frozenset((a, b))
+            if a in dist and b in dist and key not in seen:
+                seen.add(key)
+                edges.append([int(a), int(b), 'bridge'])
+    out = []
+    for s in order:
+        rec = systems[s]
+        out.append({'id': int(s), 'name': rec['name'], 'sec': rec.get('sec'),
+                    'region': rec.get('region'), 'jumps': dist[s]})
+    return {'origin': system_brief(sid), 'depth': depth, 'systems': out, 'edges': edges}
 
 
 def route(src, dst, prefer='shortest', extra_edges=None, virtual=None):

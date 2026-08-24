@@ -1077,6 +1077,20 @@ def smt_sov():
     return out
 
 
+@app.get('/api/smt/overlay')
+def smt_overlay(system: str = Query(...), jumps: int = 5, bridges: bool = True):
+    """The local map the intel overlay window draws: every system within
+    ``jumps`` jumps of ``system`` (name or id), with jump distances and the
+    edges between them — jump bridges included unless ``bridges=false``."""
+    sid = eve_map.resolve_system(system)
+    if not sid:
+        return {'error': f'Unknown system: {system}'}
+    d = eve_map.jumps_from(sid, jumps, extra_edges=_smt_bridges() if bridges else None)
+    if not d:
+        return {'error': f'Unknown system: {system}'}
+    return d
+
+
 @app.get('/api/smt/route')
 def smt_route(src: str = Query(..., alias='from'), dst: str = Query(..., alias='to'),
              prefer: str = 'shortest', wh: bool = True):

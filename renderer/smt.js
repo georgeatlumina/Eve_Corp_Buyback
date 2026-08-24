@@ -481,6 +481,10 @@
     });
     $id('smt-follow')?.addEventListener('change', (e) => { st.follow = e.target.checked; });
     $id('smt-config-btn')?.addEventListener('click', () => { const c = $id('smt-config'); if (c) { c.hidden = !c.hidden; if (!c.hidden) loadConfig(); } });
+    $id('smt-overlay-btn')?.addEventListener('click', () => {
+      if (window.api && window.api.openOverlay) window.api.openOverlay();
+      else setStatus('The overlay needs the desktop app.', true);
+    });
     $id('smt-save')?.addEventListener('click', saveConfig);
     $id('smt-detect')?.addEventListener('click', detect);
     const search = $id('smt-search');

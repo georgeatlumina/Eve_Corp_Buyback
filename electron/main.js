@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, session, shell } = require('electron');
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
@@ -58,6 +58,7 @@ let pythonProcess = null;
 let mainWindow = null;
 let splashWindow = null;
 let calculatorWindow = null;
+let overlayWindow = null;
 let aaWindow = null;
 let sidecarLogPath = null;
 
@@ -283,6 +284,9 @@ function createWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // The overlay is a satellite of the main window - don't leave it floating
+  // (and holding the app open) once the app window itself is gone.
+  mainWindow.on('closed', () => { mainWindow = null; closeOverlayWindow(); });
   mainWindow.once('ready-to-show', () => {
     emitSplash(100, 'Ready');
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
@@ -290,6 +294,160 @@ function createWindow() {
     setTimeout(closeSplashWindow, 180);
   });
 }
+
+// ================= SMT intel overlay =================
+// A frameless, transparent, always-on-top window meant to sit over the EVE
+// client: it draws the systems within N jumps of your character and lights them
+// up as intel and kills land. Its geometry and prefs live in
+// userData/overlay.json so it comes back exactly where you left it.
+
+const OVERLAY_DEFAULTS = {
+  width: 460, height: 500, x: null, y: null,
+  jumps: 5, opacity: 0.9, clickThrough: false, alwaysOnTop: true,
+  labels: true, feed: true, follow: true, system: '',
+};
+
+function overlayStatePath() {
+  return path.join(app.getPath('userData'), 'overlay.json');
+}
+
+function readOverlayState() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(overlayStatePath(), 'utf-8'));
+    return { ...OVERLAY_DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
+  } catch (_) {
+    return { ...OVERLAY_DEFAULTS };
+  }
+}
+
+function writeOverlayState(patch) {
+  const next = { ...readOverlayState(), ...(patch || {}) };
+  try {
+    fs.writeFileSync(overlayStatePath(), JSON.stringify(next, null, 2));
+  } catch (e) {
+    logSidecar(`overlay: failed to save state: ${e.message}`);
+  }
+  return next;
+}
+
+// Remember where the user parked it (and at what size) on move/resize rather
+// than on close, so a crash or a kill still leaves the last position behind.
+function saveOverlayBounds() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  const b = overlayWindow.getBounds();
+  writeOverlayState({ x: b.x, y: b.y, width: b.width, height: b.height });
+}
+
+function setOverlayClickThrough(on) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  // forward:true keeps mousemove flowing to the renderer, so the overlay can
+  // momentarily re-enable hit-testing while the pointer is over its toolbar.
+  overlayWindow.setIgnoreMouseEvents(!!on, { forward: true });
+  writeOverlayState({ clickThrough: !!on });
+}
+
+// Click-through makes the whole window transparent to the mouse, which would
+// also swallow the button that turns it back off - so bind a global hotkey as
+// the way out, plus Ctrl+Alt+M to hide/show the overlay entirely.
+function registerOverlayShortcuts() {
+  try {
+    globalShortcut.register('Control+Alt+O', () => {
+      if (!overlayWindow || overlayWindow.isDestroyed()) return;
+      const on = !readOverlayState().clickThrough;
+      setOverlayClickThrough(on);
+      overlayWindow.webContents.send('overlay:click-through', on);
+    });
+    globalShortcut.register('Control+Alt+M', () => {
+      if (!overlayWindow || overlayWindow.isDestroyed()) { openOverlayWindow(); return; }
+      if (overlayWindow.isVisible()) overlayWindow.hide();
+      else overlayWindow.showInactive();
+    });
+  } catch (e) {
+    logSidecar(`overlay: hotkey registration failed: ${e.message}`);
+  }
+}
+
+function openOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    if (!overlayWindow.isVisible()) overlayWindow.showInactive();
+    overlayWindow.focus();
+    return;
+  }
+  const st = readOverlayState();
+  const work = require('electron').screen.getPrimaryDisplay().workArea;
+  overlayWindow = new BrowserWindow({
+    width: Math.max(280, Math.min(st.width, work.width)),
+    height: Math.max(220, Math.min(st.height, work.height)),
+    x: Number.isInteger(st.x) ? st.x : undefined,
+    y: Number.isInteger(st.y) ? st.y : undefined,
+    title: 'SMT intel overlay',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: true,
+    minWidth: 280,
+    minHeight: 220,
+    minimizable: false,
+    maximizable: false,
+    skipTaskbar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'overlay-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  overlayWindow.setMenuBarVisibility(false);
+  // 'screen-saver' level so it stays above a windowed-fullscreen EVE client.
+  overlayWindow.setAlwaysOnTop(!!st.alwaysOnTop, 'screen-saver');
+  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.setOpacity(Math.max(0.2, Math.min(1, st.opacity)));
+  if (st.clickThrough) overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+  overlayWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlay.html'));
+  // showInactive: popping the overlay must never steal focus from EVE.
+  overlayWindow.once('ready-to-show', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
+  });
+  overlayWindow.on('moved', saveOverlayBounds);
+  overlayWindow.on('resized', saveOverlayBounds);
+  overlayWindow.on('closed', () => {
+    overlayWindow = null;
+    globalShortcut.unregister('Control+Alt+O');
+    globalShortcut.unregister('Control+Alt+M');
+  });
+  registerOverlayShortcuts();
+}
+
+function closeOverlayWindow() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  saveOverlayBounds();
+  try { overlayWindow.close(); } catch (_) {}
+  overlayWindow = null;
+}
+
+ipcMain.handle('overlay:open', () => { openOverlayWindow(); });
+ipcMain.handle('overlay:close', () => { closeOverlayWindow(); });
+ipcMain.handle('overlay:state', () => readOverlayState());
+ipcMain.handle('overlay:save', (_event, patch) => writeOverlayState(patch || {}));
+ipcMain.handle('overlay:opacity', (_event, value) => {
+  const v = Math.max(0.2, Math.min(1, Number(value) || 1));
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.setOpacity(v);
+  writeOverlayState({ opacity: v });
+});
+ipcMain.handle('overlay:always-on-top', (_event, on) => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.setAlwaysOnTop(!!on, 'screen-saver');
+  writeOverlayState({ alwaysOnTop: !!on });
+});
+ipcMain.handle('overlay:click-through', (_event, on) => { setOverlayClickThrough(on); });
+// While click-through is on, the renderer flips hit-testing back on as the
+// pointer crosses its toolbar, so the controls stay usable without the hotkey.
+ipcMain.on('overlay:hover-ui', (_event, over) => {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  if (!readOverlayState().clickThrough) return;
+  overlayWindow.setIgnoreMouseEvents(!over, { forward: true });
+});
 
 function openCalculatorWindow() {
   if (calculatorWindow && !calculatorWindow.isDestroyed()) {
@@ -741,5 +899,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  globalShortcut.unregisterAll();
   killOrphanSidecars();
 });

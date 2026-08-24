@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SMT intel overlay</title>
+  <link rel="icon" type="image/png" href="../assets/icon-128.png" />
+  <link rel="stylesheet" href="overlay.css" />
+</head>
+<body class="ov-body">
+  <div class="ov-shell">
+    <div class="ov-bar ov-hit">
+      <button id="ov-home" class="ov-home" type="button" title="Your current system — click to re-centre">—</button>
+      <span id="ov-warn" class="ov-warn" hidden></span>
+      <span class="ov-spacer"></span>
+      <span class="ov-jumps" role="group" aria-label="Jump range">
+        <button class="ov-j" type="button" data-j="2">2</button>
+        <button class="ov-j" type="button" data-j="3">3</button>
+        <button class="ov-j" type="button" data-j="4">4</button>
+        <button class="ov-j" type="button" data-j="5">5</button>
+        <button class="ov-j" type="button" data-j="6">6</button>
+      </span>
+      <button id="ov-follow" class="ov-t" type="button" title="Follow your character's location">⌖</button>
+      <button id="ov-labels" class="ov-t" type="button" title="Show system names">A</button>
+      <button id="ov-feed-t" class="ov-t" type="button" title="Show the intel ticker">☰</button>
+      <button id="ov-pin" class="ov-t" type="button" title="Keep on top of other windows">📌</button>
+      <button id="ov-click" class="ov-t" type="button" title="Click-through — let clicks pass to EVE (Ctrl+Alt+O)">👆</button>
+      <input id="ov-op" class="ov-op" type="range" min="0.3" max="1" step="0.05" title="Opacity" />
+      <button id="ov-close" class="ov-x" type="button" title="Close the overlay">✕</button>
+    </div>
+    <div class="ov-pin-row ov-hit" id="ov-pin-row" hidden>
+      <input id="ov-sys" type="text" placeholder="Pin a system…" spellcheck="false" autocomplete="off" />
+      <span id="ov-sys-err" class="ov-sys-err"></span>
+    </div>
+    <div class="ov-canvas">
+      <svg id="ov-svg" xmlns="http://www.w3.org/2000/svg"><g id="ov-root"></g></svg>
+      <div id="ov-empty" class="ov-empty"></div>
+    </div>
+    <div id="ov-feed" class="ov-feed ov-hit"></div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>
