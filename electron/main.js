@@ -61,6 +61,9 @@ ipcMain.handle('popout:pin', (event, on) => {
   return !!on;
 });
 ipcMain.handle('app:check-update', () => checkForUpdate({ interactive: true }));
+// What the header badge reads on load — a renderer that finishes loading after
+// the startup check would otherwise never hear about an update already found.
+ipcMain.handle('app:pending-update', () => pendingUpdate);
 ipcMain.handle('app:install-version', (_event, tag) => installVersion(tag));
 let pythonProcess = null;
 let mainWindow = null;
@@ -641,9 +644,9 @@ app.whenReady().then(async () => {
   // Update check runs in the background after the window is visible so we
   // don't block startup. Errors are swallowed (logged to sidecar.log only).
   // First check fires 2s after startup, then re-checks every hour so users
-  // who leave the app open for days still get release prompts. A pending
-  // dialog from a previous tick suppresses re-prompting until the user
-  // dismisses it (checkForUpdate is naturally re-entrant against dialog).
+  // who leave the app open for days still notice a release. Background checks
+  // never open a dialog — they light the header badge and leave the timing to
+  // the user.
   const runUpdateCheck = () =>
     checkForUpdate().catch((e) => logSidecar(`update check threw: ${e}`));
   setTimeout(runUpdateCheck, 2000);
@@ -653,10 +656,19 @@ app.whenReady().then(async () => {
 
 // ---------- Auto-update (download-and-open flow) ----------
 
-// Per-session dedupe so the hourly poll doesn't repeatedly prompt for the
-// same version after the user clicked "Later". Cleared on app restart.
-let dismissedUpdateTag = null;
+// Guards against a second click stacking another dialog on the first.
 let updateDialogOpen = false;
+// The update the header badge is advertising, or null when we're current.
+let pendingUpdate = null;
+
+// Interrupting someone mid-fleet with a modal is the wrong trade for something
+// that can wait; the badge pulses in the header until they choose to act on it.
+function setPendingUpdate(info) {
+  pendingUpdate = info;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('app:update-available', info); } catch (_) { /* window going away */ }
+  }
+}
 
 async function checkForUpdate({ interactive = false } = {}) {
   if (!app.isPackaged) {
@@ -694,6 +706,7 @@ async function checkForUpdate({ interactive = false } = {}) {
   if (!latestTag) return;
   if (compareSemver(latestTag, current) <= 0) {
     logSidecar(`up to date (current=${current}, latest=${latestTag})`);
+    setPendingUpdate(null);                 // clear a badge left by an earlier check
     if (interactive) {
       await dialog.showMessageBox(mainWindow || null, {
         type: 'info',
@@ -704,15 +717,12 @@ async function checkForUpdate({ interactive = false } = {}) {
     }
     return;
   }
-  if (!interactive && dismissedUpdateTag === latestTag) {
-    logSidecar(`update ${latestTag} already dismissed this session — skipping prompt`);
-    return;
-  }
   logSidecar(`update available: ${latestTag} (current ${current})`);
 
   const asset = pickPlatformAsset(latest.assets || []);
   if (!asset) {
     logSidecar('no matching asset for this platform');
+    setPendingUpdate(null);                 // nothing installable — don't advertise it
     if (interactive) {
       await dialog.showMessageBox(mainWindow || null, {
         type: 'info',
@@ -723,6 +733,11 @@ async function checkForUpdate({ interactive = false } = {}) {
     }
     return;
   }
+
+  setPendingUpdate({ tag: latestTag, current, name: asset.name, size: asset.size || 0 });
+  // A background check stops here: the badge is the notification. The download
+  // only starts when the user asks for it — the badge, or ⟳ in the header.
+  if (!interactive) return;
 
   updateDialogOpen = true;
   let confirm;
@@ -739,10 +754,7 @@ async function checkForUpdate({ interactive = false } = {}) {
   } finally {
     updateDialogOpen = false;
   }
-  if (confirm.response !== 0) {
-    dismissedUpdateTag = latestTag;
-    return;
-  }
+  if (confirm.response !== 0) return;
 
   const destPath = path.join(app.getPath('downloads'), asset.name);
   try {

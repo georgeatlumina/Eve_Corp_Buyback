@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('api', {
   base: 'http://127.0.0.1:8766',
   getMeta: () => ipcRenderer.invoke('app:meta'),
   checkForUpdate: () => ipcRenderer.invoke('app:check-update'),
+  pendingUpdate: () => ipcRenderer.invoke('app:pending-update'),
+  onUpdateAvailable: (cb) => ipcRenderer.on('app:update-available', (_e, info) => cb(info)),
   installVersion: (tag) => ipcRenderer.invoke('app:install-version', tag),
   openCalculator: () => ipcRenderer.invoke('open-calculator'),
   aaOpen: () => ipcRenderer.invoke('aa:open'),

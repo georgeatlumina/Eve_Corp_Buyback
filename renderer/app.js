@@ -107,6 +107,37 @@ document.getElementById('btn-check-update')?.addEventListener('click', async (e)
   }
 });
 
+// ---- update badge ----
+// Background update checks no longer interrupt with a dialog. They light this
+// badge in the header instead, and it stays lit until the user clicks it — so
+// the download happens at a moment they choose rather than mid-fleet.
+(function initUpdateBadge() {
+  const btn = document.getElementById('btn-update-available');
+  if (!btn || !window.api) return;
+  const mb = (n) => Math.round((Number(n) || 0) / 1024 / 1024);
+  function show(info) {
+    if (!info || !info.tag) { btn.hidden = true; return; }
+    btn.hidden = false;
+    btn.textContent = `⬆ Update to v${info.tag}`;
+    btn.title = `You're running v${info.current}. Click to download ${info.name} (~${mb(info.size)} MB) — nothing happens until you do.`;
+  }
+  btn.addEventListener('click', async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = '⬆ Checking…';
+    try {
+      await window.api.checkForUpdate?.();   // interactive: opens the download dialog
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+  window.api.onUpdateAvailable?.(show);
+  // The startup check can finish before this window does, so ask as well.
+  window.api.pendingUpdate?.().then(show).catch(() => {});
+})();
+
 const DIVISION_LABELS = {
   1: 'Master',
   2: 'Contracts',
