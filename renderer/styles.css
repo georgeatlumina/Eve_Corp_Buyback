@@ -2131,3 +2131,10 @@ body.popout-calc .pib-calc > summary { display: none; }
 .smt-char-chip.focused { border-color: #2f6f9f; background: #16222e; box-shadow: 0 0 0 1px #2f6f9f inset; }
 .smt-char.focused .smt-char-mk { fill: #7fd4ff; stroke: #05080b; }
 .smt-char.focused .smt-char-pill { stroke: #7fd4ff; }
+
+/* ---- intel line highlighting (Intel Map feed) ---- */
+.ih-sys { color: #ff9a9a; font-weight: 600; cursor: pointer; }
+.ih-sys:hover { color: #ffc9c9; text-decoration: underline; }
+.smt-feed-clear .ih-sys { color: #8fd6b0; }
+.ih-ship { color: #f0c86a; font-weight: 600; }
+.ih-pilot { color: #8fc4f0; margin-right: 0.35em; }

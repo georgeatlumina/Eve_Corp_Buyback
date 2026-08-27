@@ -4,6 +4,30 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.4 — Intel lines you can read at a glance
+
+- **Intel reports are now colour-coded** in both the Intel Map feed and the overlay ticker: the
+  **system** (red, green on a "clr"), the **ship** (amber) and the **reporting pilot** (blue) each stand
+  out from the surrounding chat. Click a highlighted system to jump the map there — or, in the overlay,
+  to watch that pocket.
+- Ship names come from a bundled list generated from the SDE (393 hulls, including multi-word names like
+  *Armageddon Navy Issue*) plus the fleet slang intel actually uses — *dictor*, *ceptor*, *logi*, *hictor*.
+- The reporting pilot's name was being parsed out of each chat line and thrown away; it's now kept and
+  shown.
+- **Fix — false system matches.** SMT's matcher accepts a word that prefixes a system name, which is what
+  lets "uexo" find UEXO-Z, but it also meant **"and" matched Andabiar / Andole / Andrub** and "gate"
+  matched Gateway: systems nobody reported were glowing on the map, and since the alarm runs off the
+  same match, they could sound it. Common English and intel filler words no longer match by prefix (an
+  exact full-name match still does).
+
+**Flat SMT map on the overlay**
+
+- **Distance falloff is far more obvious** — near systems are full strength, the furthest in range drop
+  to ~0.2, and systems outside the range fade almost away. It applies to the dots now, not just labels.
+- It **opens framed on your jump range** (default 6) centred on your character, instead of fitting the
+  whole region into a small window where nothing was legible. The rest of the region is a zoom-out away.
+- **Zoom range widened to 0.2×–8×** so you can push in on a pocket or pull back to the whole region.
+
 ## v3.12.3 — SMT on Linux, and two map-readability fixes
 
 **Linux support for the SMT tab.** The original SMT is Windows-only; this port now works on Linux, with

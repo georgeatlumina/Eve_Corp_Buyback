@@ -266,12 +266,19 @@
     if (!st.feed.length) { list.innerHTML = '<p class="muted small">No intel yet. Configure your chat-logs folder and channels in ⚙ Logs.</p>'; return; }
     list.innerHTML = st.feed.slice(0, 120).map((e) => {
       const t = new Date(e.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const syss = (e.system_names || []).slice(0, 4).map((n, i) => `<button class="smt-feed-sys" data-id="${e.systems[i]}">${esc(n)}</button>`).join('');
+      // System names and ship names are picked out inside the line itself, so
+      // the chip row is only worth keeping when a report names more than one
+      // system (its job then is the summary, not the detail).
+      const names = e.system_names || [];
+      const syss = names.length > 1
+        ? names.slice(0, 4).map((n, i) => `<button class="smt-feed-sys" data-id="${e.systems[i]}">${esc(n)}</button>`).join('')
+        : '';
       return `<div class="smt-feed-row${e.clear ? ' smt-feed-clear' : ''}">
         <span class="smt-feed-t muted">${t}</span>
         <span class="smt-feed-ch muted">${esc(e.channel)}</span>
+        ${SmtHighlight.speaker(e.speaker)}
         ${syss ? `<span class="smt-feed-syss">${syss}</span>` : ''}
-        <span class="smt-feed-txt">${esc(e.text)}</span></div>`;
+        <span class="smt-feed-txt">${SmtHighlight.line(e.text, e.spans)}</span></div>`;
     }).join('');
   }
 
@@ -658,7 +665,12 @@
     $id('smt-detect')?.addEventListener('click', detect);
     const search = $id('smt-search');
     search?.addEventListener('change', () => { const v = (search.value || '').trim().toLowerCase(); const sys = st.byName && st.byName.get(v); if (sys) { showRegion(sys.region, sys.id); search.value = ''; } });
-    $id('smt-feed-list')?.addEventListener('click', (e) => { const b = e.target.closest('.smt-feed-sys'); if (b) { const sys = st.byId && st.byId.get(String(b.dataset.id)); if (sys && sys.region) showRegion(sys.region, sys.id); } });
+    $id('smt-feed-list')?.addEventListener('click', (e) => {
+      const b = e.target.closest('.smt-feed-sys, .ih-sys[data-id]');
+      if (!b) return;
+      const sys = st.byId && st.byId.get(String(b.dataset.id));
+      if (sys && sys.region) { st.centred = true; showRegion(sys.region, sys.id); }
+    });
     let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const p = $id('tab-smt-intel'); if (st.layout && p && p.offsetParent !== null) fitView(); }, 150); });
   }
 

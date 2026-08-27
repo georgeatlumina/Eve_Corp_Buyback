@@ -192,3 +192,10 @@ html, body { height: 100%; }
 
 .ov-feed::-webkit-scrollbar { width: 6px; }
 .ov-feed::-webkit-scrollbar-thumb { background: rgba(90, 110, 130, 0.4); border-radius: 3px; }
+
+/* ---- intel line highlighting (ticker) ---- */
+.ih-sys { color: #ff9a9a; font-weight: 600; cursor: pointer; }
+.ih-sys:hover { color: #ffc9c9; }
+.ov-row.clear .ih-sys { color: #8fd6b0; }
+.ih-ship { color: #f0c86a; font-weight: 600; }
+.ih-pilot { color: #8fc4f0; }

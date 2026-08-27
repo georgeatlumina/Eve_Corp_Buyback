@@ -1,47 +1,43 @@
-# v3.12.3 — SMT on Linux, and two map-readability fixes
+# v3.12.4 — Intel lines you can read at a glance
 
-The original SMT is Windows-only. This port now works on **Linux** too, with the platform differences
-handled rather than assumed away — plus two fixes for labels covering things they shouldn't.
+Intel reports are chat messages, and reading a wall of them mid-fight is slow. Now the parts that
+matter are picked out for you — and a matcher bug that was lighting up systems nobody reported is gone.
 
-## Linux support
+## Colour-coded reports
 
-**⚙ Logs finds your Wine/Proton bottle.** EVE on Linux writes its chat logs *inside* the prefix, so
-auto-detection now scans the layouts people actually use:
+In both the Intel Map feed and the overlay ticker, each report now separates:
 
-| Launcher | Where it looks |
+| Part | Colour |
 |---|---|
-| Steam / Proton | `~/.steam/steam`, `~/.local/share/Steam`, `~/.steam/root` → `steamapps/compatdata/*/pfx/…` |
-| Flatpak Steam | `~/.var/app/com.valvesoftware.Steam/…` |
-| Plain Wine | `~/.wine/drive_c/users/*/Documents` (and `My Documents` layouts) |
-| Lutris | `~/Games/*/drive_c/users/*/…` |
+| **System** | red — green when it's a `clr` |
+| **Ship** | amber |
+| **Reporting pilot** | blue |
 
-The Steam app id isn't hardcoded, so your bottle is found whatever its number. Windows picked up the
-common **OneDrive-redirected Documents** path in the same pass.
+Everything else stays plain, so `UEXO-Z 3 reds, Loki and a Sabre on gate` reads as *where*, *what* and
+*who* without parsing the sentence. **Click a highlighted system** to jump the map there — or, in the
+overlay, to start watching that pocket.
 
-**Click-through can always be released.** The overlay's hover-to-release relies on an Electron option
-that exists only on macOS and Windows, and the `Ctrl+Alt+O` hotkey needs an X11-style session — neither
-is guaranteed on Linux, and under Wayland both can be unavailable. Pressing **⊞ Overlay** in the app now
-releases click-through on any platform, so you can't end up with an overlay you can't click out of. The
-button's tooltip names whichever escape works where you're running.
+Ship names come from a list generated from the SDE: 393 hulls, multi-word names like *Armageddon Navy
+Issue* included, plus the fleet slang intel actually uses — *dictor*, *ceptor*, *logi*, *hictor*,
+*bomber*. The reporting pilot's name was already being parsed out of every chat line and thrown away;
+it's kept now.
 
-Emoji font fallbacks were added so the toolbar glyphs don't render as empty boxes on a bare install.
+## Fix: systems nobody reported
 
-**Linux caveats worth knowing** (environmental — not something the app can fix):
+SMT's matcher accepts a word that prefixes a system name — that's what lets "uexo" find UEXO-Z. But it
+also meant **"and" matched Andabiar, Andole and Andrub**, and "gate" matched Gateway. Those systems lit
+up on the map, and because the alarm runs off the same match, they could set it off.
 
-- The transparent overlay needs a **compositing window manager**. Without one it may draw on a solid
-  background.
-- **Global hotkeys don't fire under Wayland.** Use the ⊞ Overlay button instead.
-- Electron's "hide from taskbar" and "float above fullscreen" are macOS/Windows-only, so the overlay
-  appears in your taskbar and should sit over a **windowed / borderless** EVE client rather than a true
-  fullscreen one.
+Common English and intel filler words no longer match by prefix. An exact full-name match still counts,
+so a system genuinely called Gateway is unaffected.
 
-## Map readability
+## Flat SMT map on the overlay
 
-- The **character name pill** on the Intel Map now sits **above** the system dot instead of beside it,
-  where it was covering the system's own name.
-- **Flat SMT map labels** were sized from the region's overall span, which made them roughly as wide as
-  the gap between systems. They now use the same calibrated sizing the Intel Map tab uses for those same
-  layouts, and the overlay's label-size slider goes down to **0.3×** for smaller text still.
+- **Distance is far easier to see.** Near systems are full strength, the furthest in range drop to about
+  a fifth, and systems outside your range fade almost away. The dots dim now, not just the labels.
+- **It opens framed on your jump range** (default 6) centred on your character, rather than squeezing an
+  entire region into a small window where nothing was legible. The rest of the region is a zoom-out away.
+- **Zoom now runs 0.2× – 8×**, so you can push right in on a pocket or pull back to the whole region.
 
 ---
 
@@ -56,6 +52,6 @@ Emoji font fallbacks were added so the toolbar glyphs don't render as empty boxe
 
 The `.deb`/`.rpm` packages are unsigned (RPM tools may warn about a missing GPG signature — expected). The in-app updater picks the format matching your distro.
 
-_Intel matcher & map ported from [Slazanger's SMT](https://github.com/Slazanger/SMT) (MIT); region layouts © Wollari & CCP (Dotlan); Thera/Turnur connections from [eve-scout](https://www.eve-scout.com/)._
+_Intel matcher & map ported from [Slazanger's SMT](https://github.com/Slazanger/SMT) (MIT); region layouts © Wollari & CCP (Dotlan); Thera/Turnur connections from [eve-scout](https://www.eve-scout.com/); ship names from CCP's SDE._
 
 _Full release history: see [CHANGELOG.md](CHANGELOG.md)._

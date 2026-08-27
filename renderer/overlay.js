@@ -166,22 +166,32 @@
       // Systems past the jump map (only possible on the flat map) have no known
       // distance — labelled and dimmed as such rather than guessed at.
       const jl = s.jumps == null ? '—' : `${s.jumps}j`;
-      const dim = s.jumps == null ? 0.45 : (1 - 0.5 * (s.jumps / (g.maxD || 1)));
+      const dim = dimFor(s.jumps, g.maxD);
       nodes += `<g class="ov-node${home ? ' home' : ''}" data-id="${s.id}" data-name="${esc(s.name)}"`
         + ` transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})">`
         + `<title>${esc(s.name)} · ${jl} · ${s.sec == null ? '?' : s.sec.toFixed(1)} · ${esc(s.region || '')}</title>`
         + `<circle class="ov-halo" r="0" />`
         + `<circle class="ov-pulse" r="${(NR * 2.6).toFixed(1)}" stroke-width="${(U / 9).toFixed(1)}" />`
         + (home ? `<circle class="ov-ringmk" r="${NR * 2.1}" stroke-width="${U / 11}" />` : '')
-        + `<circle class="ov-dot" r="${NR}" style="fill:${secCol(s.sec)}" stroke-width="${U / 22}" />`
+        + `<circle class="ov-dot" r="${NR}" style="fill:${secCol(s.sec)}" stroke-width="${U / 22}" opacity="${dim}" />`
         + (chars.has(String(s.id)) && !home ? `<circle class="ov-chr" cx="${NR * 1.6}" cy="${-NR * 1.6}" r="${NR * 0.7}" />` : '')
         + (st.prefs.labels ? `<text class="ov-lbl" y="${-NR * 1.9}" font-size="${(U * 0.8 * (Number(st.prefs.labelScale) || 1)).toFixed(2)}"`
-          + ` fill-opacity="${dim.toFixed(2)}">${esc(s.name)}</text>` : '')
+          + ` fill-opacity="${dim}">${esc(s.name)}</text>` : '')
         + `</g>`;
     }
     root.innerHTML = `<g>${g.rings}</g><g>${edges}</g><g>${nodes}</g>`;
     applyLayers();
     updateBar();
+  }
+
+  // How far a system fades with distance. The old curve only reached 0.5 at the
+  // furthest ring, which read as "all about the same"; this bottoms out much
+  // lower so near/far is obvious at a glance, and anything outside the jump
+  // range (flat map only) drops away almost entirely.
+  function dimFor(jumps, maxD) {
+    if (jumps == null) return '0.13';
+    const t = Math.min(1, jumps / (maxD || 1));
+    return (1 - 0.78 * t).toFixed(2);
   }
 
   // Jump-ring map: origin centred, one dashed ring per jump of distance.
@@ -216,9 +226,19 @@
       }
       cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
     }
-    let half = 1;
-    for (const s of sys) half = Math.max(half, Math.abs(s.x - cx), Math.abs(s.y - cy));
-    half *= 1.08;
+    // Frame the systems inside the current jump range rather than the whole
+    // region: a region fitted end to end in a small overlay is unreadably
+    // small, and what you actually want on screen is your neighbourhood. The
+    // rest of the region is still there — zoom out to see it.
+    let half = 0;
+    for (const s of sys) {
+      if (st.jumpsOf.get(String(s.id)) == null) continue;
+      half = Math.max(half, Math.abs(s.x - cx), Math.abs(s.y - cy));
+    }
+    if (!half) {                                  // no range map — fall back to the region
+      for (const s of sys) half = Math.max(half, Math.abs(s.x - cx), Math.abs(s.y - cy));
+    }
+    half = Math.max(half, 60) * 1.12;
     // These layouts share the coordinate space the Intel Map tab draws in, so
     // borrow its calibrated sizes (9px labels, r=4.5 dots) instead of deriving
     // them from the region's span — span-derived text came out as wide as the
@@ -342,7 +362,7 @@
       const t = new Date(e.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       return `<div class="ov-row${e.clear ? ' clear' : ''}"><span class="t">${t}</span>`
         + `<span class="sys">${esc(name)}</span><span class="d">${jumps}j</span>`
-        + `<span class="txt">${esc(e.text)}</span></div>`;
+        + `<span class="txt">${SmtHighlight.line(e.text, e.spans)}</span></div>`;
     }).join('');
   }
 
@@ -422,9 +442,9 @@
     mode.classList.toggle('on', region);
     mode.textContent = region ? '▦' : '◎';
     mode.title = region ? 'Flat SMT region map — click for the jump-ring map' : 'Jump-ring map — click for the flat SMT region map';
-    // The jump-range buttons only shape the ring map; the flat map draws the
-    // whole region, and the range then only feeds the tiers and the ticker.
-    document.querySelectorAll('.ov-j').forEach((b) => { b.title = region ? 'Jump range used for alarm tiers and the ticker' : 'How many jumps out to draw'; });
+    // On the flat map the range decides what's framed (and stays what the tiers
+    // and ticker use); on the ring map it decides what's drawn at all.
+    document.querySelectorAll('.ov-j').forEach((b) => { b.title = region ? 'Jumps to frame — the rest of the region is a zoom-out away' : 'How many jumps out to draw'; });
     $('ov-follow').classList.toggle('on', !!st.prefs.follow);
     $('ov-labels').classList.toggle('on', !!st.prefs.labels);
     $('ov-feed-t').classList.toggle('on', !!st.prefs.feed);
@@ -509,6 +529,13 @@
     $('ov-sys').addEventListener('change', (e) => pinSystem(e.target.value));
     $('ov-sys').addEventListener('keydown', (e) => { if (e.key === 'Enter') pinSystem(e.target.value); });
     // Click a system to watch that pocket instead (drops out of follow).
+    $('ov-feed').addEventListener('click', (e) => {
+      const b = e.target.closest('.ih-sys[data-id]');
+      if (!b) return;
+      savePrefs({ system: b.dataset.id, follow: false });
+      st.loadKey = null;
+      loadMap();
+    });
     $('ov-svg').addEventListener('click', (e) => {
       const n = e.target.closest && e.target.closest('.ov-node');
       if (!n) return;

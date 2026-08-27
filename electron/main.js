@@ -314,7 +314,7 @@ function createWindow() {
 
 const OVERLAY_DEFAULTS = {
   width: 460, height: 500, x: null, y: null,
-  jumps: 5, opacity: 0.9, clickThrough: false, alwaysOnTop: true,
+  jumps: 6, opacity: 0.9, clickThrough: false, alwaysOnTop: true,
   labels: true, feed: true, follow: true, system: '', muted: false, mode: 'radial',
   zoom: 1, labelScale: 1,
 };
