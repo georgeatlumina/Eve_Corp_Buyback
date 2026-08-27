@@ -4,6 +4,52 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.5 — A watchlist, a system you can click, and a map that stays put
+
+**Watchlist — systems that alarm at any distance.** The distance tiers only reach as far as their
+furthest range; past that, silence — the wrong answer for your staging system or home while you're
+ratting six regions away. **★ Watch** keeps a list of systems that alarm whatever the distance, checked
+before the distance tiers run, each with **its own sound** so you can tell staging from a chokepoint by
+ear.
+
+- Star a system from the map card, or add it by name in the ★ Watch panel.
+- **The watch strip** above the map shows every watched system and its current state — quiet, `⚠ 2m`
+  since a report, `clr`, or `◆` for kills. Click a chip to jump the map there.
+- Watched systems are **starred on the map** and highlighted in their own colour when they light up.
+- A **kill** in a watched system speaks with that system's voice at any distance; the global Kills toggle
+  still gates it, so watching a system never switches on a feed you'd turned off.
+- Watch alarms have **their own throttle clock**, so a busy channel three regions away can't swallow the
+  alarm you care about.
+- The list lives in the sidecar with the jump bridges and alarm rules, so the Intel Map, any pop-out and
+  the overlay always agree — star something in one and the others update immediately.
+
+**Click a system on the map.** Every node opens a card beside it (not a dialog in the middle of the
+screen) with the system's security and region, how many jumps from the character you're following —
+counting your jump bridges — the recent intel naming it, kills in the last hour and what they were worth,
+and buttons for ★ Watch, Route from / to, Dotlan and zKill. Closes on Esc, an outside click, or any
+pan/zoom; a small drag no longer counts as a click.
+
+**The map remembers where you left it.** Per machine: the region and your exact pan/zoom, which layers
+were on, whether Follow intel was ticked, and which panels were open. Your character still wins the
+opening view — the saved region is the fallback for when there's no character fix, and a saved pan/zoom
+only re-applies if you land in the region it was taken in. Switching tabs and back keeps your view
+instead of refitting.
+
+**Overlay**
+
+- **Right-click any system to star it.** Left-click still re-pins the map to that pocket.
+- The **watch strip** appears under the toolbar when a watched system lights up and hides when everything
+  goes quiet; the new **★** button pins it open, and glows when something is live but the strip is hidden.
+- **Fix — watched systems were filtered out of the ticker.** It only showed reports for systems inside
+  your jump range, hiding the very reports the watchlist exists to surface.
+
+**Fixes**
+
+- **Watchlist changes could be silently lost** — starring two systems inside one round-trip had the
+  second write drop the first. Writes are now serialised in the map and the overlay alike.
+- **View settings could be silently lost** — toggling a layer and opening a panel in the same breath
+  saved only the last of the two.
+
 ## v3.12.4 — Intel lines you can read at a glance
 
 - **Intel reports are now colour-coded** in both the Intel Map feed and the overlay ticker: the

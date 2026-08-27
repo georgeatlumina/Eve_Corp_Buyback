@@ -27,7 +27,7 @@ window.SmtAlerts = (function () {
     volume: 0.6, clear_sound: 'chime', kill_sound: 'thud', gap: 3,
   };
 
-  const st = { cfg: { ...DEFAULTS }, ctx: null, last: 0, muted: false };
+  const st = { cfg: { ...DEFAULTS }, ctx: null, last: 0, lastWatch: 0, muted: false, watch: new Map() };
 
   // ---- synthesised sounds ------------------------------------------------
   // Each preset is a list of [waveform, startHz, endHz, startSec, durSec, gain]
@@ -102,12 +102,35 @@ window.SmtAlerts = (function () {
     synth(sound, vol);
   }
 
+  // ---- watchlist ---------------------------------------------------------
+  // Systems you always want to hear about. Checked before the distance tiers
+  // and never distance-limited, so home still shouts while you're six regions
+  // out. Each entry carries its own sound — that's what lets you tell staging
+  // from a chokepoint without looking at anything.
+  const WATCH_LOOK = { size: 1.5, fade: 900 };   // how the overlay draws a watch hit
+
+  // A watch dressed up as a tier, so every renderer that already knows how to
+  // draw a tier draws a watch too, in that system's own colour.
+  const watchTier = (w) => ({ ...WATCH_LOOK, ...w, max: -1, watch: true });
+
+  function watchFor(systems) {
+    for (const sid of systems || []) {
+      const w = st.watch.get(String(sid));
+      if (w) return w;
+    }
+    return null;
+  }
+
   // ---- distance tiers ----------------------------------------------------
   const tiers = () => (st.cfg.tiers && st.cfg.tiers.length ? st.cfg.tiers : TIER_DEFAULTS);
 
   // The first tier that covers this distance. null = past every tier, i.e. out
   // of range. A tier with max < 0 covers any distance and is always last.
-  function tierFor(jumps) {
+  function tierFor(jumps, id) {
+    if (id != null) {
+      const w = st.watch.get(String(id));
+      if (w) return watchTier(w);        // a watch outranks whatever distance says
+    }
     if (jumps == null) return null;
     for (const t of tiers()) {
       if (t.max < 0 || jumps <= t.max) return t;
@@ -130,6 +153,11 @@ window.SmtAlerts = (function () {
   // With no distance map (no character, nothing pinned) we can't measure, so
   // fall back to the furthest tier — you still get a noise, the gentlest one.
   function match(systems, jumpsOf) {
+    const w = watchFor(systems);
+    if (w) {
+      const j = jumpsOf ? jumpsOf.get(String(w.system_id)) : undefined;
+      return { tier: watchTier(w), jumps: j == null ? null : j, watch: w };
+    }
     if (!jumpsOf || !jumpsOf.size) {
       const all = tiers();
       return { tier: all[all.length - 1] || null, jumps: null };
@@ -143,11 +171,14 @@ window.SmtAlerts = (function () {
     return { tier: best, jumps: bestJ };
   }
 
-  function throttled() {
+  // Watch hits throttle on their own clock. Sharing one would let a busy
+  // channel three regions away silence the alarm you actually care about.
+  function throttled(watch) {
     const gap = (Number(st.cfg.gap) || 0) * 1000;
+    const key = watch ? 'lastWatch' : 'last';
     const now = Date.now();
-    if (now - st.last < gap) return true;
-    st.last = now;
+    if (now - st[key] < gap) return true;
+    st[key] = now;
     return false;
   }
 
@@ -159,6 +190,14 @@ window.SmtAlerts = (function () {
     defaults: () => ({ ...DEFAULTS, tiers: TIER_DEFAULTS.map((t) => ({ ...t })) }),
     config: () => ({ ...st.cfg }),
     setConfig(cfg) { st.cfg = { ...DEFAULTS, ...(cfg || {}) }; },
+    // The watchlist as the sidecar hands it over: [{system_id, sound, ...}].
+    setWatchlist(list) {
+      st.watch = new Map((list || []).filter((w) => w && w.system_id != null)
+        .map((w) => [String(w.system_id), w]));
+    },
+    watchlist: () => [...st.watch.values()],
+    isWatched: (id) => st.watch.has(String(id)),
+    watchFor,
     setMuted(m) { st.muted = !!m; },
     muted: () => st.muted,
     tiers,
@@ -174,6 +213,10 @@ window.SmtAlerts = (function () {
       if (t) emit(t.sound, t.custom);
     },
 
+    // Preview an arbitrary sound — the watchlist rows each have their own, so
+    // they can't go through test()'s tier index.
+    testSound(sound, custom) { emit(sound, custom); },
+
     // Feed the intel events from one poll. Returns one entry per report that
     // triggered, so the caller can drive visuals (the whole-overlay flash) off
     // the same decision that made the sound. Muting silences the sound only —
@@ -187,12 +230,14 @@ window.SmtAlerts = (function () {
         if (!e.systems || !e.systems.length) continue;   // no system, no distance
         const m = match(e.systems, jumpsOf);
         if (!m.tier) continue;                           // out of range
-        if (throttled()) break;
+        // continue, not break: the two clocks mean a throttled distant report
+        // must not stop us reaching a watch hit later in the same batch.
+        if (throttled(!!m.watch)) continue;
         if (!st.muted) {
           if (e.clear) emit(st.cfg.clear_sound, '');
           else emit(m.tier.sound, m.tier.custom);
         }
-        fired.push({ tier: m.tier, jumps: m.jumps, clear: !!e.clear });
+        fired.push({ tier: m.tier, jumps: m.jumps, clear: !!e.clear, watch: m.watch || null });
       }
       return fired;
     },
@@ -203,9 +248,12 @@ window.SmtAlerts = (function () {
       for (const k of kills) {
         const m = match([k.system_id], jumpsOf);
         if (!m.tier) continue;
-        if (throttled()) break;
-        if (!st.muted) emit(st.cfg.kill_sound, '');
-        return [{ tier: m.tier, jumps: m.jumps, kill: true }];
+        if (throttled(!!m.watch)) continue;
+        // A kill in a watched system speaks with that system's voice, and at
+        // any distance — but the global Kills toggle still gates it, so
+        // watching a system never turns on a feed you'd switched off.
+        if (!st.muted) emit(m.watch ? m.watch.sound : st.cfg.kill_sound, m.watch ? m.watch.custom : '');
+        return [{ tier: m.tier, jumps: m.jumps, kill: true, watch: m.watch || null }];
       }
       return [];
     },

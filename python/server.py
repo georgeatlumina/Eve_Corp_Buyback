@@ -1182,6 +1182,83 @@ def smt_alerts_set(req: SMTAlerts):
     return _smt_alerts()
 
 
+class SMTWatch(BaseModel):
+    system_id: int
+    sound: str = 'siren'
+    colour: str = '#ff2d2d'
+    flash: str = 'fast'
+    custom: str = ''
+    flash_window: bool = True
+
+
+class SMTWatchlist(BaseModel):
+    systems: list[SMTWatch] = []
+
+
+def _clean_watch(w):
+    """Normalize one watchlist entry. None if it doesn't name a real system —
+    a watch nobody can resolve would be a silent alarm you think is armed."""
+    d = w.model_dump() if hasattr(w, 'model_dump') else dict(w or {})
+    try:
+        sid = int(d.get('system_id'))
+    except (TypeError, ValueError):
+        return None
+    if str(sid) not in eve_map.load_map()['systems']:
+        return None
+    return {
+        'system_id': sid,
+        'sound': str(d.get('sound') or 'siren')[:32],
+        'colour': d.get('colour') if _SMT_HEX.match(str(d.get('colour') or '')) else '#ff2d2d',
+        'flash': d.get('flash') if d.get('flash') in _SMT_FLASH else 'fast',
+        'custom': str(d.get('custom') or '')[:512],
+        'flash_window': bool(d.get('flash_window', True)),
+    }
+
+
+def _smt_watchlist():
+    """Saved watch entries, each decorated with its system record."""
+    systems = eve_map.load_map()['systems']
+    out, seen = [], set()
+    for raw in (load_config().get('smt_watchlist') or []):
+        w = _clean_watch(raw)
+        if not w or w['system_id'] in seen:
+            continue
+        seen.add(w['system_id'])
+        rec = systems.get(str(w['system_id'])) or {}
+        out.append({**w, 'name': rec.get('name'), 'region': rec.get('region'), 'sec': rec.get('sec')})
+    out.sort(key=lambda r: (r['name'] or '').lower())
+    return out
+
+
+@app.get('/api/smt/watchlist')
+def smt_watchlist_get():
+    """Systems you always want to hear about, however far away they are. The
+    distance tiers only reach as far as their furthest `max`; a watch is
+    checked before them and ignores distance entirely, which is what lets you
+    keep an ear on home while you're ratting six regions over. Each entry
+    carries its own sound, so you can tell staging from a chokepoint by ear."""
+    return {'systems': _smt_watchlist()}
+
+
+@app.post('/api/smt/watchlist')
+def smt_watchlist_set(req: SMTWatchlist):
+    """Replace the watchlist. Capped at 64 — past that the strip stops being
+    something you can read at a glance, which is the whole point of it."""
+    clean, seen = [], set()
+    for w in (req.systems or []):
+        c = _clean_watch(w)
+        if not c or c['system_id'] in seen:
+            continue
+        seen.add(c['system_id'])
+        clean.append(c)
+        if len(clean) >= 64:
+            break
+    cfg = load_config()
+    cfg['smt_watchlist'] = clean
+    save_config(cfg)
+    return smt_watchlist_get()
+
+
 @app.get('/api/smt/overlay')
 def smt_overlay(system: str = Query(...), jumps: int = 5, bridges: bool = True):
     """The local map the intel overlay window draws: every system within

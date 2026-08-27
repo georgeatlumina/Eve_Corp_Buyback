@@ -967,6 +967,7 @@
         <button id="smt-bridges-btn" class="secondary" type="button" title="Manage your jump-bridge network">Bridges…</button>
         <button id="smt-thera-btn" class="secondary" type="button" title="Live Thera / Turnur connections (eve-scout)">Thera…</button>
         <button id="smt-sov-btn" class="secondary" type="button" title="Active sov campaigns + faction-warfare timers">Sov…</button>
+        <button id="smt-watch-btn" class="secondary" type="button" title="Watchlist — systems that alarm at any distance, each with its own sound">★ Watch</button>
         <button id="smt-alerts-btn" class="secondary" type="button" title="Intel alarm — play a sound when intel lands near you">🔔 Alerts</button>
         <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
         <button class="popout-btn secondary" data-popout="smt-intel" type="button" title="Open the Intel Map in its own window">⤢ Pop out</button>
@@ -1033,6 +1034,15 @@
         </div>
         <div class="muted small">Distance is measured from your first online <strong>SMT character</strong> (or the overlay's pinned system). With neither, reports fall into the furthest tier. The overlay window takes over the alarm while it's open, so you never hear it twice.</div>
       </div>
+      <div id="smt-watch-bar" class="smt-watch-bar" hidden>
+        <div class="smt-watch-add">
+          <input id="smt-watch-sys" list="smt-syslist" type="text" placeholder="Watch a system…" spellcheck="false" autocomplete="off" />
+          <button id="smt-watch-add" type="button">★ Watch</button>
+          <span id="smt-watch-status" class="muted small"></span>
+        </div>
+        <div class="smt-watch-h muted small">Watched systems alarm however far away they are — the distance tiers above only reach as far as their furthest range. Each carries its own sound, so you can tell staging from a chokepoint without looking.</div>
+        <div id="smt-watch-list" class="smt-watch-list"></div>
+      </div>
       <div id="smt-config" class="smt-config" hidden>
         <label class="smt-config-row">Chat-logs folder <input id="smt-logdir" type="text" placeholder="…/Documents/EVE/logs/Chatlogs" spellcheck="false" autocomplete="off" /> <button id="smt-detect" class="secondary" type="button">Detect</button></label>
         <div class="smt-channels-h muted small">Intel channels to watch:</div>
@@ -1040,8 +1050,9 @@
         <div class="smt-config-actions"><button id="smt-save" type="button">Save</button> <span id="smt-config-status" class="muted small"></span></div>
       </div>
       <div id="smt-chars" class="smt-chars"></div>
+      <div id="smt-watch-strip" class="smt-watch-strip"></div>
       <div class="smt-stage">
-        <div id="smt-canvas" class="smt-canvas"><svg id="smt-svg" xmlns="http://www.w3.org/2000/svg"><g id="smt-root"></g></svg></div>
+        <div id="smt-canvas" class="smt-canvas"><svg id="smt-svg" xmlns="http://www.w3.org/2000/svg"><g id="smt-root"></g></svg><div id="smt-sys-pop" class="smt-sys-pop" hidden></div></div>
         <aside class="smt-feed">
           <div class="smt-feed-h">Intel feed <span id="smt-feed-count" class="muted"></span></div>
           <div id="smt-feed-list" class="smt-feed-list"></div>

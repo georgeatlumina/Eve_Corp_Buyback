@@ -1,43 +1,78 @@
-# v3.12.4 — Intel lines you can read at a glance
+# v3.12.5 — A watchlist, a system you can click, and a map that stays put
 
-Intel reports are chat messages, and reading a wall of them mid-fight is slow. Now the parts that
-matter are picked out for you — and a matcher bug that was lighting up systems nobody reported is gone.
+The Intel Map could tell you about things happening near your character. It couldn't tell you about
+home while you were six regions away, it couldn't tell you anything about a system you clicked on, and
+it forgot where you'd left it every time you closed the app. All three are fixed.
 
-## Colour-coded reports
+## Watchlist — systems that alarm at any distance
 
-In both the Intel Map feed and the overlay ticker, each report now separates:
+The distance tiers only reach as far as their furthest range. Past that, silence — which is the wrong
+answer for your staging system, your home, or the chokepoint you care about while you're ratting
+somewhere else entirely.
 
-| Part | Colour |
+**★ Watch** in the toolbar keeps a list of systems that alarm **whatever the distance**, checked before
+the distance tiers ever run. Each one carries **its own sound**, so you can tell staging from a
+chokepoint by ear without looking at anything.
+
+- **Star a system** from the map card, or add it by name in the ★ Watch panel.
+- **The watch strip** sits above the map: every watched system and what it's doing right now — quiet,
+  `⚠ 2m` since a report, `clr`, or `◆` for kills. Click a chip to jump the map there.
+- **Watched systems are starred on the map** and highlighted in their own colour when they light up.
+- A **kill** in a watched system speaks with that system's voice, at any distance. The global Kills
+  toggle still gates it, so watching a system never switches on a feed you'd turned off.
+- Watch alarms have **their own throttle clock**, so a busy channel three regions away can't swallow the
+  one alarm you actually care about.
+
+The list lives in the sidecar alongside your jump bridges and alarm rules, so the Intel Map, any pop-out
+and the overlay always agree on it — star something in one and the others update immediately.
+
+## Click a system on the map
+
+Every system on the Intel Map is now clickable, and the card opens **beside the node** rather than as a
+dialog in the middle of the screen — the map exists to give you spatial context, and a modal throws that
+away.
+
+| In the card | |
 |---|---|
-| **System** | red — green when it's a `clr` |
-| **Ship** | amber |
-| **Reporting pilot** | blue |
+| **Where** | name, security, region, and how many jumps from the character you're following — counting your jump bridges |
+| **Intel** | the recent reports naming that system, colour-coded as usual |
+| **Kills** | how many in the last hour and what they were worth |
+| **Actions** | ★ Watch · Route from · Route to · Dotlan · zKill |
 
-Everything else stays plain, so `UEXO-Z 3 reds, Loki and a Sabre on gate` reads as *where*, *what* and
-*who* without parsing the sentence. **Click a highlighted system** to jump the map there — or, in the
-overlay, to start watching that pocket.
+It closes on Esc, on a click anywhere else, or as soon as you pan or zoom. A small drag no longer counts
+as a click, so nudging the map doesn't throw a card at you.
 
-Ship names come from a list generated from the SDE: 393 hulls, multi-word names like *Armageddon Navy
-Issue* included, plus the fleet slang intel actually uses — *dictor*, *ceptor*, *logi*, *hictor*,
-*bomber*. The reporting pilot's name was already being parsed out of every chat line and thrown away;
-it's kept now.
+## The map remembers where you left it
 
-## Fix: systems nobody reported
+Closing the app used to reset the Intel Map completely. It now remembers, per machine:
 
-SMT's matcher accepts a word that prefixes a system name — that's what lets "uexo" find UEXO-Z. But it
-also meant **"and" matched Andabiar, Andole and Andrub**, and "gate" matched Gateway. Those systems lit
-up on the map, and because the alarm runs off the same match, they could set it off.
+- the **region** you were looking at, and your exact **pan and zoom**
+- which **layers** were on (Intel / Kills / Chars / Sov) and whether **Follow intel** was ticked
+- which **panels** were open — Route, Bridges, Thera, Sov, Alerts, ★ Watch, ⚙ Logs
 
-Common English and intel filler words no longer match by prefix. An exact full-name match still counts,
-so a system genuinely called Gateway is unaffected.
+**Your character still wins the opening view**, as before: the saved region is the fallback for when
+there's no character fix at all, and a saved pan/zoom is only re-applied if you land in the region it was
+taken in. Switching away from the tab and back also keeps your view instead of refitting the map.
 
-## Flat SMT map on the overlay
+## In the overlay
 
-- **Distance is far easier to see.** Near systems are full strength, the furthest in range drop to about
-  a fifth, and systems outside your range fade almost away. The dots dim now, not just the labels.
-- **It opens framed on your jump range** (default 6) centred on your character, rather than squeezing an
-  entire region into a small window where nothing was legible. The rest of the region is a zoom-out away.
-- **Zoom now runs 0.2× – 8×**, so you can push right in on a pocket or pull back to the whole region.
+- **Right-click any system to star it.** Left-click still re-pins the map to that pocket, so the star
+  goes on the button that was free — no panel here, because a card over a transparent, usually
+  click-through HUD would be the wrong object entirely.
+- **The watch strip** appears under the toolbar the moment a watched system lights up, and hides again
+  when everything goes quiet. The new **★** toolbar button pins it open if you'd rather have the standing
+  "all clear"; the button itself glows when something is live but the strip is auto-hidden.
+- **Fix — watched systems were being filtered out of the ticker.** It only ever showed reports for
+  systems inside your jump range, which would have hidden the very reports the watchlist exists to
+  surface. Watched systems are never "out of range".
+
+## Fixes
+
+- **Watchlist changes could be silently lost.** Starring two systems inside one round-trip had both build
+  their new list from the same stale one, so the second write dropped the first. Writes are now
+  serialised, in the map and the overlay alike.
+- **View settings could be silently lost.** Toggling a layer and opening a panel in the same breath saved
+  only the last of the two.
 
 ---
 

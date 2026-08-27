@@ -17,4 +17,6 @@ contextBridge.exposeInMainWorld('overlayApi', {
   hoverUi: (over) => ipcRenderer.send('overlay:hover-ui', !!over),
   onClickThrough: (cb) => ipcRenderer.on('overlay:click-through', (_e, on) => cb(!!on)),
   onAlertsChanged: (cb) => ipcRenderer.on('smt:alerts-changed', () => cb()),
+  watchlistChanged: () => ipcRenderer.send('smt:watchlist-changed'),
+  onWatchlistChanged: (cb) => ipcRenderer.on('smt:watchlist-changed', () => cb()),
 });

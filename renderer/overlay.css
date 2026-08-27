@@ -199,3 +199,28 @@ html, body { height: 100%; }
 .ov-row.clear .ih-sys { color: #8fd6b0; }
 .ih-ship { color: #f0c86a; font-weight: 600; }
 .ih-pilot { color: #8fc4f0; }
+
+/* ---- watchlist ---- */
+/* Watched systems alarm at any distance, so plenty of them are nowhere on the
+   map this window draws. The strip is where those live: auto-hidden while
+   everything is quiet, pinned open with the toolbar star if you'd rather have
+   the standing "all clear". */
+.ov-watch { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25em;
+  padding: 0.25em 0.4em; border-bottom: 1px solid rgba(70, 88, 105, 0.3); }
+.ov-watch[hidden] { display: none; }
+.ov-wchip { display: inline-flex; align-items: center; gap: 0.3em; background: rgba(20, 26, 33, 0.72);
+  border: 1px solid rgba(90, 106, 124, 0.55); border-radius: 11px; padding: 0.05em 0.5em;
+  color: #b3c0cc; font-size: 0.9em; cursor: pointer; }
+.ov-wchip:hover { border-color: #7f92a6; }
+.ov-wchip .star { color: #ffd98a; }
+.ov-wchip .st { color: #6f7d8a; font-variant-numeric: tabular-nums; }
+.ov-wchip.hot { border-color: var(--wc, #ff3b3b); background: rgba(70, 20, 24, 0.8); color: #ffd3d3; }
+.ov-wchip.hot .st { color: var(--wc, #ff8b8b); }
+.ov-wchip.clear { border-color: #2f6b4d; background: rgba(18, 48, 31, 0.8); color: #8fd6b0; }
+.ov-wchip.clear .st { color: #8fd6b0; }
+.ov-wchip.kill { border-color: #7a5a20; background: rgba(48, 38, 18, 0.8); color: #f0c880; }
+.ov-wchip.kill .st { color: #f0a020; }
+/* The toolbar star glows when something is live but the strip is auto-hidden —
+   otherwise a quiet-looking bar would be hiding a report. */
+.ov-t.hot { color: #ffd98a; border-color: #7a5a20; }
+.ov-star { fill: #ffd98a; text-anchor: middle; pointer-events: none; }

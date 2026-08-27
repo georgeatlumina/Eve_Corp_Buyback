@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, globalShortcut, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, session, shell, webContents } = require('electron');
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
@@ -316,7 +316,7 @@ const OVERLAY_DEFAULTS = {
   width: 460, height: 500, x: null, y: null,
   jumps: 6, opacity: 0.9, clickThrough: false, alwaysOnTop: true,
   labels: true, feed: true, follow: true, system: '', muted: false, mode: 'radial',
-  zoom: 1, labelScale: 1,
+  zoom: 1, labelScale: 1, watchPin: false,
 };
 
 function overlayStatePath() {
@@ -393,6 +393,17 @@ function broadcastOverlayState(open) {
 ipcMain.on('smt:alerts-changed', () => {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     try { overlayWindow.webContents.send('smt:alerts-changed'); } catch (_) {}
+  }
+});
+
+// The watchlist can be edited from either side — starred on the map, or
+// right-clicked in the overlay — so unlike the alarm settings this has to reach
+// every window, pop-outs included, not just the overlay. The sender already
+// knows.
+ipcMain.on('smt:watchlist-changed', (event) => {
+  for (const wc of webContents.getAllWebContents()) {
+    if (wc === event.sender || wc.isDestroyed()) continue;
+    try { wc.send('smt:watchlist-changed'); } catch (_) { /* window going away */ }
   }
 });
 

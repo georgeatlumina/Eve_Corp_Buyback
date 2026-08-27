@@ -23,6 +23,7 @@
       <button id="ov-mode" class="ov-t" type="button" title="Switch between the jump-ring map and the flat SMT region map">◎</button>
       <button id="ov-labels" class="ov-t" type="button" title="Show system names">A</button>
       <button id="ov-feed-t" class="ov-t" type="button" title="Show the intel ticker">☰</button>
+      <button id="ov-watch-t" class="ov-t" type="button" title="Watchlist strip appears when a watched system lights up — click to keep it open">★</button>
       <button id="ov-mute" class="ov-t" type="button" title="Mute the intel alarm">🔔</button>
       <button id="ov-pin" class="ov-t" type="button" title="Keep on top of other windows">📌</button>
       <button id="ov-click" class="ov-t" type="button" title="Click-through — let clicks pass to EVE (Ctrl+Alt+O)">👆</button>
@@ -35,6 +36,7 @@
       <input id="ov-sys" type="text" placeholder="Pin a system…" spellcheck="false" autocomplete="off" />
       <span id="ov-sys-err" class="ov-sys-err"></span>
     </div>
+    <div id="ov-watch" class="ov-watch ov-hit" hidden></div>
     <div class="ov-canvas">
       <svg id="ov-svg" xmlns="http://www.w3.org/2000/svg"><g id="ov-root"></g></svg>
       <div id="ov-empty" class="ov-empty"></div>

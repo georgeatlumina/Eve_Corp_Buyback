@@ -2115,6 +2115,64 @@ body.popout-calc .pib-calc > summary { display: none; }
 .smt-al-swatch { display: inline-block; width: 0.85em; height: 0.85em; border-radius: 50%; border: 1px solid #0006; }
 .smt-al-tier .smt-al-size, .smt-al-tier .smt-al-fade { width: 4.2em; }
 
+/* ---- watchlist panel ---- */
+.smt-watch-bar { display: flex; flex-direction: column; gap: 0.45em; padding: 0.5em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.smt-watch-bar[hidden] { display: none; }
+.smt-watch-add { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; }
+.smt-watch-h { line-height: 1.45; max-width: 70em; }
+.smt-watch-bar select, .smt-watch-bar input[type="text"] { background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.25em 0.4em; }
+.smt-watch-list { display: flex; flex-direction: column; gap: 0.3em; max-height: 260px; overflow-y: auto; }
+.smt-watch-row { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; background: #1a1d22; border: 1px solid #2b2f36; border-radius: 5px; padding: 0.3em 0.45em; }
+.smt-watch-row .smt-watch-name { min-width: 8em; color: #ffd98a; font-weight: 600; cursor: pointer; background: none; border: 0; text-align: left; padding: 0; }
+.smt-watch-row .smt-watch-name:hover { text-decoration: underline; }
+.smt-watch-row .smt-watch-reg { color: #7d8e9e; font-size: 0.85em; min-width: 8em; }
+.smt-watch-row input[type="color"] { width: 2.2em; height: 1.7em; padding: 0; background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 4px; cursor: pointer; }
+.smt-watch-row input[type="text"] { flex: 1 1 12em; min-width: 7em; }
+
+/* ---- watchlist strip ---- */
+/* Always-on state for every watched system: the one row worth glancing at
+   mid-fight. Hidden entirely when nothing is watched. */
+.smt-watch-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; }
+.smt-watch-strip:empty { display: none; }
+.smt-watch-chip { display: inline-flex; align-items: center; gap: 0.35em; background: #1a1d22; border: 1px solid #3a3f48;
+  border-radius: 13px; padding: 0.12em 0.6em; color: #cfd8e2; font-size: 0.84em; cursor: pointer; }
+.smt-watch-chip:hover { border-color: #5a6270; }
+.smt-watch-chip .st { color: #6f7c89; font-variant-numeric: tabular-nums; }
+.smt-watch-chip .star { color: #ffd98a; }
+.smt-watch-chip.hot { border-color: var(--wc, #ff3b3b); background: #2a1618; color: #ffd9d9; }
+.smt-watch-chip.hot .st { color: var(--wc, #ff8b8b); }
+.smt-watch-chip.clear { border-color: #2f6b4d; background: #16321f; color: #8fd6b0; }
+.smt-watch-chip.clear .st { color: #8fd6b0; }
+.smt-watch-chip.kill { border-color: #7a5a20; background: #2a2214; color: #f0c880; }
+.smt-watch-chip.kill .st { color: #f0a020; }
+
+/* ---- watched system marker on the map ---- */
+.sm-n.sm-watched .sm-dot { stroke: #ffd98a; stroke-width: 1.6; }
+.sm-watch-star { fill: #ffd98a; font-size: 9px; pointer-events: none; }
+
+/* ---- system card ---- */
+/* Floats over the map so you keep spatial context; clipped by the canvas, so
+   placement flips near the edges rather than spilling out of sight. */
+.smt-sys-pop { position: absolute; z-index: 8; width: 320px; max-height: 60%; overflow-y: auto;
+  background: #14171c; border: 1px solid #39404a; border-radius: 7px; box-shadow: 0 6px 22px #000a;
+  padding: 0.5em 0.6em; font-size: 0.86em; color: #cdd6df; }
+.smt-sys-pop[hidden] { display: none; }
+.smt-sys-pop h4 { margin: 0 0 0.1em; font-size: 1.05em; color: #eaf2fa; display: flex; align-items: baseline; gap: 0.4em; }
+.smt-sys-pop h4 .sec { font-variant-numeric: tabular-nums; }
+.smt-sys-pop .sp-sub { color: #7d8e9e; font-size: 0.9em; margin-bottom: 0.45em; }
+.smt-sys-pop .sp-h { color: #8fa0b0; border-top: 1px solid #262b32; margin-top: 0.45em; padding-top: 0.35em; font-size: 0.9em; }
+.smt-sys-pop .sp-row { padding: 0.2em 0; line-height: 1.35; border-bottom: 1px solid #1d2026; }
+.smt-sys-pop .sp-row:last-child { border-bottom: 0; }
+.smt-sys-pop .sp-row .t { color: #6f7c89; font-variant-numeric: tabular-nums; margin-right: 0.35em; }
+.smt-sys-pop .sp-row.clear { color: #8fd6b0; }
+.smt-sys-pop .sp-acts { display: flex; flex-wrap: wrap; gap: 0.3em; border-top: 1px solid #262b32; margin-top: 0.45em; padding-top: 0.45em; }
+.smt-sys-pop .sp-acts button, .smt-sys-pop .sp-acts a { background: #1e232a; border: 1px solid #39404a; border-radius: 4px;
+  color: #cfe8ff; padding: 0.18em 0.5em; cursor: pointer; font-size: 0.95em; text-decoration: none; }
+.smt-sys-pop .sp-acts button:hover, .smt-sys-pop .sp-acts a:hover { background: #28303a; }
+.smt-sys-pop .sp-acts button.on { background: #3a2f14; border-color: #7a5a20; color: #ffd98a; }
+.smt-sys-pop .sp-x { position: absolute; top: 0.25em; right: 0.4em; background: none; border: 0; color: #7d8e9e; cursor: pointer; font-size: 1em; }
+.smt-sys-pop .sp-x:hover { color: #eee; }
+
 /* ---- pop-out window pin ---- */
 .popout-pin { position: fixed; top: 6px; right: 8px; z-index: 60; background: #1a1d22; color: #7d8e9e;
   border: 1px solid #2b2f36; border-radius: 5px; padding: 0.15em 0.4em; cursor: pointer; font-size: 0.95em; opacity: 0.75; }

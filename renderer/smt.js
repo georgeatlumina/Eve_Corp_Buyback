@@ -18,9 +18,40 @@
     follow: false, loaded: false, poll: null, tick: null, charPoll: null,
     alertJumps: new Map(), alertKey: null, alertsOwned: false, loopsOn: false,
     focusId: null, centred: false,
+    watch: [], killLog: [], popId: null, needFit: false,
     view: { s: 1, tx: 0, ty: 0 },
   };
   const $id = (x) => document.getElementById(x);
+
+  // ---- remembered view ----
+  // Where you left the map, per machine — same localStorage habit the rest of
+  // the renderer uses for view preferences. Deliberately *not* in the sidecar:
+  // it's cosmetic and per-screen, unlike the watchlist and the alarm rules,
+  // which every window has to agree on.
+  //
+  // The character still wins the opening view (see maybeCentre): the saved
+  // region is only the fallback for "no character fix at all", and a saved
+  // pan/zoom is only re-applied when we land in the region it was taken in.
+  const VIEW_KEY = 'smt.view';
+  const PANEL_IDS = ['smt-route-bar', 'smt-bridges-bar', 'smt-thera-bar', 'smt-sov-bar', 'smt-alerts-bar', 'smt-watch-bar', 'smt-config'];
+  function loadView() {
+    try { return JSON.parse(localStorage.getItem(VIEW_KEY) || 'null') || {}; } catch (_) { return {}; }
+  }
+  // Patches accumulate into one pending object. Merging against the *stored*
+  // value on every call instead would lose everything but the last patch of a
+  // burst — toggling a layer and opening a panel in the same breath is a burst.
+  let viewSaveT = null, viewPending = null;
+  function saveView(patch) {
+    viewPending = { ...(viewPending || loadView()), ...(patch || {}) };
+    clearTimeout(viewSaveT);
+    viewSaveT = setTimeout(() => {
+      const next = viewPending;
+      viewPending = null;
+      try { localStorage.setItem(VIEW_KEY, JSON.stringify(next)); } catch (_) { /* private mode, quota — not worth surfacing */ }
+    }, 250);
+  }
+  const saveTransform = () => saveView({ region: st.region, view: { ...st.view } });
+  const savePanels = () => saveView({ panels: PANEL_IDS.filter((id) => { const el = $id(id); return el && !el.hidden; }) });
   const esc = (s) => (typeof escapeHtml === 'function' ? escapeHtml(s) : String(s == null ? '' : s));
 
   function secCol(sec) {
@@ -43,7 +74,9 @@
     sel.innerHTML = d.regions.map((r) => `<option value="${esc(r.name)}">${esc(r.name)} (${r.count})</option>`).join('');
     // Only a starting value for the picker — never override a region we've
     // already navigated to (e.g. the one our character is in).
-    if (!st.region && [...sel.options].some((o) => o.value === 'Delve')) sel.value = 'Delve';
+    const want = loadView().region;
+    if (!st.region && want && [...sel.options].some((o) => o.value === want)) sel.value = want;
+    else if (!st.region && [...sel.options].some((o) => o.value === 'Delve')) sel.value = 'Delve';
   }
   async function loadIndex() {
     if (st.index) return;
@@ -61,7 +94,7 @@
       st.layout = await j(`/api/map/region/${encodeURIComponent(name)}`);
       st.region = name;
       renderMap();
-      fitView();
+      restoreView(name, focusId);
       applyLayers();
       renderCharMarkers();
       renderBridges();
@@ -70,6 +103,7 @@
       renderRoute();
       setStatus('');
       if (focusId) centerOn(focusId);
+      saveView({ region: name });
     } catch (e) { setStatus(`Failed to load ${name}: ${e.message || e}`, true); }
   }
 
@@ -93,6 +127,7 @@
     root.innerHTML = `<g class="sm-elayer">${edges}</g><g class="sm-nlayer">${cells}</g>`;
     st.nodeEls = new Map();
     root.querySelectorAll('.sm-n').forEach((el) => st.nodeEls.set(el.dataset.id, el));
+    markWatched();
   }
 
   function bounds() {
@@ -108,6 +143,15 @@
     st.view.tx = (cw - w * st.view.s) / 2 - bb.minX * st.view.s;
     st.view.ty = (ch - h * st.view.s) / 2 - bb.minY * st.view.s;
     applyTransform();
+  }
+  function restoreView(name, focusId) {
+    const v = loadView();
+    if (!focusId && v.region === name && v.view && Number.isFinite(v.view.s) && v.view.s > 0) {
+      st.view = { s: v.view.s, tx: Number(v.view.tx) || 0, ty: Number(v.view.ty) || 0 };
+      applyTransform();
+      return;
+    }
+    fitView();
   }
   function applyTransform() { const r = $id('smt-root'); if (r) r.setAttribute('transform', `translate(${st.view.tx},${st.view.ty}) scale(${st.view.s})`); }
   function centerOn(id) {
@@ -140,6 +184,10 @@
         const d = await j(`/api/smt/kills?since=${st.killSince}`);
         st.killSince = d.ts;
         for (const k of d.kills) st.kills.set(String(k.system_id), { ts: k.ts * 1000, value: k.value });
+        if (d.kills.length) {
+          st.killLog.unshift(...d.kills);
+          if (st.killLog.length > 600) st.killLog.length = 600;
+        }
         if (!st.alertsOwned) SmtAlerts.kills(d.kills, st.alertJumps);
       }
     } catch (_) { /* transient */ }
@@ -599,12 +647,255 @@
       const ns = Math.max(0.15, Math.min(6, st.view.s * Math.exp(-e.deltaY * 0.0015)));
       st.view.tx = mx - (mx - st.view.tx) * (ns / st.view.s); st.view.ty = my - (my - st.view.ty) * (ns / st.view.s);
       st.view.s = ns; applyTransform();
+      hidePop();                       // the card is anchored in pixels; the map just moved under it
+      saveTransform();
     }, { passive: false });
     let drag = null;
     cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, tx: st.view.tx, ty: st.view.ty, moved: false }; cv.setPointerCapture(e.pointerId); });
-    cv.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; st.view.tx = drag.tx + dx; st.view.ty = drag.ty + dy; applyTransform(); });
-    cv.addEventListener('pointerup', () => { drag = null; });
-    cv.addEventListener('pointerleave', () => { drag = null; });
+    cv.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; hidePop(); } st.view.tx = drag.tx + dx; st.view.ty = drag.ty + dy; applyTransform(); });
+    // A press that never really moved is a click on whatever is under it. The
+    // 3px slack above is what stops a twitchy mouse eating every card; this
+    // flag is how the click that follows the drag knows to keep quiet.
+    let dragged = false;
+    cv.addEventListener('pointerup', () => {
+      if (drag && drag.moved) { dragged = true; saveTransform(); }
+      drag = null;
+    });
+    cv.addEventListener('pointerleave', () => { if (drag && drag.moved) { dragged = true; saveTransform(); } drag = null; });
+    cv.addEventListener('click', (e) => {
+      if (dragged) { dragged = false; return; }
+      const n = e.target.closest && e.target.closest('.sm-n');
+      if (n) showPop(n.dataset.id, e.clientX, e.clientY);
+      else hidePop();
+    });
+  }
+
+  // ---- watchlist ----
+  // Systems you always want to hear about, whatever the distance. The distance
+  // tiers only reach as far as their furthest `max`; a watch is checked before
+  // them and ignores distance entirely, which is what lets you keep an ear on
+  // home while you're ratting six regions out. Stored in the sidecar — like the
+  // bridges and the alarm rules — so this tab, the pop-out and the overlay
+  // window can never disagree about what's being watched.
+  const WATCH_DEFAULT = { sound: 'siren', colour: '#ff2d2d', flash: 'fast', custom: '', flash_window: true };
+  const isWatched = (id) => st.watch.some((w) => String(w.system_id) === String(id));
+  const iskShort = (n) => (typeof fmtIskShort === 'function' ? fmtIskShort(n) : `${Math.round((n || 0) / 1e6)}M`);
+
+  async function loadWatch() {
+    try { const d = await j('/api/smt/watchlist'); st.watch = d.systems || []; } catch (_) { /* keep what we have */ }
+    afterWatch();
+  }
+  // Every write goes through one queue, and each one builds its list from
+  // st.watch *at the time it runs*. Star two systems inside a round-trip and
+  // the naive version has both compute from the same stale list, so the second
+  // POST silently drops the first.
+  let watchQ = Promise.resolve();
+  function queueWatch(fn) {
+    watchQ = watchQ.then(() => saveWatch(fn(st.watch))).catch(() => {});
+    return watchQ;
+  }
+
+  async function saveWatch(list) {
+    const body = {
+      systems: (list || []).map((w) => ({
+        system_id: Number(w.system_id), sound: w.sound || WATCH_DEFAULT.sound,
+        colour: w.colour || WATCH_DEFAULT.colour, flash: w.flash || WATCH_DEFAULT.flash,
+        custom: w.custom || '', flash_window: w.flash_window !== false,
+      })),
+    };
+    const el = $id('smt-watch-status');
+    try {
+      const d = await j('/api/smt/watchlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      st.watch = d.systems || [];
+      if (el) el.textContent = '';
+      // Same hand-off the alarm rules use, so the overlay picks it up live.
+      if (window.api && window.api.watchlistChanged) window.api.watchlistChanged();
+    } catch (e) { if (el) el.textContent = `Failed: ${e.message || e}`; }
+    afterWatch();
+  }
+  function afterWatch() {
+    SmtAlerts.setWatchlist(st.watch);
+    renderWatchList(); renderWatchStrip(); markWatched(); renderPop();
+  }
+  function toggleWatch(id) {
+    const sid = Number(id);
+    if (!sid) return Promise.resolve();
+    return queueWatch((cur) => (cur.some((w) => Number(w.system_id) === sid)
+      ? cur.filter((w) => Number(w.system_id) !== sid)
+      : [...cur, { ...WATCH_DEFAULT, system_id: sid }]));
+  }
+
+  // What a watched system is doing right now, read off the layers already in
+  // memory — no extra polling for the strip.
+  function watchState(sid) {
+    const now = Date.now();
+    const iv = st.intel.get(String(sid)), kv = st.kills.get(String(sid));
+    if (iv && now - iv.ts < DECAY) return { kind: iv.clear ? 'clear' : 'hot', age: now - iv.ts };
+    if (kv && now - kv.ts < DECAY) return { kind: 'kill', age: now - kv.ts };
+    return { kind: 'quiet' };
+  }
+  const ageLabel = (ms) => (ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}s` : `${Math.round(ms / 60000)}m`);
+
+  // The one row worth glancing at mid-fight: every watched system and its state,
+  // whether or not it's anywhere near the region on screen.
+  function renderWatchStrip() {
+    const box = $id('smt-watch-strip'); if (!box) return;
+    box.innerHTML = st.watch.map((w) => {
+      const s = watchState(w.system_id);
+      const label = s.kind === 'hot' ? `⚠ ${ageLabel(s.age)}`
+        : s.kind === 'clear' ? `clr ${ageLabel(s.age)}`
+        : s.kind === 'kill' ? `◆ ${ageLabel(s.age)}` : 'quiet';
+      return `<button class="smt-watch-chip${s.kind === 'quiet' ? '' : ` ${s.kind}`}" data-id="${w.system_id}" style="--wc:${esc(w.colour)}"
+        title="${esc(w.name || '')} · ${esc(w.region || '')} — click to jump the map here">
+        <span class="star">★</span>${esc(w.name || w.system_id)} <span class="st">${label}</span></button>`;
+    }).join('');
+  }
+
+  function renderWatchList() {
+    const box = $id('smt-watch-list'); if (!box) return;
+    if (!st.watch.length) {
+      box.innerHTML = '<span class="muted small">Nothing watched yet — add a system above, or ★ one from the map.</span>';
+      return;
+    }
+    const flashOpt = (sel) => SmtAlerts.flashes.map((f) => `<option value="${f}"${f === sel ? ' selected' : ''}>${f === 'none' ? 'no flash' : `${f} flash`}</option>`).join('');
+    box.innerHTML = st.watch.map((w, i) => `<div class="smt-watch-row" data-i="${i}" data-id="${w.system_id}">
+      <button class="smt-watch-name" type="button" data-jump="${w.system_id}" title="Jump the map here">★ ${esc(w.name || w.system_id)}</button>
+      <span class="smt-watch-reg">${esc(w.region || '')}</span>
+      <select class="smt-w-sound" title="Sound when this system is reported">${soundOpts(w.sound)}</select>
+      <button class="secondary smt-al-test smt-w-test" type="button" data-i="${i}">Test</button>
+      <input type="color" class="smt-w-col" value="${esc(w.colour)}" title="Overlay highlight colour for this system" />
+      <select class="smt-w-flash" title="Flash the overlay marker for this system">${flashOpt(w.flash)}</select>
+      <label class="smt-al-t" title="Flash the whole overlay window when this system is reported"><input type="checkbox" class="smt-w-wflash"${w.flash_window ? ' checked' : ''} /> flash overlay</label>
+      <input type="text" class="smt-w-custom" value="${esc(w.custom || '')}" placeholder="Optional sound file…" spellcheck="false" autocomplete="off" />
+      <button class="secondary smt-w-browse" type="button" data-i="${i}">…</button>
+      <button class="smt-al-del smt-w-del" type="button" data-i="${i}" title="Stop watching">✕</button>
+    </div>`).join('');
+  }
+  function readWatch() {
+    return [...document.querySelectorAll('#smt-watch-list .smt-watch-row')].map((row) => ({
+      system_id: Number(row.dataset.id),
+      sound: row.querySelector('.smt-w-sound').value,
+      colour: row.querySelector('.smt-w-col').value,
+      flash: row.querySelector('.smt-w-flash').value,
+      custom: row.querySelector('.smt-w-custom').value.trim(),
+      flash_window: row.querySelector('.smt-w-wflash').checked,
+    }));
+  }
+  async function addWatch() {
+    const inp = $id('smt-watch-sys'), el = $id('smt-watch-status');
+    const sys = resolveSys(inp && inp.value);
+    if (!sys) { if (el) el.textContent = 'Unknown system'; return; }
+    if (isWatched(sys.id)) { if (el) el.textContent = `${sys.name} is already watched`; return; }
+    if (inp) inp.value = '';
+    await queueWatch((cur) => (cur.some((w) => Number(w.system_id) === sys.id)
+      ? cur
+      : [...cur, { ...WATCH_DEFAULT, system_id: sys.id }]));
+  }
+  async function pickWatchSound(i) {
+    if (!window.api || !window.api.pickSound) return;
+    const f = await window.api.pickSound();
+    if (!f) return;
+    const list = readWatch();
+    if (!list[i]) return;
+    list[i].custom = f;
+    queueWatch(() => list);
+  }
+
+  // Star the watched systems on the map. Kept out of renderMap so starring
+  // something costs a class toggle rather than a full region redraw.
+  function markWatched() {
+    st.nodeEls.forEach((el, id) => {
+      const on = isWatched(id);
+      el.classList.toggle('sm-watched', on);
+      const star = el.querySelector('.sm-watch-star');
+      if (on && !star) {
+        const t = document.createElementNS(SVGNS, 'text');
+        t.setAttribute('class', 'sm-watch-star');
+        t.setAttribute('x', '-11');
+        t.setAttribute('y', '3.5');
+        t.textContent = '★';
+        el.appendChild(t);
+      } else if (!on && star) { star.remove(); }
+    });
+  }
+
+  // ---- system card ----
+  // Anchored beside the node rather than opened as a modal: the map exists to
+  // give you spatial context, and a dialog in the middle of the screen throws
+  // that away. Everything in it is already in memory bar the jump distance.
+  function showPop(id, cx, cy) {
+    const pop = $id('smt-sys-pop'), cv = $id('smt-canvas');
+    if (!pop || !cv) return;
+    st.popId = String(id);
+    pop.hidden = false;
+    renderPop();
+    const r = cv.getBoundingClientRect();
+    const w = pop.offsetWidth || 320, h = pop.offsetHeight || 220;
+    let x = cx - r.left + 14, y = cy - r.top + 14;
+    // The canvas clips, so near an edge the card flips to the other side of the
+    // cursor instead of disappearing off it.
+    if (x + w > r.width - 6) x = Math.max(6, cx - r.left - w - 14);
+    if (y + h > r.height - 6) y = Math.max(6, r.height - h - 6);
+    pop.style.left = `${x}px`;
+    pop.style.top = `${y}px`;
+    popDistance(st.popId, popSys(st.popId).name || '');
+  }
+  function hidePop() {
+    const p = $id('smt-sys-pop');
+    if (p) p.hidden = true;
+    st.popId = null;
+  }
+  function popSys(id) {
+    return (st.byId && st.byId.get(String(id)))
+      || (st.layout ? (st.layout.systems || []).find((x) => String(x.id) === String(id)) : null)
+      || {};
+  }
+  function renderPop() {
+    const pop = $id('smt-sys-pop');
+    if (!pop || pop.hidden || !st.popId) return;
+    const id = st.popId, sys = popSys(id);
+    const lines = st.feed.filter((e) => (e.systems || []).some((x) => String(x) === id)).slice(0, 6);
+    const hour = (Date.now() - 3600000) / 1000;
+    const ks = st.killLog.filter((k) => String(k.system_id) === id && k.ts >= hour);
+    const isk = ks.reduce((a, k) => a + (Number(k.value) || 0), 0);
+    const watched = isWatched(id);
+    const time = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    pop.innerHTML = `<button class="sp-x" type="button" data-pop="close" title="Close">✕</button>
+      <h4>${esc(sys.name || id)} <span class="sec" style="color:${secCol(sys.sec)}">${sys.sec == null ? '' : sys.sec.toFixed(1)}</span></h4>
+      <div class="sp-sub">${esc(sys.region || '')}</div>
+      <div class="sp-sub" id="smt-pop-dist"></div>
+      <div class="sp-h">Intel</div>
+      ${lines.length
+        ? lines.map((e) => `<div class="sp-row${e.clear ? ' clear' : ''}"><span class="t">${time(e.ts)}</span>${SmtHighlight.line(e.text, e.spans)}</div>`).join('')
+        : '<div class="sp-row muted">Nothing reported since the app started.</div>'}
+      <div class="sp-h">Kills</div>
+      <div class="sp-row">${ks.length ? `${ks.length} in the last hour · ${esc(iskShort(isk))}` : 'None in the last hour.'}</div>
+      <div class="sp-acts">
+        <button type="button" data-pop="watch"${watched ? ' class="on"' : ''}>${watched ? '★ Watching' : '★ Watch'}</button>
+        <button type="button" data-pop="route-from">Route from</button>
+        <button type="button" data-pop="route-to">Route to</button>
+        <button type="button" data-pop="dotlan">Dotlan</button>
+        <button type="button" data-pop="zkill">zKill</button>
+      </div>`;
+  }
+  // Distance is the one thing not already in memory: alertJumps only reaches as
+  // far as the alarm does, so anything beyond it gets a real route lookup —
+  // which also counts your bridges, making it the honest number.
+  async function popDistance(id, name) {
+    const el = $id('smt-pop-dist');
+    if (!el) return;
+    const c = st.chars.find((x) => String(x.character_id) === String(st.focusId)) || st.chars.find((x) => x.system_id);
+    if (!c || !c.system_name) { el.textContent = ''; return; }
+    if (String(c.system_id) === String(id)) { el.textContent = `${c.name} is here`; return; }
+    const known = st.alertJumps.get(String(id));
+    if (known != null) { el.textContent = `${known} jump${known === 1 ? '' : 's'} from ${c.name}`; return; }
+    if (!name) { el.textContent = ''; return; }
+    el.textContent = `measuring from ${c.name}…`;
+    try {
+      const r = await j(`/api/smt/route?from=${encodeURIComponent(c.system_name)}&to=${encodeURIComponent(name)}&prefer=shortest&wh=0`);
+      if (st.popId !== String(id)) return;                     // the card moved on while we waited
+      el.textContent = r.error ? '' : `${r.jumps} jump${r.jumps === 1 ? '' : 's'} from ${c.name}`;
+    } catch (_) { el.textContent = ''; }
   }
 
   // ---- wiring ----
@@ -615,6 +906,7 @@
       applyLayers();
       if (b.dataset.ov === 'chars') { if (st.ov.chars) pollChars(); else { renderCharChips(); renderCharMarkers(); } }
       if (b.dataset.ov === 'sov') { if (st.ov.sov && !st.sov) loadSov(); else applySov(); }
+      saveView({ ov: { ...st.ov } });
     }));
     $id('smt-chars')?.addEventListener('click', (e) => {
       const c = e.target.closest('.smt-char-chip'); if (!c) return;
@@ -623,12 +915,19 @@
       renderCharChips(); renderCharMarkers();
       if (c.dataset.region) showRegion(c.dataset.region, c.dataset.id);
     });
-    // route + bridges panels
-    $id('smt-route-btn')?.addEventListener('click', () => { const b = $id('smt-route-bar'); if (b) b.hidden = !b.hidden; });
-    $id('smt-bridges-btn')?.addEventListener('click', () => { const b = $id('smt-bridges-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadBridges(); } });
-    $id('smt-thera-btn')?.addEventListener('click', () => { const b = $id('smt-thera-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadThera(); } });
+    // route + bridges panels. Which ones were open is part of the remembered
+    // view, so a layout you set up for a fight survives a restart.
+    const panel = (btn, id, onOpen) => $id(btn)?.addEventListener('click', () => {
+      const b = $id(id); if (!b) return;
+      b.hidden = !b.hidden;
+      if (!b.hidden && onOpen) onOpen();
+      savePanels();
+    });
+    panel('smt-route-btn', 'smt-route-bar');
+    panel('smt-bridges-btn', 'smt-bridges-bar', loadBridges);
+    panel('smt-thera-btn', 'smt-thera-bar', loadThera);
     $id('smt-thera-list')?.addEventListener('click', (e) => { const s = e.target.closest('.smt-thera-sys'); if (s && s.dataset.region) showRegion(s.dataset.region, s.dataset.id); });
-    $id('smt-sov-btn')?.addEventListener('click', () => { const b = $id('smt-sov-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadSov(); } });
+    panel('smt-sov-btn', 'smt-sov-bar', loadSov);
     $id('smt-sov-list')?.addEventListener('click', (e) => { const s = e.target.closest('.smt-thera-sys'); if (s && s.dataset.region) showRegion(s.dataset.region, s.dataset.id); });
     $id('smt-route-go')?.addEventListener('click', runRoute);
     $id('smt-route-clear')?.addEventListener('click', clearRoute);
@@ -640,13 +939,14 @@
       const del = e.target.closest('.smt-bridge-del'); if (del) { st.bridges.splice(+del.dataset.i, 1); saveBridges(); return; }
       const jmp = e.target.closest('.smt-bridge-jump'); if (jmp && jmp.dataset.region) showRegion(jmp.dataset.region, jmp.dataset.id);
     });
-    $id('smt-follow')?.addEventListener('change', (e) => { st.follow = e.target.checked; });
-    $id('smt-config-btn')?.addEventListener('click', () => { const c = $id('smt-config'); if (c) { c.hidden = !c.hidden; if (!c.hidden) loadConfig(); } });
+    $id('smt-follow')?.addEventListener('change', (e) => { st.follow = e.target.checked; saveView({ follow: st.follow }); });
+    panel('smt-config-btn', 'smt-config', loadConfig);
     $id('smt-overlay-btn')?.addEventListener('click', () => {
       if (window.api && window.api.openOverlay) window.api.openOverlay();
       else setStatus('The overlay needs the desktop app.', true);
     });
-    $id('smt-alerts-btn')?.addEventListener('click', () => { const b = $id('smt-alerts-bar'); if (b) { b.hidden = !b.hidden; if (!b.hidden) loadAlerts(); } });
+    panel('smt-alerts-btn', 'smt-alerts-bar', loadAlerts);
+    panel('smt-watch-btn', 'smt-watch-bar', loadWatch);
     $id('smt-alerts-bar')?.addEventListener('change', (e) => { if (e.target.closest('input, select')) saveAlerts(); });
     $id('smt-alerts-bar')?.addEventListener('click', (e) => {
       const t = e.target.closest('.smt-al-test'); if (t) { SmtAlerts.test(t.dataset.test); return; }
@@ -661,6 +961,51 @@
       }
       if (e.target.id === 'smt-al-reset') saveAlerts(SmtAlerts.defaults().tiers);
     });
+    // ---- watchlist wiring ----
+    $id('smt-watch-add')?.addEventListener('click', addWatch);
+    $id('smt-watch-sys')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') addWatch(); });
+    $id('smt-watch-bar')?.addEventListener('change', (e) => { if (e.target.closest('input, select')) queueWatch(() => readWatch()); });
+    $id('smt-watch-bar')?.addEventListener('click', (e) => {
+      const jump = e.target.closest('[data-jump]');
+      if (jump) { const sys = st.byId && st.byId.get(String(jump.dataset.jump)); if (sys && sys.region) { st.centred = true; showRegion(sys.region, sys.id); } return; }
+      const del = e.target.closest('.smt-w-del');
+      if (del) { queueWatch(() => { const l = readWatch(); l.splice(Number(del.dataset.i), 1); return l; }); return; }
+      const browse = e.target.closest('.smt-w-browse');
+      if (browse) { pickWatchSound(Number(browse.dataset.i)); return; }
+      const test = e.target.closest('.smt-w-test');
+      if (test) { const w = readWatch()[Number(test.dataset.i)]; if (w) SmtAlerts.testSound(w.sound, w.custom); }
+    });
+    // The strip is a navigation aid as much as a status line.
+    $id('smt-watch-strip')?.addEventListener('click', (e) => {
+      const c = e.target.closest('.smt-watch-chip'); if (!c) return;
+      const sys = st.byId && st.byId.get(String(c.dataset.id));
+      if (sys && sys.region) { st.centred = true; showRegion(sys.region, sys.id); }
+    });
+
+    // ---- system card ----
+    $id('smt-sys-pop')?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pop]');
+      if (!b || !st.popId) return;
+      const id = st.popId, sys = popSys(id), act = b.dataset.pop;
+      if (act === 'close') { hidePop(); return; }
+      if (act === 'watch') { toggleWatch(id); return; }
+      if (act === 'route-from' || act === 'route-to') {
+        const bar = $id('smt-route-bar');
+        if (bar && bar.hidden) { bar.hidden = false; savePanels(); }
+        const field = $id(act === 'route-from' ? 'smt-route-from' : 'smt-route-to');
+        if (field) field.value = sys.name || '';
+        const from = $id('smt-route-from'), to = $id('smt-route-to');
+        hidePop();
+        // Only route once both ends are filled — the first click just arms it.
+        if (from && to && from.value.trim() && to.value.trim()) runRoute();
+        return;
+      }
+      const url = act === 'dotlan'
+        ? `https://evemaps.dotlan.net/system/${encodeURIComponent(String(sys.name || '').replace(/ /g, '_'))}`
+        : `https://zkillboard.com/system/${encodeURIComponent(id)}/`;
+      if (window.api && window.api.openExternal) window.api.openExternal(url);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && st.popId) hidePop(); });
     $id('smt-save')?.addEventListener('click', saveConfig);
     $id('smt-detect')?.addEventListener('click', detect);
     const search = $id('smt-search');
@@ -671,7 +1016,14 @@
       const sys = st.byId && st.byId.get(String(b.dataset.id));
       if (sys && sys.region) { st.centred = true; showRegion(sys.region, sys.id); }
     });
-    let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const p = $id('tab-smt-intel'); if (st.layout && p && p.offsetParent !== null) fitView(); }, 150); });
+    let rz; window.addEventListener('resize', () => {
+      clearTimeout(rz);
+      rz = setTimeout(() => {
+        const p = $id('tab-smt-intel');
+        if (!st.layout) return;
+        if (p && p.offsetParent !== null) { fitView(); saveTransform(); } else { st.needFit = true; }
+      }, 150);
+    });
   }
 
   async function pickSound(i) {
@@ -694,18 +1046,37 @@
     st.charPoll = setInterval(() => { if (pollActive()) pollChars(); }, 8000);
     st.theraPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadThera(); }, 120000);
     st.sovPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadSov(); }, 180000);
-    st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) { applyLayers(); tickSov(); } }, 1000);
+    st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) { applyLayers(); tickSov(); renderWatchStrip(); } }, 1000);
+  }
+
+  // Put back the bits of the view that don't fight the character fix: the
+  // layer toggles, follow-intel and whichever panels were open. The region and
+  // the transform are restored by loadRegions/restoreView further down.
+  function restorePrefs() {
+    const v = loadView();
+    if (v.ov) {
+      for (const k of Object.keys(st.ov)) if (typeof v.ov[k] === 'boolean') st.ov[k] = v.ov[k];
+      document.querySelectorAll('.smt-ov').forEach((b) => b.classList.toggle('on', !!st.ov[b.dataset.ov]));
+    }
+    if (typeof v.follow === 'boolean') {
+      st.follow = v.follow;
+      const f = $id('smt-follow'); if (f) f.checked = v.follow;
+    }
+    for (const id of (v.panels || [])) {
+      const el = $id(id);
+      if (el) el.hidden = false;
+    }
   }
 
   function initTab() {
     wirePanZoom();
     if (!st.loaded) {
-      st.loaded = true; wire();
+      st.loaded = true; wire(); restorePrefs();
       // Open on whichever character we're following. pollChars centres the map
       // the moment it has a fix; these two fallbacks only cover "there is no
       // character" (quick) and "a character exists but never resolved a system"
       // (slow), so a fix arriving a beat late still wins the opening view.
-      const fallback = () => { if (!st.centred) { st.centred = true; showRegion($id('smt-region')?.value || 'Delve'); } };
+      const fallback = () => { if (!st.centred) { st.centred = true; showRegion($id('smt-region')?.value || loadView().region || 'Delve'); } };
       Promise.all([loadRegions(), loadIndex()])
         .then(() => {
           maybeCentre();                                        // a character fix may already be in
@@ -713,9 +1084,13 @@
           setTimeout(fallback, 6000);
         })
         .catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
-      loadConfig(); loadBridges(); loadThera(); loadSov(); loadAlerts();
+      loadConfig(); loadBridges(); loadThera(); loadSov(); loadAlerts(); loadWatch();
       startLoops();
-    } else if (st.layout) { fitView(); }
+    } else if (st.layout) {
+      // Coming back to the tab keeps where you were, unless a resize while it
+      // was hidden left the saved transform pointing off-screen.
+      if (st.needFit) { st.needFit = false; fitView(); saveTransform(); } else { applyTransform(); }
+    }
   }
 
   document.querySelector('.tab-btn[data-tab="smt-intel"]')?.addEventListener('click', initTab);
@@ -725,7 +1100,11 @@
   if (window.api && window.api.onOverlayState) {
     window.api.onOverlayState((open) => { st.alertsOwned = !!open; renderAlerts(); });
   }
+  // Starred from the overlay (or another pop-out) — pick it up without a reload.
+  if (window.api && window.api.onWatchlistChanged) window.api.onWatchlistChanged(() => loadWatch());
   // Arm the alarm at app start (without loading the map) so intel can alarm
-  // before anyone visits the SMT tab.
-  loadAlerts().then(() => { if (SmtAlerts.config().enabled) startLoops(); });
+  // before anyone visits the SMT tab. The watchlist comes with it — a watched
+  // system has to be able to shout from a cold start, not only once someone
+  // has opened the map.
+  Promise.all([loadAlerts(), loadWatch()]).then(() => { if (SmtAlerts.config().enabled) startLoops(); });
 })();

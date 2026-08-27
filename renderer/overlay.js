@@ -30,6 +30,7 @@
     chars: [], charSys: null, watching: null,
     clickThrough: false, hoverUi: false, loadKey: null, err: '',
     alertJumps: new Map(), alertKey: null,
+    watch: [], watchHot: false,
     regionLayout: null, regionName: null,
   };
 
@@ -43,8 +44,8 @@
     if (sec >= 0.45) return '#e5e52f'; if (sec >= 0.25) return '#e88a26';
     if (sec > 0) return '#d63a1e'; return '#8b1a1a';
   }
-  async function j(path) {
-    const r = await fetch(`${API}${path}`);
+  async function j(path, opts) {
+    const r = await fetch(`${API}${path}`, opts);
     if (!r.ok) { let d = `HTTP ${r.status}`; try { d = (await r.json()).detail || d; } catch (_) {} throw new Error(d); }
     return r.json();
   }
@@ -175,6 +176,7 @@
         + (home ? `<circle class="ov-ringmk" r="${NR * 2.1}" stroke-width="${U / 11}" />` : '')
         + `<circle class="ov-dot" r="${NR}" style="fill:${secCol(s.sec)}" stroke-width="${U / 22}" opacity="${dim}" />`
         + (chars.has(String(s.id)) && !home ? `<circle class="ov-chr" cx="${NR * 1.6}" cy="${-NR * 1.6}" r="${NR * 0.7}" />` : '')
+        + (isWatched(s.id) ? `<text class="ov-star" x="${(-NR * 1.7).toFixed(1)}" y="${(-NR * 1.3).toFixed(1)}" font-size="${(U * 0.85).toFixed(2)}">★</text>` : '')
         + (st.prefs.labels ? `<text class="ov-lbl" y="${-NR * 1.9}" font-size="${(U * 0.8 * (Number(st.prefs.labelScale) || 1)).toFixed(2)}"`
           + ` fill-opacity="${dim}">${esc(s.name)}</text>` : '')
         + `</g>`;
@@ -295,7 +297,7 @@
         // Hostile reports take the whole look of the distance tier they fall
         // into — colour, size and how long they take to fade. A "clr" is always
         // the same calm green on the default fade.
-        const tier = iv.clear ? null : SmtAlerts.tierFor(st.jumpsOf.get(id));
+        const tier = iv.clear ? null : SmtAlerts.tierFor(st.jumpsOf.get(id), id);
         const fade = (tier && tier.fade ? tier.fade * 1000 : DECAY);
         const size = (tier && tier.size) || 1;
         const t = Math.max(0, 1 - (now - iv.ts) / fade);
@@ -346,7 +348,9 @@
     if (!st.prefs.feed) return;
     const rows = [];
     for (const e of st.feed) {
-      const idx = (e.systems || []).findIndex((sid) => st.jumpsOf.has(String(sid)));
+      let idx = (e.systems || []).findIndex((sid) => st.jumpsOf.has(String(sid)));
+      // A watched system is never "out of range" — that's the whole point of it.
+      if (idx < 0) idx = (e.systems || []).findIndex((sid) => isWatched(sid));
       if (idx < 0) continue;
       const sid = String(e.systems[idx]);
       rows.push({ e, name: (e.system_names || [])[idx] || sid, jumps: st.jumpsOf.get(sid) });
@@ -361,7 +365,7 @@
     box.innerHTML = rows.map(({ e, name, jumps }) => {
       const t = new Date(e.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       return `<div class="ov-row${e.clear ? ' clear' : ''}"><span class="t">${t}</span>`
-        + `<span class="sys">${esc(name)}</span><span class="d">${jumps}j</span>`
+        + `<span class="sys">${esc(name)}</span><span class="d">${jumps == null ? '★' : `${jumps}j`}</span>`
         + `<span class="txt">${SmtHighlight.line(e.text, e.spans)}</span></div>`;
     }).join('');
   }
@@ -387,6 +391,76 @@
     if (!m) return `rgba(120, 20, 20, ${a})`;
     const n = parseInt(m[1], 16);
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+  }
+
+  // ---- watchlist ---------------------------------------------------------
+  // Shared with the SMT tab through the sidecar. Watched systems alarm at any
+  // distance, which means they can easily be systems this window never draws —
+  // and that is exactly why the strip exists: on the ring map a watched system
+  // twenty jumps out has nowhere to be a dot.
+  function isWatched(id) { return st.watch.some((w) => String(w.system_id) === String(id)); }
+
+  async function loadWatch() {
+    try { const d = await j('/api/smt/watchlist'); st.watch = d.systems || []; } catch (_) { /* keep what we have */ }
+    SmtAlerts.setWatchlist(st.watch);
+    renderWatchStrip();
+  }
+  // Serialised for the same reason the tab's is: right-click two systems inside
+  // one round-trip and an unqueued version builds both lists from the same
+  // stale one, so the second POST drops the first.
+  let watchQ = Promise.resolve();
+  function toggleWatch(id) {
+    watchQ = watchQ.then(() => doToggleWatch(id)).catch(() => {});
+    return watchQ;
+  }
+  async function doToggleWatch(id) {
+    const sid = Number(id);
+    if (!sid) return;
+    const next = isWatched(sid)
+      ? st.watch.filter((w) => Number(w.system_id) !== sid)
+      : [...st.watch, { system_id: sid, sound: 'siren', colour: '#ff2d2d', flash: 'fast', custom: '', flash_window: true }];
+    try {
+      const d = await j('/api/smt/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systems: next.map((w) => ({ ...w, system_id: Number(w.system_id) })) }),
+      });
+      st.watch = d.systems || [];
+      if (ovApi.watchlistChanged) ovApi.watchlistChanged();   // tell the tab
+    } catch (_) { /* leave the list as it was */ }
+    SmtAlerts.setWatchlist(st.watch);
+    renderWatchStrip();
+    render();
+  }
+
+  function watchState(sid) {
+    const now = Date.now();
+    const iv = st.intel.get(String(sid)), kv = st.kills.get(String(sid));
+    if (iv && now - iv.ts < DECAY) return { kind: iv.clear ? 'clear' : 'hot', age: now - iv.ts };
+    if (kv && now - kv.ts < DECAY) return { kind: 'kill', age: now - kv.ts };
+    return { kind: 'quiet' };
+  }
+  const ageLabel = (ms) => (ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}s` : `${Math.round(ms / 60000)}m`);
+
+  // Auto by default: the strip stays out of the way until a watched system has
+  // something to say. Pin it open (the ★ button) if you'd rather have the quiet
+  // "everything is fine" confirmation. An empty watchlist never shows it at all.
+  function renderWatchStrip() {
+    const box = $('ov-watch');
+    if (!box) return;
+    const rows = st.watch.map((w) => ({ w, s: watchState(w.system_id) }));
+    st.watchHot = rows.some((x) => x.s.kind !== 'quiet');
+    const show = !!(st.watch.length && ((st.prefs && st.prefs.watchPin) || st.watchHot));
+    box.hidden = !show;
+    if (!show) return;
+    box.innerHTML = rows.map(({ w, s }) => {
+      const label = s.kind === 'hot' ? `⚠ ${ageLabel(s.age)}`
+        : s.kind === 'clear' ? `clr ${ageLabel(s.age)}`
+        : s.kind === 'kill' ? `◆ ${ageLabel(s.age)}` : 'quiet';
+      return `<button class="ov-wchip${s.kind === 'quiet' ? '' : ` ${s.kind}`}" data-id="${w.system_id}" style="--wc:${esc(w.colour)}"
+        title="${esc(w.name || '')} · ${esc(w.region || '')} — click to watch this pocket, right-click to unstar">
+        <span class="star">★</span>${esc(w.name || w.system_id)} <span class="st">${label}</span></button>`;
+    }).join('');
   }
 
   // ---- intel alarm -------------------------------------------------------
@@ -459,6 +533,14 @@
         ? 'Click-through is ON — press Ctrl+Alt+O, or the ⊞ Overlay button in the app, to release it'
         : 'Click-through is ON — hover this bar, or press Ctrl+Alt+O, to release it')
       : 'Click-through — let clicks pass to EVE (Ctrl+Alt+O)';
+    const wt = $('ov-watch-t');
+    if (wt) {
+      wt.classList.toggle('on', !!st.prefs.watchPin);
+      wt.classList.toggle('hot', !st.prefs.watchPin && st.watchHot);
+      wt.title = st.prefs.watchPin
+        ? 'Watchlist strip pinned open — click to show it only when a watched system lights up'
+        : 'Watchlist strip appears when a watched system lights up — click to keep it open';
+    }
     const mute = $('ov-mute');
     const alarm = SmtAlerts.config();
     mute.classList.toggle('muted', !!st.prefs.muted || !alarm.enabled);
@@ -501,6 +583,7 @@
     });
     $('ov-labels').addEventListener('click', () => { savePrefs({ labels: !st.prefs.labels }); render(); });
     $('ov-feed-t').addEventListener('click', () => { savePrefs({ feed: !st.prefs.feed }); renderFeed(); updateBar(); });
+    $('ov-watch-t').addEventListener('click', () => { savePrefs({ watchPin: !st.prefs.watchPin }); renderWatchStrip(); updateBar(); });
     $('ov-pin').addEventListener('click', () => {
       savePrefs({ alwaysOnTop: !st.prefs.alwaysOnTop });
       if (ovApi.setAlwaysOnTop) ovApi.setAlwaysOnTop(st.prefs.alwaysOnTop);
@@ -543,6 +626,28 @@
       st.loadKey = null;
       loadMap();
     });
+    // Left-click is taken (re-pin the map), so starring lives on the right
+    // button. No card here: this is a transparent HUD that's usually
+    // click-through, and a panel over it would be the wrong object entirely.
+    $('ov-svg').addEventListener('contextmenu', (e) => {
+      const n = e.target.closest && e.target.closest('.ov-node');
+      if (!n) return;
+      e.preventDefault();
+      toggleWatch(n.dataset.id);
+    });
+    $('ov-watch').addEventListener('click', (e) => {
+      const c = e.target.closest('.ov-wchip');
+      if (!c) return;
+      savePrefs({ system: c.dataset.id, follow: false });
+      st.loadKey = null;
+      loadMap();
+    });
+    $('ov-watch').addEventListener('contextmenu', (e) => {
+      const c = e.target.closest('.ov-wchip');
+      if (!c) return;
+      e.preventDefault();
+      toggleWatch(c.dataset.id);
+    });
     // While click-through is on the window ignores the mouse, which would also
     // swallow these controls — so hand hit-testing back as the pointer crosses
     // any interactive strip, and drop it again on the way out.
@@ -555,6 +660,7 @@
     });
     if (ovApi.onClickThrough) ovApi.onClickThrough((on) => { st.clickThrough = on; updateBar(); });
     if (ovApi.onAlertsChanged) ovApi.onAlertsChanged(() => loadAlerts().then(applyLayers));
+    if (ovApi.onWatchlistChanged) ovApi.onWatchlistChanged(() => loadWatch().then(render));
     let rz;
     window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(render, 150); });
   }
@@ -569,14 +675,15 @@
     wire();
     updateBar();
     await loadAlerts();
+    await loadWatch();
     await pollChars();
     await loadMap();
     pollLayers();
     renderFeed();
     setInterval(pollLayers, 4000);
     setInterval(pollChars, 10000);
-    setInterval(loadAlerts, 30000);
-    setInterval(() => { applyLayers(); renderFeed(); }, 2000);
+    setInterval(() => { loadAlerts(); loadWatch(); }, 30000);
+    setInterval(() => { applyLayers(); renderFeed(); renderWatchStrip(); }, 2000);
     // Cheap self-heal: if the sidecar was down (or the origin never resolved),
     // keep trying rather than sitting on an error until the window is reopened.
     setInterval(() => { if (!st.origin) loadMap(true); }, 15000);

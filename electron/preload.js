@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('api', {
   pinWindow: (on) => ipcRenderer.invoke('popout:pin', on),
   pickSound: () => ipcRenderer.invoke('smt:pick-sound'),
   alertsChanged: () => ipcRenderer.send('smt:alerts-changed'),
+  watchlistChanged: () => ipcRenderer.send('smt:watchlist-changed'),
+  onWatchlistChanged: (cb) => ipcRenderer.on('smt:watchlist-changed', () => cb()),
   onOverlayState: (cb) => ipcRenderer.on('overlay:state', (_e, open) => cb(!!open)),
   log: (line) => ipcRenderer.invoke('log:append', line),
 });
