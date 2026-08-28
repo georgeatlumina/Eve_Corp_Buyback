@@ -4,6 +4,21 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.6 — Updates wait for you
+
+**Update checks no longer interrupt.** The app checked two seconds after startup and hourly after that,
+and opened a dialog in front of whatever you were doing each time it found something. A background check
+now lights a pulsing **⬆ Update to vX.Y.Z** badge in the header, next to ⟳, and stops there. Clicking it
+opens the same Download / Later dialog and download-and-install flow as before, at a moment you choose.
+
+- Nothing downloads until you ask — the badge's tooltip says so, with your current version and the
+  installer size.
+- The badge stays until you act on it; there's no hourly "Later" to repeat, because nothing prompts on a
+  timer any more.
+- It clears itself when a later check finds you're current, or when a release has no installer for your
+  platform.
+- ⟳ still checks on demand, unchanged. The badge doesn't pulse under `prefers-reduced-motion`.
+
 ## v3.12.5 — A watchlist, a system you can click, and a map that stays put
 
 **Watchlist — systems that alarm at any distance.** The distance tiers only reach as far as their
