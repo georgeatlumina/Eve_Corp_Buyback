@@ -1,11 +1,94 @@
 import json
 import os
+import shutil
+import tempfile
+import threading
+import time
 
 AUTH_DIR = os.environ.get('EVE_BUYBACK_DATA_DIR') or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), '..', '.eve_auth'
 )
 CONFIG_PATH = os.path.join(AUTH_DIR, 'config.json')
 TOKEN_CACHE_PATH = os.path.join(AUTH_DIR, 'tokens.json')
+
+# One lock per file. auth.py reaches for TOKEN_LOCK so both modules serialise
+# against the same object rather than each holding their own.
+CONFIG_LOCK = threading.RLock()
+TOKEN_LOCK = threading.RLock()
+
+# ---- crash-safe JSON storage ------------------------------------------------
+# Both files under AUTH_DIR (config.json and tokens.json) are read-modify-write
+# from many places at once: FastAPI serves on a thread pool, and an endpoint
+# like /api/smt/characters refreshes tokens for up to 24 slots in one request.
+# A plain open(path, 'w') truncates first and writes after, which loses the file
+# outright if the process dies in between — and the updater deliberately kills
+# the sidecar process tree so the installer can replace it. Two threads doing it
+# at once interleave into unparseable JSON.
+#
+# So: writes go to a temp file in the same directory and are swapped in with
+# os.replace (atomic on both Windows and POSIX), the previous copy is kept as
+# .bak, and every read-modify-write cycle holds a lock.
+
+def _atomic_write_json(path, data, lock):
+    with lock:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.tmp-', suffix='.json')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())          # the bytes must be on disk before the swap
+            try:
+                os.chmod(tmp, 0o600)
+            except OSError:
+                pass                          # best effort; Windows ACLs don't map cleanly
+            if os.path.exists(path):
+                try:
+                    shutil.copy2(path, path + '.bak')
+                except OSError:
+                    pass                      # a missing backup must not block the write
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+
+def _read_json_resilient(path, lock):
+    """Parse `path`, falling back to its .bak and finally to None.
+
+    A corrupt file used to raise out of every caller, which wedged the whole
+    app: the token cache is read by every authenticated call, and re-authing to
+    fix it hit the same parse on the way to saving. Now a bad file is set aside
+    (.corrupt-<epoch>, kept for diagnosis) and the last good copy takes over, so
+    at worst one slot needs a re-auth instead of all of them.
+    """
+    with lock:
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (ValueError, OSError) as e:
+            try:
+                os.replace(path, f'{path}.corrupt-{int(time.time())}')
+            except OSError:
+                pass
+            print(f'[store] {os.path.basename(path)} unreadable ({e}); trying backup', flush=True)
+        bak = path + '.bak'
+        if os.path.exists(bak):
+            try:
+                with open(bak) as f:
+                    data = json.load(f)
+                shutil.copy2(bak, path)       # reinstate it so the next write has a base
+                print(f'[store] recovered {os.path.basename(path)} from backup', flush=True)
+                return data
+            except (ValueError, OSError) as e:
+                print(f'[store] backup unusable ({e}); starting fresh', flush=True)
+        return None
+
 
 DEFAULT_STRUCTURES = [
     {'name': 'Fort', 'id': 0, 'accepts': ['non-ore']},
@@ -247,10 +330,9 @@ def _migrate(cfg):
 
 
 def load_config():
-    if not os.path.exists(CONFIG_PATH):
+    cfg = _read_json_resilient(CONFIG_PATH, CONFIG_LOCK)
+    if not isinstance(cfg, dict):
         return _fresh_default()
-    with open(CONFIG_PATH) as f:
-        cfg = json.load(f)
     # Migrate FIRST so legacy keys (e.g. home_station_id) can be renamed
     # before the _USER_KEYS filter would otherwise drop them.
     cfg = _migrate(cfg)
@@ -262,7 +344,4 @@ def load_config():
 
 def save_config(cfg):
     cfg = {k: v for k, v in cfg.items() if k in _USER_KEYS}
-    os.makedirs(AUTH_DIR, exist_ok=True)
-    with open(CONFIG_PATH, 'w') as f:
-        json.dump(cfg, f, indent=2)
-    os.chmod(CONFIG_PATH, 0o600)
+    _atomic_write_json(CONFIG_PATH, cfg, CONFIG_LOCK)

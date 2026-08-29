@@ -7,7 +7,7 @@ import urllib.parse
 
 import requests
 
-from config import TOKEN_CACHE_PATH
+from config import TOKEN_CACHE_PATH, TOKEN_LOCK, _atomic_write_json, _read_json_resilient
 
 SSO_AUTHORIZE_URL = 'https://login.eveonline.com/v2/oauth/authorize/'
 SSO_TOKEN_URL = 'https://login.eveonline.com/v2/oauth/token'
@@ -111,10 +111,7 @@ def _load_all_slots():
     Migrates the legacy single-record shape ({access_token, refresh_token, ...})
     into {'slot1': <record>} so older installs keep working.
     """
-    if not os.path.exists(TOKEN_CACHE_PATH):
-        return {}
-    with open(TOKEN_CACHE_PATH) as f:
-        data = json.load(f)
+    data = _read_json_resilient(TOKEN_CACHE_PATH, TOKEN_LOCK)
     if not isinstance(data, dict):
         return {}
     # Legacy shape detection: a flat record has access_token at the top level.
@@ -125,10 +122,7 @@ def _load_all_slots():
 
 
 def _write_all_slots(slots):
-    os.makedirs(os.path.dirname(TOKEN_CACHE_PATH), exist_ok=True)
-    with open(TOKEN_CACHE_PATH, 'w') as f:
-        json.dump(slots, f, indent=2)
-    os.chmod(TOKEN_CACHE_PATH, 0o600)
+    _atomic_write_json(TOKEN_CACHE_PATH, slots, TOKEN_LOCK)
 
 
 def load_cached_tokens(slot=DEFAULT_SLOT):
@@ -138,18 +132,24 @@ def load_cached_tokens(slot=DEFAULT_SLOT):
 
 
 def save_cached_tokens(tokens, slot=DEFAULT_SLOT):
-    slots = _load_all_slots()
-    record = dict(tokens)
-    record['expires_at'] = time.time() + tokens.get('expires_in', 0)
-    slots[slot] = record
-    _write_all_slots(slots)
+    # The whole read-modify-write is one critical section. Two slots refreshing
+    # concurrently would otherwise both read the old file and the second write
+    # would drop the first — and since SSO rotates refresh tokens, the dropped
+    # one is already spent, so that character silently needs a re-auth.
+    with TOKEN_LOCK:
+        slots = _load_all_slots()
+        record = dict(tokens)
+        record['expires_at'] = time.time() + tokens.get('expires_in', 0)
+        slots[slot] = record
+        _write_all_slots(slots)
 
 
 def clear_cached_tokens(slot=DEFAULT_SLOT):
-    slots = _load_all_slots()
-    if slot in slots:
-        del slots[slot]
-        _write_all_slots(slots)
+    with TOKEN_LOCK:
+        slots = _load_all_slots()
+        if slot in slots:
+            del slots[slot]
+            _write_all_slots(slots)
 
 
 def list_authenticated_slots():
