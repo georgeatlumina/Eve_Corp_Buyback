@@ -1,20 +1,39 @@
-# v3.12.6 — Updates wait for you
+# v3.12.7 — Fixes logins failing with "Token exchange failed"
 
-The app checked for updates two seconds after startup and every hour after that, and each time it found
-one it opened a dialog in front of whatever you were doing. That lands mid-fleet as often as not.
+**Please update.** Some people were unable to log in, with:
 
-**Now it doesn't interrupt.** A background check lights a pulsing **⬆ Update to vX.Y.Z** badge in the
-header, next to the ⟳ button, and stops there. Click it when you're ready and you get the same
-Download / Later dialog as before, followed by the usual download-and-install flow.
+```
+Token exchange failed: Expecting ',' delimiter: line 206 column 23 (char 37893)
+```
 
-- **Nothing downloads until you ask.** The badge's tooltip says so, along with the version you're on and
-  how large the installer is.
-- **It stays put** until you act on it — no "Later" that has to be repeated every hour, because nothing
-  asks again on a timer.
-- **It clears itself** when a later check finds you're already current, or when a release has no
-  installer for your platform.
-- **⟳ still works** exactly as it did, for checking on demand.
-- The badge doesn't pulse if your system asks for reduced motion.
+It usually showed up as the Buyback page's wallet section failing, because that's the first thing on
+screen that needs an authenticated character.
+
+## What was going wrong
+
+The app stores every logged-in character in one file. That file was being written unsafely — truncated
+first and rewritten after, with nothing stopping two writes overlapping. Refreshing several characters
+at once (the SMT Intel Map alone can refresh 24 in a single request), or the app being closed at the
+wrong moment during an update, could leave the file half-written and unreadable.
+
+Once that happened, **every** logged-in character stopped working — and logging back in couldn't fix it,
+because saving the new login had to read the same broken file first. That's the error above: it looks
+like the login failed, but the login worked and saving it didn't.
+
+A second, quieter version of the same fault could throw away a character's credentials when several
+refreshed at once, so that character would need logging in again for no apparent reason.
+
+## What's changed
+
+- **Writes can't be interrupted any more.** The file is written to one side and swapped into place in a
+  single step, so it's either the old contents or the new ones, never a broken mix.
+- **Simultaneous refreshes take turns**, so they can't overwrite each other's credentials.
+- **A backup copy is kept.** If the file is ever unreadable, the app falls back to the backup
+  automatically and keeps the damaged copy alongside it for diagnosis.
+- **Nothing to fix by hand.** If you're affected, launching v3.12.7 repairs it on startup. At worst a
+  single character needs logging in again, since the backup can be one save behind.
+
+The same protection now covers your settings file, which was written the same way.
 
 ---
 

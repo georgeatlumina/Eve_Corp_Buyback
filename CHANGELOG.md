@@ -4,6 +4,29 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.7 — Fixes logins failing with "Token exchange failed"
+
+**Fix — logins failing with `Token exchange failed: Expecting ',' delimiter`.** Usually seen as the
+Buyback page's wallet section failing, that being the first thing on screen needing an authenticated
+character.
+
+The file holding every logged-in character was written unsafely: truncated first and rewritten after,
+with nothing stopping two writes overlapping. Refreshing several characters at once (the SMT Intel Map
+alone can refresh 24 in one request), or the app closing at the wrong moment during an update, could
+leave it half-written and unreadable. After that **every** character stopped working, and logging back
+in couldn't fix it — saving the new login had to read the same broken file first, which is exactly what
+the error was reporting. A quieter version of the same fault could discard a character's credentials
+when several refreshed at once, so it needed logging in again for no apparent reason.
+
+- Writes are now swapped into place in a single step — either the old contents or the new, never a
+  broken mix.
+- Simultaneous refreshes take turns, so they can't overwrite each other's credentials.
+- A backup copy is kept; an unreadable file falls back to it automatically, and the damaged copy is kept
+  alongside for diagnosis.
+- Affected installs repair themselves on startup — at worst one character needs logging in again, since
+  the backup can be one save behind.
+- The settings file, written the same way, is covered by the same protection.
+
 ## v3.12.6 — Updates wait for you
 
 **Update checks no longer interrupt.** The app checked two seconds after startup and hourly after that,
