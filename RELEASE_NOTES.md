@@ -1,39 +1,63 @@
-# v3.12.7 — Fixes logins failing with "Token exchange failed"
+# v3.12.8 — Activity layers, jump range, and a scan that no longer hangs
 
-**Please update.** Some people were unable to log in, with:
+## Fix — contract scans stuck on "Resolving issuer names…"
 
-```
-Token exchange failed: Expecting ',' delimiter: line 206 column 23 (char 37893)
-```
+A moon or buyback scan could sit on that step for ever: no error, no progress, nothing to do but kill the
+app. Every one of the app's calls to EVE's servers was waiting without a time limit, so a request that was
+accepted but never answered blocked the scan indefinitely.
 
-It usually showed up as the Buyback page's wallet section failing, because that's the first thing on
-screen that needs an authenticated character.
+All of them now give up and move on. If name resolution is what fails, the scan **finishes anyway** and
+tells you — contracts show issuer IDs instead of names, rather than the whole run stopping. The same
+protection covers every other ESI call in the app, so this class of hang is gone generally.
 
-## What was going wrong
+## New — activity layers on the Intel Map and overlay
 
-The app stores every logged-in character in one file. That file was being written unsafely — truncated
-first and rewritten after, with nothing stopping two writes overlapping. Refreshing several characters
-at once (the SMT Intel Map alone can refresh 24 in a single request), or the app being closed at the
-wrong moment during an update, could leave the file half-written and unreadable.
+Four toggles next to Intel / Kills / Chars / Sov, from EVE's hourly public feeds:
 
-Once that happened, **every** logged-in character stopped working — and logging back in couldn't fix it,
-because saving the new login had to read the same broken file first. That's the error above: it looks
-like the login failed, but the login worked and saving it didn't.
+| | |
+|---|---|
+| **NPC** | rats killed in the last hour — ratting activity, and a sudden stop is its own kind of intel |
+| **Ship** | ships killed — actual fighting |
+| **Pod** | pods killed — someone died and didn't get out |
+| **Jumps** | ships that jumped in — traffic |
 
-A second, quieter version of the same fault could throw away a character's credentials when several
-refreshed at once, so that character would need logging in again for no apparent reason.
+**Any combination can be on at once.** Each layer draws its own tagged number beside the system —
+`N284 J3` is 284 rat kills and 3 jumps — so nothing is hidden by whichever layer happened to win. A
+system below the lowest threshold isn't drawn at all, so the map stays readable.
 
-## What's changed
+**Colour thresholds are yours to set** in the new **◧ Activity…** panel: as many bands per layer as you
+want, each with its own colour, so "busy" means whatever it means in your space. Defaults are scaled per
+layer — 300 NPC kills an hour is an ordinary ratting system, three ship kills is a fight. Your thresholds
+are shared with the overlay.
 
-- **Writes can't be interrupted any more.** The file is written to one side and swapped into place in a
-  single step, so it's either the old contents or the new ones, never a broken mix.
-- **Simultaneous refreshes take turns**, so they can't overwrite each other's credentials.
-- **A backup copy is kept.** If the file is ever unreadable, the app falls back to the backup
-  automatically and keeps the damaged copy alongside it for diagnosis.
-- **Nothing to fix by hand.** If you're affected, launching v3.12.7 repairs it on startup. At worst a
-  single character needs logging in again, since the backup can be one save behind.
+These figures always cover the **last hour**. EVE publishes no longer window, so there's no 24-hour
+version to show.
 
-The same protection now covers your settings file, which was written the same way.
+## New — jump-range overlay
+
+Pick a hull and see exactly what it reaches. Systems in range are ringed; everything else fades but stays
+visible, because what you *can't* reach is half of what you're looking at.
+
+- **Black Ops 8 ly · Jump Freighter 10 · Rorqual 10 · Carrier/Dread/FAX 7 · Titan/Super 6**, at Jump
+  Drive Calibration V — with a JDC 0–V selector for partial skills. Defaults to Black Ops at max.
+- Measured in **light years through space**, not stargate jumps, so it cuts clean across the map.
+- **High-sec is never in range** — a jump drive can't end there, and showing it would be a lie you could
+  undock on.
+- Measures from your character by default; `⌖ My character` returns to it, or start from any system with
+  **⤭ Jump range** on its card.
+
+Both layers work in the transparent overlay too, behind its **◧** and **⤭** buttons — reading the hull
+and thresholds you set on the map, so the two windows always agree.
+
+## Also
+
+- **Follow intel is on by default.** The map chasing the newest report is what most people want from it,
+  and it was an opt-in nobody found.
+- **⚙ Logs is now ⚙ Select Intel Channels**, which is what it actually does.
+- **PI Colonies says what went wrong.** A failed load used to be one word — "fetch error" — whatever the
+  cause, and a server error was reported as *"No character is authorized"*, which sent people to the
+  wrong place entirely. You now get the actual reason and a retry button. Individual characters that fail
+  are listed by name and reason instead of a bare "3 issue(s)".
 
 ---
 
@@ -48,6 +72,6 @@ The same protection now covers your settings file, which was written the same wa
 
 The `.deb`/`.rpm` packages are unsigned (RPM tools may warn about a missing GPG signature — expected). The in-app updater picks the format matching your distro.
 
-_Intel matcher & map ported from [Slazanger's SMT](https://github.com/Slazanger/SMT) (MIT); region layouts © Wollari & CCP (Dotlan); Thera/Turnur connections from [eve-scout](https://www.eve-scout.com/); ship names from CCP's SDE._
+_Intel matcher & map ported from [Slazanger's SMT](https://github.com/Slazanger/SMT) (MIT); region layouts © Wollari & CCP (Dotlan); Thera/Turnur connections from [eve-scout](https://www.eve-scout.com/); ship names and system positions from CCP's SDE/ESI._
 
 _Full release history: see [CHANGELOG.md](CHANGELOG.md)._

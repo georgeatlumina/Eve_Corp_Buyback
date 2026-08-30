@@ -4,6 +4,38 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.8 — Activity layers, jump range, and a scan that no longer hangs
+
+**Fix — contract scans stuck on "Resolving issuer names…".** A moon or buyback scan could sit on that step
+for ever: no error, no progress, nothing to do but kill the app. Every one of the app's ESI calls was
+waiting without a time limit, so a request that was accepted but never answered blocked the scan
+indefinitely. All of them now give up and move on; if name resolution is what fails, the scan finishes
+anyway and says so, showing issuer IDs instead of names rather than stopping the run. The same protection
+covers every other ESI call, so this class of hang is gone generally.
+
+**New — activity layers on the Intel Map and overlay.** Four toggles alongside Intel / Kills / Chars /
+Sov, from EVE's hourly public feeds: **NPC** kills (ratting, and a sudden stop is its own intel), **Ship**
+kills (fighting), **Pod** kills, and **Jumps** (traffic). Any combination can be on at once — each layer
+draws its own tagged number beside the system (`N284 J3`), so nothing is hidden by whichever layer won,
+and anything below the lowest threshold isn't drawn so the map stays readable. Colour bands are
+configurable per layer in a new **◧ Activity…** panel and shared with the overlay; defaults are scaled per
+layer, since 300 NPC kills an hour is ordinary and three ship kills is a fight. These always cover the
+last hour — ESI publishes no longer window.
+
+**New — jump-range overlay.** In-range systems are ringed, everything else fades but stays visible.
+Black Ops 8 ly, Jump Freighter 10, Rorqual 10, Carrier/Dread/FAX 7, Titan/Super 6 at JDC V, with a 0–V
+selector, defaulting to Black Ops at max. Measured in light years through space rather than stargate
+jumps, and high-sec is never in range because a jump drive can't end there. Measures from your character
+by default, or from any system via **⤭ Jump range** on its card. Needed real 3-D system positions, added
+from ESI by a new `gen_system_positions.py` (all 5485 systems).
+
+**Also**
+
+- Follow intel is now on by default; ⚙ Logs is now **⚙ Select Intel Channels**.
+- PI Colonies reports what actually failed instead of one generic "fetch error" — and a server error no
+  longer masquerades as "No character is authorized", which sent people to the wrong tab. Failed
+  characters are listed by name and reason rather than a bare "3 issue(s)".
+
 ## v3.12.7 — Fixes logins failing with "Token exchange failed"
 
 **Fix — logins failing with `Token exchange failed: Expecting ',' delimiter`.** Usually seen as the
