@@ -130,15 +130,15 @@ shopping list — module, qty, UEXO `min_price`, line total — a total ISK figu
 and the snapshot's `fetched_at`.
 
 Mode 3 results get a copy-to-clipboard multibuy for the shopping list, matching
-the HaulX "Shopping cart" control, since a buy list that cannot be pasted into
+the PushX "Shopping cart" control, since a buy list that cannot be pasted into
 EVE is half a feature.
 
 ## Coordination risk
 
-`renderer/app.js` is being edited concurrently in another session for the HaulX
+`renderer/app.js` is being edited concurrently in another session for the PushX
 retry button. Keeping the logic in `acquisitions-utils.js` confines this
 feature's `app.js` changes to the acquisitions render function near line 4300,
-well clear of the HaulX code at 4440–4850. Implementation should re-check
+well clear of the PushX code at 4440–4850. Implementation should re-check
 `git log` before committing.
 
 ## Testing

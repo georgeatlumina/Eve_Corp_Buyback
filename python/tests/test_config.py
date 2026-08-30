@@ -67,3 +67,15 @@ class TestLoadSaveMerge:
         with open(path) as f:
             on_disk = json.load(f)
         assert 'not_a_real_setting' not in on_disk
+
+
+class TestHangarSelectionAllowPushDefault:
+    def test_defaults_to_off(self, cfg_path):
+        config, _ = cfg_path
+        assert config.load_config()['hangar_selection_allow_push'] is False
+
+    def test_a_saved_on_value_is_preserved(self, cfg_path):
+        config, path = cfg_path
+        with open(path, 'w') as f:
+            json.dump({'hangar_selection_allow_push': True}, f)
+        assert config.load_config()['hangar_selection_allow_push'] is True

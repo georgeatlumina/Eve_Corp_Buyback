@@ -466,6 +466,35 @@ def fetch_corp_contracts(corp_id, access_token, user_agent):
     return all_contracts
 
 
+def fetch_corp_assets(corp_id, access_token, user_agent):
+    """Fetch all pages of corporation assets from ESI.
+
+    Requires the `esi-assets.read_corporation_assets.v1` scope on a character
+    with the Director role. Returns a flat list of asset records — each carries
+    `item_id`, `type_id`, `quantity`, `location_id`, `location_type`,
+    `location_flag`, and `is_singleton`.
+    """
+    url = f'{ESI_BASE}/corporations/{corp_id}/assets/'
+    all_assets = []
+    page = 1
+    while True:
+        resp = _session.get(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': user_agent},
+            params={'datasource': 'tranquility', 'token': access_token, 'page': page},
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        all_assets.extend(batch)
+        max_page = int(resp.headers.get('x-pages', page))
+        if page >= max_page:
+            break
+        page += 1
+    return all_assets
+
+
 def fetch_corp_structures(corp_id, access_token, user_agent):
     """Fetch all pages of corporation-owned structures from ESI.
 

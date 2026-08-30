@@ -157,7 +157,7 @@ it.
   market, reporting per-fit availability and per-doctrine readiness. Capital-tier
   fits are off by default (toggle in *Settings ▾*); a search box filters by
   doctrine/fit name. **This scan is the data source** for the Module Sorter, the
-  Market tab's doctrine lens, and HaulX — it persists to disk so a fresh launch
+  Market tab's doctrine lens, and PushX — it persists to disk so a fresh launch
   resumes it.
 
 - **Module Sorter.** Paste a copied EVE inventory (select-all in the inventory
@@ -215,7 +215,7 @@ it.
   table and a **Modules & Ammo** table, resolving each line to a type, and
   persists the result across restarts.
 
-- **HaulX.** Plans a **PushX haul** (Jita → UEXO) of doctrine fits: it prices
+- **PushX.** Plans a **PushX haul** (Jita → UEXO) of doctrine fits: it prices
   each addable fit (full fit price + volume, from the Readiness scan), lets you
   set quantities, and fills toward the per-haul volume (360 km³) and collateral
   (5 B ISK) caps — surfacing the flat shipping cost and the projected profit at
@@ -519,7 +519,7 @@ against the first configured structure's market. Sign in once via the in-app
 button; the session is remembered. Capital-tier fits are excluded by default
 — toggle in the Readiness *Settings* drawer. The readiness scan also feeds the
 **Module Sorter** (doctrine vs non-doctrine split), the **Market** tab's
-doctrine lens, and **HaulX** — so running it once unlocks those too (the Module
+doctrine lens, and **PushX** — so running it once unlocks those too (the Module
 Sorter will trigger it automatically the first time if you haven't).
 
 ### Sov tab (no config needed)

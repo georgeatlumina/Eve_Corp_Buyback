@@ -1,7 +1,7 @@
 """Unit tests for the Jita sell/buy price endpoints.
 
 Both are new in this release: the quota bars now price at 120% of Jita sell
-(previously 115% of Amarr sell), and HaulX prices whole fits from Jita sell
+(previously 115% of Amarr sell), and PushX prices whole fits from Jita sell
 with Jita buy as the cost basis for its profit line.
 """
 import os
@@ -117,7 +117,7 @@ class TestJitaSellESI:
 
 
 class TestJitaSellPackagedVolume:
-    """HaulX measures hauls with this field, so its failure modes matter."""
+    """PushX measures hauls with this field, so its failure modes matter."""
 
     def test_returns_packaged_volume(self, client):
         with patch('server.fetch_type_sell_price', return_value=1.0), \

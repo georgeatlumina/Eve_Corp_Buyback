@@ -18,7 +18,7 @@
 - Targets whose shortfall is ≤ 0 are skipped before any pool work.
 - **The hull must be stripped from a fit's item rows unconditionally.** Do NOT reuse `fitItemsForReadiness` (`app.js:1888`) — it only strips the hull when the `excludeHulls` UI toggle is on, and a display toggle must never change build math.
 - A fit with any item row where `typeId == null` is reported un-evaluatable, never silently passed.
-- `renderer/app.js` is being edited concurrently in another session (HaulX, ~lines 4440–4850). Keep all edits inside the acquisitions region (~4184–4370) and re-check `git log` before every commit.
+- `renderer/app.js` is being edited concurrently in another session (PushX, ~lines 4440–4850). Keep all edits inside the acquisitions region (~4184–4370) and re-check `git log` before every commit.
 - Never `git add -A`. Stage explicit paths only.
 
 ## File Structure

@@ -67,6 +67,7 @@ from esi import (
     fetch_character_contracts,
     fetch_constellation_info,
     fetch_contract_items,
+    fetch_corp_assets,
     fetch_corp_contracts,
     fetch_corp_structures,
     fetch_corp_wallets,
@@ -124,6 +125,7 @@ import pi as pi_planner
 import pi_layout
 import smt as smt_intel
 import stockpile
+import hangar_selection
 try:
     import pyfa_engine  # vendored Pyfa eos fitting engine (optional; needs deps + eve.db)
 except Exception as _e:  # pragma: no cover - keeps the sidecar up if eos/deps missing
@@ -214,6 +216,7 @@ class ConfigUpdate(BaseModel):
     market_history_pat_write: Optional[str] = None
     stockpile_group_name: Optional[str] = None
     stockpile_allow_push: Optional[bool] = None
+    hangar_selection_allow_push: Optional[bool] = None
     pi_poco_tax_rate: Optional[float] = None
     pi_templates_dir: Optional[str] = None
 
@@ -4794,6 +4797,75 @@ def _stockpile_remote_cfg(cfg):
     return {**rc, 'path': _STOCKPILE_STORE_PATH} if rc else None
 
 
+_HANGAR_SELECTION_PATH = 'hangar-selection.json'
+
+
+def _hangar_selection_remote_cfg(cfg):
+    """GitHub location for the shared hangar-division selection, in the same
+    alliance repo as stockpile/doctrine-stock/builds."""
+    rc = _share_remote_cfg(cfg)
+    return {**rc, 'path': _HANGAR_SELECTION_PATH} if rc else None
+
+
+def _hangar_selection_read():
+    """Return (selection, rc). Prefers GitHub, falls back to the local cache
+    on any remote failure — same convention as _stockpile_read_store."""
+    cfg = load_config()
+    rc = _hangar_selection_remote_cfg(cfg)
+    if not rc:
+        return hangar_selection.load_selection_local(), None
+    ua = get_user_agent()
+    try:
+        text, _sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                          rc['path'], rc['read_pat'], ua)
+        selection = hangar_selection.normalize(json.loads(text))
+        hangar_selection.save_selection_local(selection)  # refresh cache
+        return selection, rc
+    except FileNotFoundError:
+        return hangar_selection.empty_selection(), rc  # first write creates the file
+    except Exception:
+        return hangar_selection.load_selection_local(), rc
+
+
+@app.get('/api/hangar-selection')
+def get_hangar_selection():
+    selection, rc = _hangar_selection_read()
+    return {**selection, 'storage': 'github' if rc else 'local'}
+
+
+class HangarSelectionSave(BaseModel):
+    flags: list[str] = []
+
+
+@app.post('/api/hangar-selection')
+def save_hangar_selection(req: HangarSelectionSave):
+    cfg = load_config()
+    if not cfg.get('hangar_selection_allow_push'):
+        raise HTTPException(403, 'Hangar-selection sync is disabled (enable it in Config).')
+    selection = hangar_selection.normalize({
+        'selected_flags': req.flags,
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    })
+    hangar_selection.save_selection_local(selection)
+    rc = _hangar_selection_remote_cfg(cfg)
+    pushed = False
+    if rc and rc.get('write_pat'):
+        ua = get_user_agent()
+        try:
+            try:
+                _text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                                  rc['path'], rc['read_pat'], ua)
+            except FileNotFoundError:
+                sha = None  # first write creates the file
+            _github_contents_put(rc['owner'], rc['repo'], rc['branch'], rc['path'],
+                                 json.dumps(selection, indent=2), sha, rc['write_pat'],
+                                 ua, 'hangar-selection: update')
+            pushed = True
+        except Exception:
+            pass  # non-fatal — the local save above already succeeded
+    return {**selection, 'storage': 'github' if pushed else 'local'}
+
+
 def _stockpile_totals(store):
     """Per-category `{lines, qty}` tallies for the dashboard header tiles."""
     totals = {c: {'lines': 0, 'qty': 0} for c in stockpile.CATEGORIES}
@@ -4868,13 +4940,32 @@ def save_stockpile(req: StockpileSave):
             'qty': int(p['qty']),
             'category': stockpile.classify(m, p['name']),
         })
+    store, commit, rc = _stockpile_persist(items, req.note)
+    return {
+        **store,
+        'storage': 'github' if (rc and rc.get('write_pat')) else 'local',
+        'totals': _stockpile_totals(store),
+        'commit_sha': (commit or {}).get('commit_sha'),
+        'commit_html_url': (commit or {}).get('commit_html_url'),
+        'unresolved': [p['name'] for p in parsed if not name_to_id.get(p['name'].lower())],
+    }
+
+
+def _stockpile_persist(items, note):
+    """Build, save-locally, and (if a write PAT is configured) push a
+    stockpile store from already-resolved `items`. Returns
+    (store, commit, rc) — commit is None when saved locally only. Raises
+    HTTPException(502) if a configured push fails (matches the paste path's
+    existing behavior)."""
+    cfg = load_config()
     store = {
         'updated_at': datetime.now(timezone.utc).isoformat(),
-        'note': (req.note or '').strip(),
+        'note': (note or '').strip(),
         'items': items,
     }
     rc = _stockpile_remote_cfg(cfg)
     commit = None
+    ua = get_user_agent()
     if rc and rc.get('write_pat'):
         try:
             try:
@@ -4898,13 +4989,53 @@ def save_stockpile(req: StockpileSave):
         cfg['stockpile_last_status'] = f'saved locally ({len(items)} item(s))'
         save_config(cfg)
     stockpile.save_store_local(store)
+    return store, commit, rc
+
+
+class StockpileHangarImport(BaseModel):
+    items: list[dict] = []
+    note: str = ''
+
+
+@app.post('/api/stockpile/import-hangars')
+def import_stockpile_from_hangars(req: StockpileHangarImport):
+    """Replace the stockpile store from an ESI corp-hangar scan. `items` are
+    already-resolved hangar contents from GET /api/corp/assets
+    (type_id/name/quantity/group_id/category_id) — no name resolution needed,
+    unlike the paste path. Always replaces, mirroring the paste-save's
+    replace-only semantics."""
+    cfg = load_config()
+    if not cfg.get('stockpile_allow_push'):
+        raise HTTPException(403, 'Stock editing is disabled (enable "Allow stock edits" in Config).')
+    agg = {}
+    order = []
+    for it in (req.items or []):
+        qty = int(it.get('quantity') or 0)
+        name = str(it.get('name') or '').strip()
+        if qty <= 0 or not name:
+            continue
+        type_id = int(it.get('type_id') or 0)
+        key = type_id if type_id else name.lower()
+        if key not in agg:
+            meta = {'group_id': int(it.get('group_id') or 0), 'category_id': int(it.get('category_id') or 0)}
+            agg[key] = {
+                'name': name,
+                'type_id': type_id,
+                'qty': 0,
+                'category': stockpile.classify(meta, name),
+            }
+            order.append(key)
+        agg[key]['qty'] += qty
+    items = [agg[k] for k in order]
+    if not items:
+        raise HTTPException(400, 'No valid items to import.')
+    store, commit, rc = _stockpile_persist(items, req.note)
     return {
         **store,
         'storage': 'github' if (rc and rc.get('write_pat')) else 'local',
         'totals': _stockpile_totals(store),
         'commit_sha': (commit or {}).get('commit_sha'),
         'commit_html_url': (commit or {}).get('commit_html_url'),
-        'unresolved': [p['name'] for p in parsed if not name_to_id.get(p['name'].lower())],
     }
 
 
@@ -6243,6 +6374,142 @@ def get_acquisitions():
 def post_acquisitions(req: AcquisitionsSaveRequest):
     """Persist the hull and item inventory to disk."""
     return save_acquisitions(req.hulls, req.items)
+
+
+# ESI location_flag → friendly hangar division name shown in the EVE client.
+# Corp hangar divisions are named "Division 1"…"Division 7" in EVE; ESI uses
+# HangarAll for the first division and CorpSAG2…CorpSAG7 for the rest.
+_CORP_HANGAR_FLAGS = {
+    'HangarAll': 'Hangar Division 1',
+    'CorpSAG1':  'Hangar Division 1',
+    'CorpSAG2':  'Hangar Division 2',
+    'CorpSAG3':  'Hangar Division 3',
+    'CorpSAG4':  'Hangar Division 4',
+    'CorpSAG5':  'Hangar Division 5',
+    'CorpSAG6':  'Hangar Division 6',
+    'CorpSAG7':  'Hangar Division 7',
+}
+
+
+@app.get('/api/corp/assets')
+def get_corp_assets():
+    """Return corp hangar contents at the configured home structure.
+
+    Requires `esi-assets.read_corporation_assets.v1` on a Director-role slot.
+    Groups items by hangar division, resolves type names from local type_meta
+    (falling back to ESI fetch_type_info for unknowns), and returns category_id
+    so the caller can split hulls (category 6) from modules.
+
+    Response: {ok: true, hangars: [{flag, name, item_count, items: [...]}]}
+    Error:    {ok: false, reason: str}
+    """
+    SCOPE = 'esi-assets.read_corporation_assets.v1'
+    cfg = load_config()
+    structure_id = int(cfg.get('home_structure_id') or 0)
+    if not structure_id:
+        return {'ok': False, 'reason': 'no_home_structure'}
+
+    # Find a slot with the required scope and derive corp_id from the character
+    # rather than from config — the director character may be in a different corp
+    # than the one set in Config (e.g. a director alt in the main alliance corp).
+    ua = get_user_agent()
+    token = None
+    corp_id = None
+    try:
+        client_id, secret_key = get_app_credentials()
+    except Exception:
+        return {'ok': False, 'reason': 'no_credentials'}
+    for slot in list_authenticated_slots():
+        try:
+            t = get_valid_access_token(client_id, secret_key, ua, slot=slot)
+            payload = decode_jwt_payload(t)
+        except Exception:
+            continue
+        scps = payload.get('scp')
+        scope_list = scps if isinstance(scps, list) else [scps] if scps else []
+        if SCOPE not in scope_list:
+            continue
+        char_id = payload.get('sub', '').split(':')[-1]
+        try:
+            char_info = fetch_character_info(char_id, ua)
+            corp_id = int(char_info.get('corporation_id') or 0)
+        except Exception:
+            continue
+        if corp_id:
+            token = t
+            break
+    if not token or not corp_id:
+        return {'ok': False, 'reason': 'missing_scope'}
+
+    try:
+        all_assets = fetch_corp_assets(corp_id, token, ua)
+    except Exception as e:
+        return {'ok': False, 'reason': 'fetch_failed', 'detail': str(e)}
+
+    # Filter to items directly in a corp hangar at the home structure.
+    hangar_items = [
+        a for a in all_assets
+        if int(a.get('location_id') or 0) == structure_id
+        and a.get('location_flag') in _CORP_HANGAR_FLAGS
+    ]
+
+    # Resolve type names + category_id from local type_meta first.
+    import os as _os
+    from config import AUTH_DIR as _AUTH_DIR
+    type_meta_path = _os.path.join(_AUTH_DIR, 'type_meta.json')
+    local_meta = {}
+    try:
+        with open(type_meta_path) as f:
+            raw = __import__('json').load(f)
+        local_meta = {int(k): v for k, v in raw.items()}
+    except Exception:
+        pass
+
+    # Collect type_ids we don't have locally so we can batch-enrich them.
+    unknown_ids = list({int(a['type_id']) for a in hangar_items
+                        if int(a['type_id']) not in local_meta})
+    enriched = {}
+    if unknown_ids:
+        try:
+            enriched = enrich_types(unknown_ids, ua)
+        except Exception:
+            pass
+
+    def _resolve(type_id):
+        tid = int(type_id)
+        if tid in local_meta:
+            m = local_meta[tid]
+            return m.get('name', str(tid)), m.get('category_id'), m.get('group_id')
+        if tid in enriched:
+            m = enriched[tid]
+            return m.get('name', str(tid)), m.get('category_id'), m.get('group_id')
+        return str(tid), None, None
+
+    # Group by hangar division.
+    from collections import defaultdict
+    by_flag = defaultdict(list)
+    for a in hangar_items:
+        flag = a.get('location_flag', 'HangarAll')
+        name, category_id, group_id = _resolve(a['type_id'])
+        by_flag[flag].append({
+            'type_id': int(a['type_id']),
+            'name': name,
+            'quantity': int(a.get('quantity') or 1),
+            'category_id': category_id,
+            'group_id': group_id,
+        })
+
+    hangars = []
+    for flag in sorted(by_flag.keys()):
+        items = by_flag[flag]
+        hangars.append({
+            'flag': flag,
+            'name': _CORP_HANGAR_FLAGS.get(flag, flag),
+            'item_count': sum(i['quantity'] for i in items),
+            'items': items,
+        })
+
+    return {'ok': True, 'hangars': hangars}
 
 
 @app.get('/api/contracts/scan')

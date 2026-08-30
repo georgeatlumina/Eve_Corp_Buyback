@@ -65,7 +65,7 @@
           <button class="tab-btn" data-tab="working">Working</button>
           <button class="tab-btn" data-tab="contracts">Contracts</button>
           <button class="tab-btn" data-tab="acquisitions">Acquisitions</button>
-          <button class="tab-btn" data-tab="haulx">HaulX</button>
+          <button class="tab-btn" data-tab="pushx">PushX</button>
           <button class="tab-btn" data-tab="srp">SRP</button>
           <button class="tab-btn" data-tab="liquidation">Liquidation</button>
           <button class="tab-btn" data-tab="hooks-hubs">Hooks &amp; Hubs</button>
@@ -268,6 +268,7 @@
             <span id="stockpile-unlock-status" class="muted"></span>
           </div>
           <label class="inline-check"><input name="stockpile_allow_push" type="checkbox" /> Allow stock edits (show the admin paste/save panel)</label>
+          <label class="inline-check"><input name="hangar_selection_allow_push" type="checkbox" /> Allow hangar-division selection sync (push the shared corp-hangar scan picks to the alliance repo)</label>
         </fieldset>
 
         <fieldset>
@@ -1422,6 +1423,13 @@
           <span id="stockpile-save-status" class="muted"></span>
         </div>
         <p id="stockpile-unresolved" class="muted small" hidden></p>
+
+        <div class="stockpile-hangar-scan">
+          <p class="muted small">Or scan corp hangars directly via ESI (needs a Director-role character authenticated on the Auth tab) instead of pasting.</p>
+          <button id="stockpile-corp-load" type="button" class="secondary" title="Load corp hangar contents via ESI (requires Director re-auth with corp assets scope)">Scan corp hangars</button>
+          <span id="stockpile-corp-status" class="muted"></span>
+          <div id="stockpile-corp-breakdown" hidden></div>
+        </div>
       </fieldset>
     </section>
 
@@ -1528,8 +1536,8 @@
       <div id="acquisitions-root"></div>
     </section>
 
-    <section id="tab-haulx" class="tab">
-      <div id="haulx-root"></div>
+    <section id="tab-pushx" class="tab">
+      <div id="pushx-root"></div>
     </section>
 
     <section id="tab-hooks-hubs" class="tab">
@@ -1713,7 +1721,7 @@
   </div>
 
   <script src="parse-utils.js"></script>
-  <script src="haulx-utils.js"></script>
+  <script src="pushx-utils.js"></script>
   <script src="acquisitions-utils.js"></script>
   <script src="hooks-hubs-utils.js"></script>
   <script src="calculator.js"></script>

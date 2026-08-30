@@ -314,7 +314,7 @@ function activateTab(name) {
   if (name === 'buybacks') refreshWallets();
   closeAllNavMenus();
   updateNavTriggers();
-  if (name === 'haulx') renderHaulxTab();
+  if (name === 'pushx') renderPushxTab();
   if (name === 'acquisitions') renderAcquisitionsTab();
 }
 
@@ -606,6 +606,9 @@ async function loadConfig() {
   if ($('[name=stockpile_allow_push]')) {
     $('[name=stockpile_allow_push]').checked = !!cfg.stockpile_allow_push;
   }
+  if ($('[name=hangar_selection_allow_push]')) {
+    $('[name=hangar_selection_allow_push]').checked = !!cfg.hangar_selection_allow_push;
+  }
   updatePushButtonVisibility();
   renderQuotaSyncStatus(cfg);
   // Kick off the ship-types fetch in the background; the datalist becomes
@@ -733,6 +736,7 @@ function collectConfigForm() {
     market_history_pat_write: (fd.get('market_history_pat_write') || '').toString().trim(),
     stockpile_group_name: (fd.get('stockpile_group_name') || '').toString().trim(),
     stockpile_allow_push: $('[name=stockpile_allow_push]')?.checked || false,
+    hangar_selection_allow_push: $('[name=hangar_selection_allow_push]')?.checked || false,
     acq_shopping_min_coverage: parseFloat(fd.get('acq_shopping_min_coverage')) || 0.5,
     acq_shopping_max_isk_gap: parseFloat(fd.get('acq_shopping_max_isk_gap')) || 500_000_000,
   };
@@ -2381,7 +2385,7 @@ async function scanAllFits() {
       doctrines: doctrineRecords,
       fits,
     };
-    haulxReadinessScanDone = true;
+    pushxReadinessScanDone = true;
     saveReadinessScan();
     readinessState.scanProgress = null;
     if (!aaState.market && !aaState.marketLoading) loadMarket(false);
@@ -3933,7 +3937,7 @@ async function runContractsScan() {
         lastContractsScan = evt.payload;
         contractsScanCache[activeContractsAlliance] = evt.payload;
         renderContractsDashboard(evt.payload);
-        haulxQty = {};
+        pushxQty = {};
         step.textContent = 'done';
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);
@@ -5369,7 +5373,6 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
   if (!candidates.length) { el.innerHTML = ''; return; }
   const cards = candidates.map(({ target, gap }) => {
     const itemRows = gap.items.map((it) => {
-      const name = escapeHtml(acqTypeName(it.type_id));
       const uexoPrice = it.price || 0;
       const priceStr = uexoPrice ? Math.round(uexoPrice).toLocaleString() : '—';
       const qtyStr = it.qty.toLocaleString();
@@ -5384,8 +5387,9 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
       } else if (jita != null) {
         jitaDeltaStr = `<span style="color:#8899aa">${Math.round(jita).toLocaleString()}</span>`;
       }
+      const rawName = acqTypeName(it.type_id);
       return `<tr style="border-bottom:1px solid #1e2533;font-size:0.8rem">
-          <td style="padding:0.25rem 0.4rem">${name}</td>
+          <td style="padding:0.25rem 0.4rem"><span class="acq-copy-name" data-name="${escapeHtml(rawName)}" style="cursor:pointer" title="Click to copy">${escapeHtml(rawName)}</span></td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.need}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right">${it.have}</td>
           <td style="padding:0.25rem 0.4rem;text-align:right;color:#f87171">${it.short}</td>
@@ -5455,6 +5459,17 @@ function renderAcqSection3(el, candidates, market, jitaPriceMap = new Map()) {
         } catch { btn.textContent = 'Copy failed'; }
       });
     }
+  }
+
+  for (const span of el.querySelectorAll('.acq-copy-name')) {
+    span.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(span.dataset.name);
+        const orig = span.style.color;
+        span.style.color = '#4ade80';
+        setTimeout(() => { span.style.color = orig; }, 800);
+      } catch { /* silent */ }
+    });
   }
 }
 
@@ -5626,6 +5641,153 @@ function acquisitionsClear(textarea, hullsEl, itemsEl, statusEl) {
   });
 }
 
+const REASON_MESSAGES = {
+  missing_scope: 'Re-auth a Director character on the Auth tab — needs the esi-assets.read_corporation_assets.v1 scope.',
+  no_corp_id: 'Set your corp ID in Config first.',
+  no_home_structure: 'Set your home structure ID in Config first.',
+  no_credentials: 'Auth credentials missing — check Config.',
+  fetch_failed: 'ESI fetch failed. Check the sidecar log.',
+};
+
+// Shared checkbox grid for choosing which corp hangar divisions to include in
+// an ESI scan — used by both Acquisitions' "Load corp inventory" flow and the
+// Stockpile "Scan corp hangars" flow (stockpile.js loads after app.js and
+// reuses this global, same convention as $/API/escapeHtml). Renders into
+// `container`; the returned getSelectedFlags() reads live checkbox state on
+// every call, so callers don't need to re-render to see a toggle.
+function buildHangarPicker(container, hangars, selectedFlags) {
+  const hasSaved = (selectedFlags || []).length > 0;
+  const selectedSet = new Set(
+    hasSaved
+      ? selectedFlags.map(canonicalHangarFlag)
+      : (hangars || []).map((h) => canonicalHangarFlag(h.flag))
+  );
+  const rows = (hangars || []).map((h) => {
+    const checked = selectedSet.has(canonicalHangarFlag(h.flag));
+    return `<label class="hangar-picker-row${checked ? '' : ' unchecked'}" data-flag="${escapeHtml(h.flag)}">
+      <input type="checkbox" ${checked ? 'checked' : ''}>
+      <span class="hangar-picker-name">${escapeHtml(h.name)}</span>
+      <span class="hangar-picker-count">${h.item_count.toLocaleString()}</span>
+    </label>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="hangar-picker-toolbar">
+      <a href="#" data-action="all">Select all</a> &nbsp;|&nbsp; <a href="#" data-action="none">Select none</a>
+    </div>
+    <div class="hangar-picker-grid">${rows}</div>`;
+
+  const grid = container.querySelector('.hangar-picker-grid');
+  grid.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      cb.closest('.hangar-picker-row').classList.toggle('unchecked', !cb.checked);
+    });
+  });
+  container.querySelector('[data-action="all"]').addEventListener('click', (e) => {
+    e.preventDefault();
+    grid.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+      cb.checked = true;
+      cb.closest('.hangar-picker-row').classList.remove('unchecked');
+    });
+  });
+  container.querySelector('[data-action="none"]').addEventListener('click', (e) => {
+    e.preventDefault();
+    grid.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+      cb.checked = false;
+      cb.closest('.hangar-picker-row').classList.add('unchecked');
+    });
+  });
+
+  return () => Array.from(grid.querySelectorAll('input[type=checkbox]:checked'))
+    .map((cb) => cb.closest('.hangar-picker-row').dataset.flag);
+}
+
+async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
+  const btn = root.querySelector('#acq-corp-load');
+  const breakdownEl = root.querySelector('#acq-corp-breakdown');
+  btn.disabled = true;
+  statusEl.textContent = 'Loading corp inventory…';
+  breakdownEl.hidden = true;
+  breakdownEl.innerHTML = '';
+
+  let data, selection;
+  try {
+    const [assetsRes, selectionRes] = await Promise.all([
+      fetch(`${API}/api/corp/assets`),
+      fetch(`${API}/api/hangar-selection`),
+    ]);
+    data = await assetsRes.json();
+    selection = await selectionRes.json().catch(() => ({ selected_flags: [] }));
+  } catch (e) {
+    statusEl.textContent = 'Failed to reach sidecar.';
+    btn.disabled = false;
+    return;
+  }
+
+  if (!data.ok) {
+    statusEl.textContent = REASON_MESSAGES[data.reason] || `Error: ${data.reason}`;
+    btn.disabled = false;
+    return;
+  }
+
+  statusEl.textContent = '';
+  const hangars = data.hangars || [];
+  const totalItems = hangars.reduce((s, h) => s + h.item_count, 0);
+
+  breakdownEl.innerHTML = `
+    <div style="color:#8899aa;margin-bottom:0.5rem">${totalItems.toLocaleString()} items across ${hangars.length} hangar division${hangars.length !== 1 ? 's' : ''} at the home structure</div>
+    <div id="acq-corp-picker"></div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+      <button id="acq-corp-add" class="btn">Add to inventory</button>
+      <button id="acq-corp-replace" class="btn">Replace inventory</button>
+      <button id="acq-corp-cancel" class="link-btn" style="color:#8899aa">Cancel</button>
+    </div>`;
+  breakdownEl.hidden = false;
+
+  const getSelectedFlags = buildHangarPicker(
+    breakdownEl.querySelector('#acq-corp-picker'), hangars, selection.selected_flags || []
+  );
+
+  const applyCorpItems = async (mode) => {
+    const flags = getSelectedFlags();
+    const allItems = filterItemsByHangar(hangars, flags);
+    if (!allItems.length) { statusEl.textContent = 'No items in the selected hangars.'; return; }
+    const hulls = allItems.filter((i) => i.category_id === 6);
+    const items = allItems.filter((i) => i.category_id !== 6);
+    if (mode === 'replace') {
+      acquisitionsHulls = hulls;
+      acquisitionsItems = items;
+    } else {
+      // Merge: sum quantities for existing type_ids
+      for (const incoming of hulls) {
+        const existing = acquisitionsHulls.find((h) => h.type_id === incoming.type_id);
+        if (existing) existing.quantity += incoming.quantity;
+        else acquisitionsHulls.push({ ...incoming });
+      }
+      for (const incoming of items) {
+        const existing = acquisitionsItems.find((i) => i.type_id === incoming.type_id);
+        if (existing) existing.quantity += incoming.quantity;
+        else acquisitionsItems.push({ ...incoming });
+      }
+    }
+    await acquisitionsSave();
+    renderAcquisitionsResults(hullsEl, itemsEl);
+    statusEl.textContent = mode === 'replace' ? 'Replaced inventory with corp inventory.' : 'Added corp inventory to existing inventory.';
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    breakdownEl.hidden = true;
+    fetch(`${API}/api/hangar-selection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flags }),
+    }).catch(() => {});
+  };
+
+  breakdownEl.querySelector('#acq-corp-add').addEventListener('click', () => applyCorpItems('add'));
+  breakdownEl.querySelector('#acq-corp-replace').addEventListener('click', () => applyCorpItems('replace'));
+  breakdownEl.querySelector('#acq-corp-cancel').addEventListener('click', () => { breakdownEl.hidden = true; });
+  btn.disabled = false;
+}
+
 function renderAcquisitionsTab() {
   const root = $('#acquisitions-root');
   if (!root) return;
@@ -5640,13 +5802,15 @@ function renderAcquisitionsTab() {
     <strong>Analyse Fits</strong> finds fits where every module is in stock but the hull is missing — buy a hull and they're ready to build.</p>
     <textarea id="acq-paste" rows="8" style="width:100%;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:4px;padding:0.5rem;font-size:0.8rem;resize:vertical;box-sizing:border-box"
       placeholder="Paste EVE inventory here — Name [tab] Qty, one per line"></textarea>
-    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
+    <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;flex-wrap:wrap">
       <button id="acq-add" class="btn">Add to inventory</button>
       <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
       <button id="acq-copy-inventory" class="btn" title="Copy full inventory as Janice-format text">Copy inventory</button>
+      <button id="acq-corp-load" class="btn secondary" title="Load corp hangar contents via ESI (requires Director re-auth with corp assets scope)">Corp inventory (needs director access)</button>
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
+    <div id="acq-corp-breakdown" hidden style="margin-top:0.5rem;border:1px solid #2e3a4e;border-radius:6px;padding:0.6rem 0.75rem;background:#0d1a2e;font-size:0.82rem"></div>
     <div class="progress-area" id="acq-progress" hidden>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="progress-step muted">starting…</div>
@@ -5747,6 +5911,7 @@ function renderAcquisitionsTab() {
       setTimeout(() => { statusEl.textContent = ''; }, 2000);
     });
   });
+  root.querySelector('#acq-corp-load').addEventListener('click', () => acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl));
   // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -5760,46 +5925,46 @@ function renderAcquisitionsTab() {
 acquisitionsLoad();
 
 // ============================================================
-// Plan HaulX tab
+// Plan PushX tab
 // ============================================================
 
-// HAULX_MAX_VOLUME, HAULX_MAX_COLLATERAL, HAULX_SHIPPING_COST, HAULX_SELL_MARKUP
-// and the planning maths (haulxTotals / haulxFillByPriority / haulxBlockReason /
-// haulxProfit) all come from haulx-utils.js, loaded before this file.
+// PUSHX_MAX_VOLUME, PUSHX_MAX_COLLATERAL, PUSHX_SHIPPING_COST, PUSHX_SELL_MARKUP
+// and the planning maths (pushxTotals / pushxFillByPriority / pushxBlockReason /
+// pushxProfit) all come from pushx-utils.js, loaded before this file.
 
-const haulxPriceCache = {};     // type_id -> { min_sell, packaged_volume, fit_price, fit_volume, fit_buy_price }
-const haulxItemPriceCache = {}; // type_id -> { min_sell, vol } (for fit items)
-const haulxItemBuyCache = {};   // type_id -> max_buy (for fit items)
-let haulxQty = {};  // type_id (string) -> qty (number)
-let haulxOverQuota = false;
-let haulxReadinessScanDone = false;  // true only after a readiness scan in this session
+const pushxPriceCache = {};     // type_id -> { min_sell, packaged_volume, fit_price, fit_volume, fit_buy_price }
+const pushxItemPriceCache = {}; // type_id -> { min_sell, vol } (for fit items)
+const pushxItemBuyCache = {};   // type_id -> max_buy (for fit items)
+let pushxQty = {};  // type_id (string) -> qty (number)
+let pushxOverQuota = false;
+let pushxReadinessScanDone = false;  // true only after a readiness scan in this session
 
 // Type ids whose last lookup *errored*, as opposed to settling on a legitimate
 // null. Only these are worth retrying, and only these get evicted from the
 // caches above when the user clicks Retry.
-const haulxFailedPrice = new Set();  // sell price / packaged volume lookups
-const haulxFailedBuy = new Set();    // buy price lookups
+const pushxFailedPrice = new Set();  // sell price / packaged volume lookups
+const pushxFailedBuy = new Set();    // buy price lookups
 
-function haulxUpdateTotals() {
-  const { vol, isk, sellValue, buyValue } = haulxTotals(haulxQty, haulxPriceCache);
-  const volEl = $('#haulx-vol');
-  const iskEl = $('#haulx-isk');
-  const profitEl = $('#haulx-profit');
-  const copyBtn = $('#haulx-copy');
+function pushxUpdateTotals() {
+  const { vol, isk, sellValue, buyValue } = pushxTotals(pushxQty, pushxPriceCache);
+  const volEl = $('#pushx-vol');
+  const iskEl = $('#pushx-isk');
+  const profitEl = $('#pushx-profit');
+  const copyBtn = $('#pushx-copy');
   if (!volEl) return;
 
   const volKm3 = vol / 1000;
   volEl.textContent = `${volKm3.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / 360.0 km³`;
-  volEl.classList.toggle('haulx-over', vol > HAULX_MAX_VOLUME);
+  volEl.classList.toggle('pushx-over', vol > PUSHX_MAX_VOLUME);
 
   const iskB = isk / 1_000_000_000;
   iskEl.textContent = `${iskB.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B / 5.00B ISK`;
-  iskEl.classList.toggle('haulx-over', isk > HAULX_MAX_COLLATERAL);
+  iskEl.classList.toggle('pushx-over', isk > PUSHX_MAX_COLLATERAL);
 
   if (profitEl) {
-    const hasBuyData = buyValue > 0 || Object.values(haulxQty).some((q) => q > 0 && Object.keys(haulxItemBuyCache).length > 0);
+    const hasBuyData = buyValue > 0 || Object.values(pushxQty).some((q) => q > 0 && Object.keys(pushxItemBuyCache).length > 0);
     if (sellValue > 0 && buyValue > 0) {
-      const profit = haulxProfit(sellValue, buyValue);
+      const profit = pushxProfit(sellValue, buyValue);
       const profitM = profit / 1_000_000_000;
       profitEl.textContent = `${profitM >= 0 ? '+' : ''}${profitM.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
       profitEl.style.color = profit >= 0 ? '#4a8' : '#ef4444';
@@ -5809,17 +5974,17 @@ function haulxUpdateTotals() {
     }
   }
 
-  const anySelected = Object.values(haulxQty).some((q) => q > 0);
+  const anySelected = Object.values(pushxQty).some((q) => q > 0);
   if (copyBtn) copyBtn.disabled = !anySelected;
-  const clearBtn = $('#haulx-clear');
+  const clearBtn = $('#pushx-clear');
   if (clearBtn) clearBtn.disabled = !anySelected;
 }
 
 // The button is the only signal that a lookup failed: it stays hidden while
 // every price and volume settles cleanly, and its count is of failed *lookups*
 // rather than of ships, matching how the progress bar totals its work.
-function haulxUpdateRetryButton(inFlight = false) {
-  const btn = $('#haulx-retry');
+function pushxUpdateRetryButton(inFlight = false) {
+  const btn = $('#pushx-retry');
   if (!btn) return;
   if (inFlight) {
     btn.hidden = false;
@@ -5828,8 +5993,8 @@ function haulxUpdateRetryButton(inFlight = false) {
     btn.title = '';
     return;
   }
-  const priceFails = haulxFailedPrice.size;
-  const buyFails = haulxFailedBuy.size;
+  const priceFails = pushxFailedPrice.size;
+  const buyFails = pushxFailedBuy.size;
   const total = priceFails + buyFails;
   btn.hidden = total === 0;
   btn.disabled = false;
@@ -5843,13 +6008,13 @@ function haulxUpdateRetryButton(inFlight = false) {
 // Flag a row as un-addable (empty `reason` clears the flag). Blocked rows get the
 // same red treatment as a hull with no fit in Auth, their qty is forced to 0, and
 // the qty input + max button are locked so they can't enter a haul.
-function haulxSetRowBlocked(row, tid, reason) {
+function pushxSetRowBlocked(row, tid, reason) {
   if (!row) return;
   const blocked = !!reason;
-  const cell = row.querySelector('.haulx-ship-cell');
-  const flag = row.querySelector('.haulx-row-flag');
-  const input = row.querySelector('.haulx-qty');
-  const maxBtn = row.querySelector('.haulx-max');
+  const cell = row.querySelector('.pushx-ship-cell');
+  const flag = row.querySelector('.pushx-row-flag');
+  const input = row.querySelector('.pushx-qty');
+  const maxBtn = row.querySelector('.pushx-max');
   if (cell) cell.style.color = blocked ? '#ef4444' : '';
   if (flag) flag.textContent = blocked ? `(${reason})` : '';
   if (input) {
@@ -5857,15 +6022,15 @@ function haulxSetRowBlocked(row, tid, reason) {
     if (blocked) input.value = 0;
   }
   if (maxBtn) maxBtn.disabled = blocked;
-  if (blocked) delete haulxQty[tid];
+  if (blocked) delete pushxQty[tid];
   row.dataset.blocked = blocked ? '1' : '';
 }
 
-async function haulxFetchPrices(quotas) {
+async function pushxFetchPrices(quotas) {
   // "Fill by priority" divides by per-ship volume and price, so it stays
   // disabled until every lookup below has settled — otherwise it would fill
   // against unit costs of 0 and blow straight past the volume/collateral caps.
-  const fillBtn = $('#haulx-fill-priority');
+  const fillBtn = $('#pushx-fill-priority');
   if (fillBtn) fillBtn.disabled = true;
 
   const fits = readinessState.scan?.fits || {};
@@ -5888,10 +6053,10 @@ async function haulxFetchPrices(quotas) {
   // Both lists are derived up front so the progress bar knows its total. Safe
   // to compute the buy list before the sell fetches run — they touch different
   // caches.
-  const uncachedIds = [...allTypeIds].filter((tid) => !(tid in haulxItemPriceCache));
-  const uncachedBuyIds = [...allTypeIds].filter((tid) => !(tid in haulxItemBuyCache));
+  const uncachedIds = [...allTypeIds].filter((tid) => !(tid in pushxItemPriceCache));
+  const uncachedBuyIds = [...allTypeIds].filter((tid) => !(tid in pushxItemBuyCache));
 
-  const progress = $('#haulx-price-progress');
+  const progress = $('#pushx-price-progress');
   const progressFill = progress?.querySelector('.progress-fill');
   const progressStep = progress?.querySelector('.progress-step');
   const totalLookups = uncachedIds.length + uncachedBuyIds.length;
@@ -5913,15 +6078,15 @@ async function haulxFetchPrices(quotas) {
     await Promise.all(
       uncachedIds.map((tid) =>
         fetch(`${API}/api/market/jita-sell?type_id=${tid}`)
-          .then(async (r) => haulxClassifySell(r.ok, r.status, r.ok ? await r.json() : null))
-          .catch(() => haulxClassifySell(false, 0, null))
+          .then(async (r) => pushxClassifySell(r.ok, r.status, r.ok ? await r.json() : null))
+          .catch(() => pushxClassifySell(false, 0, null))
           .then(({ minSell, vol, failed }) => {
-            haulxItemPriceCache[tid] = { min_sell: minSell, vol };
-            if (failed) haulxFailedPrice.add(tid);
-            else haulxFailedPrice.delete(tid);
-            // Hull entries also get volume stored in haulxPriceCache
-            if (!haulxPriceCache[tid]) {
-              haulxPriceCache[tid] = { min_sell: minSell, packaged_volume: vol };
+            pushxItemPriceCache[tid] = { min_sell: minSell, vol };
+            if (failed) pushxFailedPrice.add(tid);
+            else pushxFailedPrice.delete(tid);
+            // Hull entries also get volume stored in pushxPriceCache
+            if (!pushxPriceCache[tid]) {
+              pushxPriceCache[tid] = { min_sell: minSell, packaged_volume: vol };
             }
           })
           .finally(bumpProgress)
@@ -5932,12 +6097,12 @@ async function haulxFetchPrices(quotas) {
     await Promise.all(
       uncachedBuyIds.map((tid) =>
         fetch(`${API}/api/market/jita-buy?type_id=${tid}`)
-          .then(async (r) => haulxClassifyBuy(r.ok, r.status, r.ok ? await r.json() : null))
-          .catch(() => haulxClassifyBuy(false, 0, null))
+          .then(async (r) => pushxClassifyBuy(r.ok, r.status, r.ok ? await r.json() : null))
+          .catch(() => pushxClassifyBuy(false, 0, null))
           .then(({ maxBuy, failed }) => {
-            haulxItemBuyCache[tid] = maxBuy;
-            if (failed) haulxFailedBuy.add(tid);
-            else haulxFailedBuy.delete(tid);
+            pushxItemBuyCache[tid] = maxBuy;
+            if (failed) pushxFailedBuy.add(tid);
+            else pushxFailedBuy.delete(tid);
           })
           .finally(bumpProgress)
       )
@@ -5953,26 +6118,26 @@ async function haulxFetchPrices(quotas) {
     const fit = candidates.find((f) => f.name === q.name) || candidates[0];
 
     // Ensure hull cache entry exists
-    if (!haulxPriceCache[tid]) {
-      const entry = haulxItemPriceCache[tid];
-      haulxPriceCache[tid] = { min_sell: entry?.min_sell ?? null, packaged_volume: entry?.vol ?? null };
+    if (!pushxPriceCache[tid]) {
+      const entry = pushxItemPriceCache[tid];
+      pushxPriceCache[tid] = { min_sell: entry?.min_sell ?? null, packaged_volume: entry?.vol ?? null };
     }
 
     let fitTotal = null;
     let fitVolume = null;
     let fitBuyTotal = null;
     if (fit?.items?.length) {
-      const hullEntry = haulxItemPriceCache[tid];
+      const hullEntry = pushxItemPriceCache[tid];
       let sumIsk = hullEntry?.min_sell ?? 0;
       let sumVol = hullEntry?.vol ?? 0;
-      let sumBuy = haulxItemBuyCache[tid] ?? 0;
+      let sumBuy = pushxItemBuyCache[tid] ?? 0;
       let allPriced = hullEntry?.min_sell != null;
       let allVolumed = hullEntry?.vol != null;
-      let allBought = haulxItemBuyCache[tid] != null;
+      let allBought = pushxItemBuyCache[tid] != null;
       for (const item of fit.items) {
         if (String(item.typeId) === tid) continue;  // hull already counted above
-        const p = haulxItemPriceCache[String(item.typeId)];
-        const b = haulxItemBuyCache[String(item.typeId)];
+        const p = pushxItemPriceCache[String(item.typeId)];
+        const b = pushxItemBuyCache[String(item.typeId)];
         if (p?.min_sell == null) { allPriced = false; }
         else sumIsk += p.min_sell * item.qty;
         if (p?.vol == null) { allVolumed = false; }
@@ -5984,16 +6149,16 @@ async function haulxFetchPrices(quotas) {
       if (allVolumed) fitVolume = sumVol;
       if (allBought) fitBuyTotal = sumBuy;
     }
-    haulxPriceCache[tid].fit_price = fitTotal;
-    haulxPriceCache[tid].fit_volume = fitVolume;
-    haulxPriceCache[tid].fit_buy_price = fitBuyTotal;
+    pushxPriceCache[tid].fit_price = fitTotal;
+    pushxPriceCache[tid].fit_volume = fitVolume;
+    pushxPriceCache[tid].fit_buy_price = fitBuyTotal;
 
     // Update rendered row if visible
-    const row = $(`#haulx-row-${tid}`);
+    const row = $(`#pushx-row-${tid}`);
     if (row) {
-      const volEl = row.querySelector('.haulx-row-vol');
-      const priceEl = row.querySelector('.haulx-row-price');
-      const displayVol = fitVolume != null ? fitVolume : haulxPriceCache[tid].packaged_volume;
+      const volEl = row.querySelector('.pushx-row-vol');
+      const priceEl = row.querySelector('.pushx-row-price');
+      const displayVol = fitVolume != null ? fitVolume : pushxPriceCache[tid].packaged_volume;
       if (volEl) {
         volEl.textContent = displayVol != null ? `${(displayVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³` : '—';
         if (displayVol != null) volEl.title = `${displayVol.toLocaleString()} m³`;
@@ -6006,21 +6171,21 @@ async function haulxFetchPrices(quotas) {
           : '—';
         priceEl.title = fitTotal != null ? `${fitTotal.toLocaleString()} ISK` : '';
       }
-      row.querySelector('.haulx-loading')?.remove();
+      row.querySelector('.pushx-loading')?.remove();
 
       // A row is only addable once we know both the full fit volume and the full
       // fit price — anything else would let a haul be planned against costs we
       // can't stand behind. Blocked rows are flagged and locked to 0.
-      haulxSetRowBlocked(row, tid, haulxBlockReason(haulxPriceCache[tid], !!fit));
+      pushxSetRowBlocked(row, tid, pushxBlockReason(pushxPriceCache[tid], !!fit));
     }
   }
-  haulxUpdateTotals();
+  pushxUpdateTotals();
 
   // Unlock "Fill by priority" only once every row it could add has a full fit
   // volume and price. Rows missing either are blocked above, so they neither
   // hold the button hostage nor end up in the haul.
-  const fillable = (quotas || []).filter((q) => haulxOverQuota || (Number(q.missing) || 0) > 0);
-  const usable = fillable.filter((q) => haulxIsAddable(haulxPriceCache[String(q.ship_type_id)]));
+  const fillable = (quotas || []).filter((q) => pushxOverQuota || (Number(q.missing) || 0) > 0);
+  const usable = fillable.filter((q) => pushxIsAddable(pushxPriceCache[String(q.ship_type_id)]));
   const blockedCount = fillable.length - usable.length;
   if (fillBtn) {
     fillBtn.disabled = usable.length === 0;
@@ -6028,7 +6193,7 @@ async function haulxFetchPrices(quotas) {
       ? (fillable.length === 0 ? 'Nothing under quota to fill' : 'No under-quota ship has a full fit volume and price')
       : '';
   }
-  const note = $('#haulx-fill-note');
+  const note = $('#pushx-fill-note');
   if (note) {
     note.textContent = blockedCount > 0 ? `${blockedCount} unavailable` : '';
     note.title = blockedCount > 0
@@ -6036,32 +6201,32 @@ async function haulxFetchPrices(quotas) {
       : '';
   }
 
-  haulxUpdateRetryButton();
+  pushxUpdateRetryButton();
 }
 
 // Re-run only the lookups that errored. Eviction is the whole trick:
-// haulxFetchPrices skips any type id already present in a cache, so deleting
-// the failed entries is what makes them fetch again. The haulxPriceCache entry
+// pushxFetchPrices skips any type id already present in a cache, so deleting
+// the failed entries is what makes them fetch again. The pushxPriceCache entry
 // goes too — its packaged_volume is written only when the entry is first
 // created, so a stale one would survive a successful refetch.
-async function haulxRetryFailed(quotas) {
-  haulxUpdateRetryButton(true);
-  for (const tid of haulxFailedPrice) {
-    delete haulxItemPriceCache[tid];
-    delete haulxPriceCache[tid];
+async function pushxRetryFailed(quotas) {
+  pushxUpdateRetryButton(true);
+  for (const tid of pushxFailedPrice) {
+    delete pushxItemPriceCache[tid];
+    delete pushxPriceCache[tid];
   }
-  for (const tid of haulxFailedBuy) delete haulxItemBuyCache[tid];
-  haulxFailedPrice.clear();
-  haulxFailedBuy.clear();
-  await haulxFetchPrices(quotas);
+  for (const tid of pushxFailedBuy) delete pushxItemBuyCache[tid];
+  pushxFailedPrice.clear();
+  pushxFailedBuy.clear();
+  await pushxFetchPrices(quotas);
 }
 
-function renderHaulxTab() {
-  const root = $('#haulx-root');
+function renderPushxTab() {
+  const root = $('#pushx-root');
   if (!root) return;
 
   const hasContracts = !!lastContractsScan;
-  const hasReadiness = haulxReadinessScanDone;
+  const hasReadiness = pushxReadinessScanDone;
 
   if (!hasContracts || !hasReadiness) {
     const items = [
@@ -6069,7 +6234,7 @@ function renderHaulxTab() {
       !hasReadiness && '<li>Run a <strong>Market Readiness</strong> scan (Market Readiness tab → Scan doctrines &amp; fits)</li>',
     ].filter(Boolean).join('');
     root.innerHTML = `
-      <h2>HaulX</h2>
+      <h2>PushX</h2>
       <p class="muted">Before you can plan a haul, complete the following:</p>
       <ul style="color:#e0e8f0;line-height:2">${items}</ul>`;
     return;
@@ -6078,28 +6243,28 @@ function renderHaulxTab() {
   const quotas = lastContractsScan.quotas || [];
 
   root.innerHTML = `
-    <h2>HaulX</h2>
+    <h2>PushX</h2>
     <p class="muted">Select how many of each under-quota ship to include in a PushX haul from Jita to UEXO. The volume and collateral totals update as you add ships — keep volume under <strong>360 km³</strong> and collateral (Jita sell) under <strong>5B ISK</strong>. Ships already at quota are shown greyed-out but can still be included. Rows use the same sort order as the <strong>Contracts</strong> page — change the sort there and re-open this tab to reorder them. When you're ready, click <strong>Shopping cart</strong> to copy the full haul list to your clipboard.</p>
-    <div id="haulx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
-      <span style="font-weight:600">HaulX</span>
-      <span style="font-size:0.85rem">Volume: <strong id="haulx-vol" class="haulx-metric">— / 360.0 km³</strong></span>
-      <span style="font-size:0.85rem">Collateral: <strong id="haulx-isk" class="haulx-metric">—B / 5.00B ISK</strong></span>
+    <div id="pushx-header" style="display:flex;align-items:center;gap:1.5rem;padding:0.75rem 1rem;background:#1e2533;border-bottom:1px solid #2e3a4e;position:sticky;top:var(--app-header-h,0px);z-index:10">
+      <span style="font-weight:600">PushX</span>
+      <span style="font-size:0.85rem">Volume: <strong id="pushx-vol" class="pushx-metric">— / 360.0 km³</strong></span>
+      <span style="font-size:0.85rem">Collateral: <strong id="pushx-isk" class="pushx-metric">—B / 5.00B ISK</strong></span>
       <span style="font-size:0.85rem">Shipping: <strong>400M ISK</strong></span>
-      <span style="font-size:0.85rem">Profit: <strong id="haulx-profit" style="color:#8899aa">…</strong></span>
-      <button id="haulx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
-      <button id="haulx-fill-priority" class="link-btn" disabled>Fill by priority</button>
-      <span id="haulx-fill-note" class="muted" style="font-size:0.78rem;color:#ef4444"></span>
-      <button id="haulx-retry" class="link-btn" hidden>↻ Retry</button>
-      <button id="haulx-clear" class="link-btn" disabled>Clear</button>
+      <span style="font-size:0.85rem">Profit: <strong id="pushx-profit" style="color:#8899aa">…</strong></span>
+      <button id="pushx-copy" class="link-btn" disabled style="margin-left:auto">Shopping cart</button>
+      <button id="pushx-fill-priority" class="link-btn" disabled>Fill by priority</button>
+      <span id="pushx-fill-note" class="muted" style="font-size:0.78rem;color:#ef4444"></span>
+      <button id="pushx-retry" class="link-btn" hidden>↻ Retry</button>
+      <button id="pushx-clear" class="link-btn" disabled>Clear</button>
       <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer">
-        <input type="checkbox" id="haulx-over-quota" ${haulxOverQuota ? 'checked' : ''}> Allow over quota
+        <input type="checkbox" id="pushx-over-quota" ${pushxOverQuota ? 'checked' : ''}> Allow over quota
       </label>
     </div>
-    <div class="progress-area" id="haulx-price-progress" style="padding:0.5rem 1rem" hidden>
+    <div class="progress-area" id="pushx-price-progress" style="padding:0.5rem 1rem" hidden>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="progress-step muted">looking up volume &amp; price…</div>
     </div>
-    <table id="haulx-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">
+    <table id="pushx-table" style="width:100%;border-collapse:collapse;font-size:0.875rem">
       <thead style="position:sticky;top:calc(var(--app-header-h,0px) + 48px);z-index:9;background:#1e1e1e">
         <tr style="text-align:left;color:#8899aa;border-bottom:1px solid #2e3a4e">
           <th style="padding:0.5rem 1rem">Ship</th>
@@ -6110,10 +6275,10 @@ function renderHaulxTab() {
           <th style="padding:0.5rem 1rem">Price (Jita)</th>
         </tr>
       </thead>
-      <tbody id="haulx-tbody"></tbody>
+      <tbody id="pushx-tbody"></tbody>
     </table>`;
 
-  const tbody = $('#haulx-tbody');
+  const tbody = $('#pushx-tbody');
 
   // Respect current contracts sort order if bars are rendered
   const contractsRoot = $('#contracts-quota-dashboard');
@@ -6136,9 +6301,9 @@ function renderHaulxTab() {
     const tid = String(q.ship_type_id);
     const missing = Number(q.missing) || 0;
     const atQuota = missing <= 0;
-    const price = haulxPriceCache[tid];
-    const qty = haulxQty[tid] || 0;
-    const rowMax = haulxOverQuota ? 999 : (atQuota ? 10 : missing);
+    const price = pushxPriceCache[tid];
+    const qty = pushxQty[tid] || 0;
+    const rowMax = pushxOverQuota ? 999 : (atQuota ? 10 : missing);
     const onHand = onHandByTypeId[tid] || 0;
     const hasFit = (fitsByHull[tid]?.length || 0) > 0;
 
@@ -6147,54 +6312,54 @@ function renderHaulxTab() {
     const priceTitle = price?.fit_price != null ? `title="${price.fit_price.toLocaleString()} ISK"` : '';
     const volText = rawVol != null
       ? `${(rawVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km³`
-      : '<span class="haulx-loading muted">…</span>';
+      : '<span class="pushx-loading muted">…</span>';
     const priceText = price?.fit_price != null
       ? `${(price.fit_price / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`
-      : '<span class="haulx-loading muted">…</span>';
+      : '<span class="pushx-loading muted">…</span>';
 
     const tr = document.createElement('tr');
-    tr.id = `haulx-row-${tid}`;
+    tr.id = `pushx-row-${tid}`;
     tr.style.cssText = atQuota ? 'opacity:0.45;border-bottom:1px solid #1e2533' : 'border-bottom:1px solid #1e2533';
     tr.innerHTML = `
-      <td class="haulx-ship-cell" style="padding:0.5rem 1rem${hasFit ? '' : ';color:#ef4444'}">
+      <td class="pushx-ship-cell" style="padding:0.5rem 1rem${hasFit ? '' : ';color:#ef4444'}">
         <strong>${escapeHtml(q.ship_name || q.name || `type ${tid}`)}</strong>
         ${q.name && q.ship_name && q.name !== q.ship_name ? `<span style="font-size:0.8rem;margin-left:0.4rem;opacity:0.7">${escapeHtml(q.name)}</span>` : ''}
-        <span class="haulx-row-flag" style="font-size:0.75rem;margin-left:0.4rem;opacity:0.8">${hasFit ? '' : '(no fit in Auth)'}</span>
+        <span class="pushx-row-flag" style="font-size:0.75rem;margin-left:0.4rem;opacity:0.8">${hasFit ? '' : '(no fit in Auth)'}</span>
       </td>
       <td style="padding:0.5rem 0.5rem;color:${missing > 0 ? '#e8a838' : '#4a8'}">${missing > 0 ? missing : '✓'}</td>
       <td style="padding:0.5rem 0.5rem;color:${onHand > 0 ? '#4a8' : '#8899aa'}">${onHand > 0 ? onHand : '—'}</td>
       <td style="padding:0.5rem 0.5rem">
-        <input type="number" class="haulx-qty" data-tid="${tid}" value="${qty}" min="0" max="${rowMax}" ${hasFit ? '' : 'disabled'} style="width:4rem;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:3px;padding:2px 6px;text-align:center">
-        <button class="haulx-max link-btn" data-tid="${tid}" data-max="${rowMax}" ${hasFit ? '' : 'disabled'} style="margin-left:0.3rem;font-size:0.75rem">max</button>
+        <input type="number" class="pushx-qty" data-tid="${tid}" value="${qty}" min="0" max="${rowMax}" ${hasFit ? '' : 'disabled'} style="width:4rem;background:#151c28;border:1px solid #2e3a4e;color:#e0e8f0;border-radius:3px;padding:2px 6px;text-align:center">
+        <button class="pushx-max link-btn" data-tid="${tid}" data-max="${rowMax}" ${hasFit ? '' : 'disabled'} style="margin-left:0.3rem;font-size:0.75rem">max</button>
       </td>
-      <td class="haulx-row-vol" style="padding:0.5rem 0.5rem;color:#8899aa" ${volTitle}>${volText}</td>
-      <td class="haulx-row-price" style="padding:0.5rem 1rem;color:#8899aa" ${priceTitle}>${priceText}</td>`;
+      <td class="pushx-row-vol" style="padding:0.5rem 0.5rem;color:#8899aa" ${volTitle}>${volText}</td>
+      <td class="pushx-row-price" style="padding:0.5rem 1rem;color:#8899aa" ${priceTitle}>${priceText}</td>`;
     tbody.appendChild(tr);
   }
 
   tbody.addEventListener('input', (e) => {
-    const input = e.target.closest('.haulx-qty');
+    const input = e.target.closest('.pushx-qty');
     if (!input) return;
-    haulxQty[input.dataset.tid] = Math.max(0, parseInt(input.value) || 0);
-    haulxUpdateTotals();
+    pushxQty[input.dataset.tid] = Math.max(0, parseInt(input.value) || 0);
+    pushxUpdateTotals();
   });
 
   tbody.addEventListener('click', (e) => {
-    const btn = e.target.closest('.haulx-max');
+    const btn = e.target.closest('.pushx-max');
     if (!btn) return;
     const tid = btn.dataset.tid;
     const max = parseInt(btn.dataset.max) || 0;
-    const input = tbody.querySelector(`.haulx-qty[data-tid="${tid}"]`);
+    const input = tbody.querySelector(`.pushx-qty[data-tid="${tid}"]`);
     if (input) input.value = max;
-    haulxQty[tid] = max;
-    haulxUpdateTotals();
+    pushxQty[tid] = max;
+    pushxUpdateTotals();
   });
 
-  $('#haulx-copy')?.addEventListener('click', async () => {
+  $('#pushx-copy')?.addEventListener('click', async () => {
     // Build selected list: [{q, qty}]
     const selected = [];
     for (const tr of tbody.querySelectorAll('tr')) {
-      const input = tr.querySelector('.haulx-qty');
+      const input = tr.querySelector('.pushx-qty');
       if (!input) continue;
       const qty = parseInt(input.value) || 0;
       if (!qty) continue;
@@ -6245,7 +6410,7 @@ function renderHaulxTab() {
     } catch {
       alert(text);
     }
-    downloadBlob('haulx-shopping-list.txt', 'text/plain', text);
+    downloadBlob('pushx-shopping-list.txt', 'text/plain', text);
 
     // Game clients cap multibuy-style pastes at 100 lines, so also split into
     // per-100-item files when the list runs longer.
@@ -6255,38 +6420,38 @@ function renderHaulxTab() {
       const chunks = [];
       for (let i = 0; i < allLines.length; i += CHUNK_SIZE) chunks.push(allLines.slice(i, i + CHUNK_SIZE));
       chunks.forEach((chunk, idx) => {
-        setTimeout(() => downloadBlob(`haulx-shopping-list-part${idx + 1}.txt`, 'text/plain', chunk.join('\n')), idx * 150);
+        setTimeout(() => downloadBlob(`pushx-shopping-list-part${idx + 1}.txt`, 'text/plain', chunk.join('\n')), idx * 150);
       });
     }
   });
 
-  $('#haulx-fill-priority')?.addEventListener('click', () => {
+  $('#pushx-fill-priority')?.addEventListener('click', () => {
     // Reset all qtys, then fill by priority order (config order) until a limit is
     // hit. lastContractsScan.quotas is always in priority order. Ships without a
     // full fit volume and price are skipped — the same rows the table locks to 0.
-    haulxQty = haulxFillByPriority(lastContractsScan.quotas, haulxPriceCache, haulxOverQuota);
+    pushxQty = pushxFillByPriority(lastContractsScan.quotas, pushxPriceCache, pushxOverQuota);
     // Sync inputs
-    for (const input of tbody.querySelectorAll('.haulx-qty')) {
-      input.value = haulxQty[input.dataset.tid] || 0;
+    for (const input of tbody.querySelectorAll('.pushx-qty')) {
+      input.value = pushxQty[input.dataset.tid] || 0;
     }
-    haulxUpdateTotals();
+    pushxUpdateTotals();
   });
 
-  $('#haulx-clear')?.addEventListener('click', () => {
-    haulxQty = {};
-    for (const input of tbody.querySelectorAll('.haulx-qty')) input.value = 0;
-    haulxUpdateTotals();
+  $('#pushx-clear')?.addEventListener('click', () => {
+    pushxQty = {};
+    for (const input of tbody.querySelectorAll('.pushx-qty')) input.value = 0;
+    pushxUpdateTotals();
   });
 
-  $('#haulx-retry')?.addEventListener('click', () => haulxRetryFailed(orderedQuotas));
+  $('#pushx-retry')?.addEventListener('click', () => pushxRetryFailed(orderedQuotas));
 
-  $('#haulx-over-quota')?.addEventListener('change', (e) => {
-    haulxOverQuota = e.target.checked;
-    renderHaulxTab();
+  $('#pushx-over-quota')?.addEventListener('change', (e) => {
+    pushxOverQuota = e.target.checked;
+    renderPushxTab();
   });
 
-  haulxFetchPrices(orderedQuotas);
-  haulxUpdateTotals();
+  pushxFetchPrices(orderedQuotas);
+  pushxUpdateTotals();
 }
 
 // ============================================================
