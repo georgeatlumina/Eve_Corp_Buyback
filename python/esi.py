@@ -7,6 +7,15 @@ import requests
 
 ESI_BASE = 'https://esi.evetech.net/latest'
 
+# (connect, read) seconds. requests defaults to *no* timeout, so a connection
+# ESI accepts but never answers blocks the calling thread forever — which is
+# what left the moon/buyback contract scan sitting on "Resolving issuer names…"
+# with no error, no progress and no way out but killing the app. It also made
+# esi_retry's Timeout branch dead code, since the exception could never be
+# raised. The read budget is generous because some bulk endpoints genuinely are
+# slow; the point is that it is finite.
+DEFAULT_TIMEOUT = (10, 60)
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,6 +39,20 @@ def _log_response(resp, *args, **kwargs):
         logger.info('ESI %s %s → %s (%.2fs)', resp.request.method, url, resp.status_code, elapsed)
 
 
+class _TimeoutSession(requests.Session):
+    """A ``Session`` whose every request carries a timeout.
+
+    Setting it here rather than at the call sites means a new ESI helper can't
+    forget one — and there were 55 of them, none with a timeout. An explicit
+    ``timeout=`` from the caller still wins.
+    """
+
+    def request(self, method, url, **kwargs):
+        if kwargs.get('timeout') is None:
+            kwargs['timeout'] = DEFAULT_TIMEOUT
+        return super().request(method, url, **kwargs)
+
+
 class _ThreadLocalSession:
     """A ``requests.Session`` per thread, behind one module-level name.
 
@@ -43,12 +66,17 @@ class _ThreadLocalSession:
     def __init__(self):
         self._local = threading.local()
 
+    @staticmethod
+    def _new_session():
+        session = _TimeoutSession()
+        session.hooks['response'].append(_log_response)
+        return session
+
     @property
     def _thread_session(self):
         session = getattr(self._local, 'session', None)
         if session is None:
-            session = requests.Session()
-            session.hooks['response'].append(_log_response)
+            session = self._new_session()
             self._local.session = session
         return session
 
