@@ -497,9 +497,17 @@ def _pi_scoped_slots():
 
 
 def _load_pi_pins_meta():
+    """Bundled pin metadata. Raises with the path in the message — a missing or
+    truncated data file in a packaged build used to surface as a bare 500, which
+    the colonies tab then rendered as "no character is authorized": a data
+    problem disguised as an auth one, and nothing on screen to correct it."""
     pins_path = os.path.join(os.path.dirname(pi_planner.DATA_PATH), 'pi_pins.json')
-    with open(pins_path, encoding='utf-8') as f:
-        return json.load(f)['pins']
+    try:
+        with open(pins_path, encoding='utf-8') as f:
+            return json.load(f)['pins']
+    except (OSError, ValueError, KeyError) as e:
+        raise HTTPException(500, f'Bundled PI data is unreadable at {pins_path} '
+                                 f'({type(e).__name__}: {e}). Reinstall the app to restore it.')
 
 
 @app.get('/api/pi/colonies')
@@ -512,7 +520,11 @@ def pi_colonies():
     ua = get_user_agent()
     now = datetime.now(timezone.utc)
     cfg = load_config()
-    data = pi_planner.load_pi_data()
+    try:
+        data = pi_planner.load_pi_data()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f'Bundled PI schematic data failed to load '
+                                 f'({type(e).__name__}: {e}). Reinstall the app to restore it.')
     pins_meta = _load_pi_pins_meta()
     sch_to_out = {s['schematic_id']: s['outputs'][0][0] for s in data['schematics']}
 
@@ -1260,6 +1272,208 @@ def smt_watchlist_set(req: SMTWatchlist):
     cfg['smt_watchlist'] = clean
     save_config(cfg)
     return smt_watchlist_get()
+
+
+SMT_ACTIVITY_LAYERS = ('npc', 'ship', 'pod', 'jumps')
+
+# Defaults chosen from what the numbers actually mean in null: ratting runs to
+# the hundreds of NPC kills an hour, while three ship kills in an hour is
+# already a fight worth looking at. One ramp shape, four different scales.
+SMT_ACTIVITY_DEFAULTS = {
+    'npc': {'on': False, 'bands': [{'min': 1, 'colour': '#3f7f5a'}, {'min': 30, 'colour': '#c8b93a'},
+                                   {'min': 120, 'colour': '#e08a2a'}, {'min': 300, 'colour': '#e0432a'}]},
+    'ship': {'on': False, 'bands': [{'min': 1, 'colour': '#c8b93a'}, {'min': 3, 'colour': '#e08a2a'},
+                                    {'min': 10, 'colour': '#e0432a'}, {'min': 25, 'colour': '#ff2d6a'}]},
+    'pod': {'on': False, 'bands': [{'min': 1, 'colour': '#c8b93a'}, {'min': 3, 'colour': '#e08a2a'},
+                                   {'min': 10, 'colour': '#e0432a'}]},
+    'jumps': {'on': False, 'bands': [{'min': 1, 'colour': '#3f6f9f'}, {'min': 60, 'colour': '#4a9fd0'},
+                                     {'min': 250, 'colour': '#7fd4ff'}, {'min': 800, 'colour': '#ffffff'}]},
+}
+
+
+class SMTActivityBand(BaseModel):
+    min: int = 1
+    colour: str = '#c8b93a'
+
+
+class SMTActivityLayer(BaseModel):
+    on: bool = False
+    bands: list[SMTActivityBand] = []
+
+
+class SMTActivity(BaseModel):
+    layers: dict[str, SMTActivityLayer] = {}
+
+
+def _clean_bands(bands, fallback):
+    """Sort bands by threshold and drop duplicates. The renderer takes the last
+    band whose min the value clears, so unordered bands would silently mislabel
+    a system — worse than showing nothing."""
+    clean, seen = [], set()
+    for b in (bands or [])[:8]:
+        d = b.model_dump() if hasattr(b, 'model_dump') else dict(b)
+        try:
+            mn = max(0, min(int(d.get('min', 1)), 1000000))
+        except (TypeError, ValueError):
+            continue
+        if mn in seen:
+            continue
+        seen.add(mn)
+        col = d.get('colour') if _SMT_HEX.match(str(d.get('colour') or '')) else '#c8b93a'
+        clean.append({'min': mn, 'colour': col})
+    clean.sort(key=lambda b: b['min'])
+    return clean or [dict(b) for b in fallback]
+
+
+def _smt_activity():
+    saved = load_config().get('smt_activity')
+    saved_layers = saved.get('layers') if isinstance(saved, dict) else None
+    out = {}
+    for name in SMT_ACTIVITY_LAYERS:
+        default = SMT_ACTIVITY_DEFAULTS[name]
+        got = (saved_layers or {}).get(name) if isinstance(saved_layers, dict) else None
+        if not isinstance(got, dict):
+            out[name] = {'on': default['on'], 'bands': [dict(b) for b in default['bands']]}
+            continue
+        out[name] = {'on': bool(got.get('on', default['on'])),
+                     'bands': _clean_bands(got.get('bands'), default['bands'])}
+    return {'layers': out}
+
+
+@app.get('/api/smt/activity')
+def smt_activity_get():
+    """Thresholds for the ESI activity layers (NPC / ship / pod kills and ship
+    jumps in the last hour), shared by the Intel Map and the overlay so both
+    colour the same numbers the same way.
+
+    These come from /universe/system_kills and /universe/system_jumps, which
+    only ever report the **last hour** and refresh hourly — there is no longer
+    window available from ESI."""
+    return _smt_activity()
+
+
+@app.post('/api/smt/activity')
+def smt_activity_set(req: SMTActivity):
+    """Save the activity-layer thresholds."""
+    incoming = {k: v.model_dump() for k, v in (req.layers or {}).items() if k in SMT_ACTIVITY_LAYERS}
+    cfg = load_config()
+    cfg['smt_activity'] = {'layers': {
+        name: {'on': bool(incoming.get(name, {}).get('on', SMT_ACTIVITY_DEFAULTS[name]['on'])),
+               'bands': _clean_bands(incoming.get(name, {}).get('bands'), SMT_ACTIVITY_DEFAULTS[name]['bands'])}
+        for name in SMT_ACTIVITY_LAYERS}}
+    save_config(cfg)
+    return _smt_activity()
+
+
+# ---- jump range -------------------------------------------------------------
+# Base jump ranges in light years, before skills. Jump Drive Calibration adds
+# 20% of base per level, so level V doubles it — the numbers players quote
+# ("8 ly blops", "10 ly JF") are the level-V figures.
+#
+# CCP has rebalanced these before and will again; they're one table here rather
+# than scattered through the renderer so a patch is a one-line change.
+SMT_JUMP_SHIPS = {
+    'blops':   {'label': 'Black Ops',      'base': 4.0, 'note': 'Bridges and jumps to a cyno'},
+    'jf':      {'label': 'Jump Freighter', 'base': 5.0, 'note': 'Jumps to a cyno'},
+    'rorqual': {'label': 'Rorqual',        'base': 5.0, 'note': 'Jumps to a cyno'},
+    'capital': {'label': 'Carrier / Dread / FAX', 'base': 3.5, 'note': 'Jumps to a cyno'},
+    'titan':   {'label': 'Titan / Super',  'base': 3.0, 'note': 'A titan bridges as far as it jumps'},
+}
+SMT_JUMP_DEFAULT_SHIP = 'blops'
+# A jump drive cannot end in high-sec, so anything at 0.5 or above is out of
+# reach however close it is. Showing it as reachable would be a lie you could
+# undock on.
+SMT_JUMP_MAX_SEC = 0.5
+
+
+def _jump_ly(ship, skill):
+    spec = SMT_JUMP_SHIPS.get(ship) or SMT_JUMP_SHIPS[SMT_JUMP_DEFAULT_SHIP]
+    lvl = max(0, min(int(skill), 5))
+    return round(spec['base'] * (1 + 0.2 * lvl), 3)
+
+
+@app.get('/api/smt/jump-ships')
+def smt_jump_ships():
+    """The jump-capable hull classes the range overlay offers, with the light-year
+    range each reaches at every Jump Drive Calibration level."""
+    return {'ships': [{'key': k, 'label': v['label'], 'base': v['base'], 'note': v['note'],
+                       'ranges': [_jump_ly(k, lvl) for lvl in range(6)]}
+                      for k, v in SMT_JUMP_SHIPS.items()],
+            'default_ship': SMT_JUMP_DEFAULT_SHIP, 'default_skill': 5,
+            'max_sec': SMT_JUMP_MAX_SEC}
+
+
+class SMTJumpPrefs(BaseModel):
+    ship: str = SMT_JUMP_DEFAULT_SHIP
+    skill: int = 5
+
+
+@app.get('/api/smt/jump-prefs')
+def smt_jump_prefs_get():
+    """Which hull and skill level the jump-range overlay is set to. Stored in
+    the sidecar so the Intel Map and the overlay window agree — the overlay's
+    toolbar has no room to pick a hull of its own."""
+    saved = load_config().get('smt_jump')
+    saved = saved if isinstance(saved, dict) else {}
+    ship = saved.get('ship') if saved.get('ship') in SMT_JUMP_SHIPS else SMT_JUMP_DEFAULT_SHIP
+    try:
+        skill = max(0, min(int(saved.get('skill', 5)), 5))
+    except (TypeError, ValueError):
+        skill = 5
+    return {'ship': ship, 'skill': skill, 'ly': _jump_ly(ship, skill)}
+
+
+@app.post('/api/smt/jump-prefs')
+def smt_jump_prefs_set(req: SMTJumpPrefs):
+    """Save the jump-range hull + skill."""
+    cfg = load_config()
+    cfg['smt_jump'] = {
+        'ship': req.ship if req.ship in SMT_JUMP_SHIPS else SMT_JUMP_DEFAULT_SHIP,
+        'skill': max(0, min(int(req.skill), 5)),
+    }
+    save_config(cfg)
+    return smt_jump_prefs_get()
+
+
+@app.get('/api/smt/jump-range')
+def smt_jump_range(system: str = Query(...), ship: str = SMT_JUMP_DEFAULT_SHIP,
+                   skill: int = 5, ly: Optional[float] = None):
+    """Every system a jump drive can reach from ``system``.
+
+    Distance is the real 3-D separation in light years (bundled with the map as
+    ``pos``), not stargate jumps — a jump drive doesn't care about the gate
+    graph. High-sec destinations are excluded whatever the distance, because a
+    jump drive can't end there.
+
+    ``ly`` overrides the ship/skill range if you want an arbitrary radius.
+    """
+    sid = eve_map.resolve_system(system)
+    if not sid:
+        return {'error': f'Unknown system: {system}'}
+    systems = eve_map.load_map()['systems']
+    origin = systems.get(str(sid)) or {}
+    src = origin.get('pos')
+    if not src:
+        return {'error': 'No position data for this system — re-run gen_system_positions.py'}
+    reach = float(ly) if ly and ly > 0 else _jump_ly(ship, skill)
+    ox, oy, oz = src
+    out = {}
+    missing = 0
+    for other_id, rec in systems.items():
+        p = rec.get('pos')
+        if not p:
+            missing += 1
+            continue
+        sec = rec.get('sec')
+        if sec is not None and sec >= SMT_JUMP_MAX_SEC:
+            continue
+        d = ((p[0] - ox) ** 2 + (p[1] - oy) ** 2 + (p[2] - oz) ** 2) ** 0.5
+        if d <= reach:
+            out[other_id] = round(d, 2)
+    return {'origin': {'id': int(sid), 'name': origin.get('name'), 'region': origin.get('region'),
+                       'sec': origin.get('sec')},
+            'ship': ship, 'skill': max(0, min(int(skill), 5)), 'ly': reach,
+            'systems': out, 'count': len(out), 'no_position': missing}
 
 
 @app.get('/api/smt/overlay')
@@ -3276,15 +3490,19 @@ def _validate_stream(cfg, req):
         'buyback': len(buckets['buyback']),
     }
 
-    yield _emit('progress', step='Resolving issuer names…')
-    issuer_ids = (
-        {c.get('issuer_id') for c in buckets['buyback']}
-        | {c.get('issuer_id') for c in buckets['moon']}
-    )
+    issuer_ids = {c.get('issuer_id') for c in buckets['buyback']} | {c.get('issuer_id') for c in buckets['moon']}
+    issuer_ids = {i for i in issuer_ids if i}
+    yield _emit('progress', step=f'Resolving {len(issuer_ids)} issuer name(s)…')
     try:
         names = resolve_names(issuer_ids, get_user_agent())
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        # Names are a nicety — the scan is still correct without them, so this
+        # must never abort it. But swallowing it silently left contracts labelled
+        # with bare numeric ids and nothing on screen explaining why.
         names = {}
+        logging.getLogger(__name__).warning('issuer name resolution failed: %s', e)
+        yield _emit('warning', message=f'Could not resolve issuer names ({redact_secrets(e)}). '
+                                       f'Contracts will show issuer IDs instead.')
 
     yield _emit('start', summary=summary)
 

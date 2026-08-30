@@ -2234,3 +2234,54 @@ body.popout-calc .pib-calc > summary { display: none; }
 .smt-feed-clear .ih-sys { color: #8fd6b0; }
 .ih-ship { color: #f0c86a; font-weight: 600; }
 .ih-pilot { color: #8fc4f0; margin-right: 0.35em; }
+
+/* ---- SMT activity layers ---- */
+/* Several layers can be on at once, so each system carries a tagged number per
+   layer rather than one colour that would mean whichever layer won. */
+.smt-ov-sep { display: inline-block; width: 1px; height: 1.1em; background: #3a3f48; margin: 0 0.25em; vertical-align: middle; }
+.sm-act { font-size: 7px; font-variant-numeric: tabular-nums; pointer-events: none; dominant-baseline: hanging; }
+.sm-act-eg { display: inline-block; min-width: 1.1em; text-align: center; color: #0b0d10; background: #7f8b98;
+  border-radius: 3px; font-weight: 700; font-size: 0.85em; padding: 0 0.2em; }
+.smt-activity-bar { display: flex; flex-direction: column; gap: 0.45em; padding: 0.5em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.smt-activity-bar[hidden] { display: none; }
+.smt-activity-layers { display: flex; flex-direction: column; gap: 0.3em; }
+.smt-act-row { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; background: #1a1d22; border: 1px solid #2b2f36; border-radius: 5px; padding: 0.3em 0.45em; }
+.smt-act-name { min-width: 12em; }
+.smt-act-bands { display: flex; align-items: center; gap: 0.3em; flex-wrap: wrap; }
+.smt-act-band { display: inline-flex; align-items: center; gap: 0.15em; background: #14171b; border: 1px solid #2b2f36; border-radius: 4px; padding: 0.1em 0.25em; }
+.smt-act-band .smt-act-min { width: 4.5em; background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.15em 0.3em; }
+.smt-act-band input[type="color"] { width: 2em; height: 1.5em; padding: 0; background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 4px; cursor: pointer; }
+.smt-act-add { padding: 0.15em 0.5em; }
+
+/* ---- jump-range overlay ---- */
+/* Out-of-range systems fade rather than disappear: seeing what you *can't*
+   reach is half of why you'd turn this on. */
+.sm-jr-out { opacity: 0.13; }
+.sm-jr-in .sm-dot { stroke: #7fd4ff; stroke-width: 1.2; }
+.sm-jr-origin .sm-dot { stroke: #ffd98a; stroke-width: 2.2; }
+.sm-jr-on .sm-e { opacity: 0.25; }
+.smt-jump-bar { display: flex; flex-direction: column; gap: 0.45em; padding: 0.5em 0.6em; background: #16181c; border: 1px solid #2a2a2a; border-radius: 6px; }
+.smt-jump-bar[hidden] { display: none; }
+.smt-jump-row { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; }
+.smt-jump-bar select, .smt-jump-bar input[type="text"] { background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.25em 0.4em; }
+
+/* ---- PI colonies errors ---- */
+/* A failed load is the whole tab failing, so it gets the panel rather than a
+   grey line above it — with the reason and a way to retry. */
+.pic-error { background: #2a1618; border: 1px solid #6b2e30; border-radius: 6px; padding: 0.8em 1em; color: #ffd9d9; }
+.pic-error-msg { margin: 0.5em 0 0.8em; color: #ffb3b3; font-size: 0.9em; line-height: 1.45; word-break: break-word; }
+.pic-error button { background: #3a1c1e; color: #ffd9d9; border: 1px solid #6b2e30; border-radius: 4px; padding: 0.3em 0.9em; cursor: pointer; }
+.pic-error button:hover { background: #4a2426; }
+/* Per-character ESI failures: the tab still works, these did not. */
+.pic-issues { background: #2a2214; border: 1px solid #7a5a20; border-radius: 6px; padding: 0.5em 0.8em; margin-bottom: 0.6em; color: #f0c880; font-size: 0.88em; }
+.pic-issues[hidden] { display: none; }
+.pic-issues ul { margin: 0.35em 0 0; padding-left: 1.2em; }
+.pic-issues li { margin: 0.15em 0; word-break: break-word; }
+
+/* ---- contract-scan warnings ---- */
+/* Non-fatal problems during a scan. Kept out of the status line, which the very
+   next stream event overwrites. */
+.run-warnings { background: #2a2214; border: 1px solid #7a5a20; border-radius: 6px;
+  padding: 0.4em 0.7em; margin: 0.4em 0; color: #f0c880; font-size: 0.85em; line-height: 1.45; }
+.run-warnings[hidden] { display: none; }
+.run-warnings div { margin: 0.1em 0; word-break: break-word; }

@@ -29,8 +29,37 @@
   const isk = (n) => (typeof fmtIsk === 'function' ? fmtIsk(n) : Math.round(n).toLocaleString('en-US'));
   const BADGE = { expired: 'EXPIRED', expiring: '< 24h', ok: 'active', idle: 'idle', unknown: 'unknown' };
 
+  // Every failure mode gets its own message. The old `fetch(...).then(r =>
+  // r.json())` collapsed all of them into whatever JSON.parse happened to say,
+  // so a sidecar that wasn't running, a 500 carrying a perfectly good
+  // explanation, and an HTML error page were all just "fetch error".
+  async function api(path) {
+    const url = `${API}${path}`;
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (e) {
+      // fetch only rejects on network-level failures, never on an HTTP error
+      // status — so reaching here always means nothing answered.
+      throw new Error(`Can't reach the local backend at ${API} — the app's Python sidecar isn't answering. `
+        + `Restart the app; if it persists, check sidecar.log. (${e.message})`);
+    }
+    const raw = await res.text();
+    let data = null;
+    try { data = raw ? JSON.parse(raw) : null; } catch (_) { /* reported below */ }
+    if (!res.ok) {
+      const detail = (data && (data.detail || data.error)) || raw.slice(0, 400) || '(empty response body)';
+      throw new Error(`${path} failed — HTTP ${res.status} ${res.statusText || ''}`.trim() + `: ${detail}`);
+    }
+    if (data === null) {
+      throw new Error(`${path} returned ${raw.length} byte(s) that aren't JSON`
+        + (raw ? `: ${raw.slice(0, 200)}` : ' (empty response)'));
+    }
+    return data;
+  }
+
   async function fetchColonies() {
-    const d = await fetch(`${API}/api/pi/colonies`).then((r) => r.json());
+    const d = await api('/api/pi/colonies');
     if (d.configured === false) { colonies = []; totals = { output_day: 0, contents: 0, priced: false }; return d; }
     colonies = d.colonies || [];
     totals = { output_day: d.total_output_value_per_day || 0, contents: d.total_contents_value || 0, priced: !!d.priced };
@@ -41,7 +70,21 @@
     const status = $('#pic-status');
     status.textContent = 'Loading colonies…';
     let d;
-    try { d = await fetchColonies(); } catch (e) { status.textContent = `Error: ${e.message}`; return; }
+    try {
+      d = await fetchColonies();
+    } catch (e) {
+      // Loud and in the panel, not a small grey line above it — this is the
+      // whole tab failing, and the message now says what to do about it.
+      status.textContent = '';
+      $('#pic-list').innerHTML = `<div class="pic-error"><strong>Couldn't load your colonies.</strong>
+        <div class="pic-error-msg"></div>
+        <button type="button" id="pic-retry">Try again</button></div>`;
+      $('#pic-list .pic-error-msg').textContent = e.message;
+      $('#pic-retry').addEventListener('click', load);
+      console.error('[pi-colonies]', e);
+      if (window.api && window.api.log) window.api.log(`pi-colonies: ${e.message}`);
+      return;
+    }
     if (!d.configured) {
       $('#pic-list').innerHTML = `<div class="pic-empty">No character is authorized for Planetary Interaction yet.<br>
         Log in a PI character under <strong>PI Characters</strong> on the <a href="#" data-tab-link="auth">Auth</a> tab
@@ -51,8 +94,25 @@
     }
     render();
     checkAlerts();
-    const errs = (d.errors || []).length ? ` · ${d.errors.length} issue(s)` : '';
-    status.textContent = colonies.length ? `${colonies.length} colonies${errs}` : '';
+    const errs = d.errors || [];
+    status.textContent = colonies.length ? `${colonies.length} colonies` : '';
+    // These are per-character ESI failures. "3 issue(s)" told you something was
+    // wrong but never which character or why, which is the only useful part.
+    const box = $('#pic-issues');
+    if (box) {
+      box.hidden = !errs.length;
+      box.innerHTML = errs.length
+        ? `<strong>${errs.length} character${errs.length === 1 ? '' : 's'} couldn't be read:</strong><ul></ul>`
+        : '';
+      if (errs.length) {
+        const ul = box.querySelector('ul');
+        for (const msg of errs) {
+          const li = document.createElement('li');
+          li.textContent = msg;              // ESI text — never trusted as HTML
+          ul.appendChild(li);
+        }
+      }
+    }
   }
 
   function render() {
@@ -148,7 +208,12 @@
       await fetchColonies();
       checkAlerts();
       if ($('#tab-pi-colonies')?.classList.contains('active')) render();
-    } catch (_) { /* sidecar not ready / offline — try again next interval */ }
+    } catch (e) {
+      // Quiet by design — this runs on a timer whether or not the tab is open,
+      // and a toast every 60s helps nobody. It still leaves a trail, so a
+      // failure that only happens in the background is diagnosable.
+      console.debug('[pi-colonies] background poll failed:', e.message);
+    }
   }
 
   function initTab() {
@@ -167,11 +232,18 @@
       if (!b) return;
       const orig = b.textContent; b.disabled = true; b.textContent = 'Loading…';
       try {
-        const d = await fetch(`${API}/api/pi/colony?character_id=${b.dataset.cid}&planet_id=${b.dataset.pid}`).then((r) => r.json());
-        if (d.detail || !d.layout) { b.textContent = 'Error'; return; }
+        const d = await api(`/api/pi/colony?character_id=${b.dataset.cid}&planet_id=${b.dataset.pid}`);
+        if (!d.layout) throw new Error(d.detail || d.error || 'the sidecar returned no layout for this colony');
         if (typeof activateTab === 'function') activateTab('pi-builder');
         if (typeof window.piBuilderLoad === 'function') await window.piBuilderLoad(d.layout);
-      } catch (err) { b.textContent = 'Error'; } finally {
+      } catch (err) {
+        // "Error" on a button told you nothing; the reason goes where it can be read.
+        b.textContent = 'Error';
+        b.title = err.message;
+        const st = $('#pic-status');
+        if (st) st.textContent = `Couldn't open that colony: ${err.message}`;
+        console.error('[pi-colonies]', err);
+      } finally {
         b.disabled = false; if (b.textContent === 'Loading…') b.textContent = orig;
       }
     });

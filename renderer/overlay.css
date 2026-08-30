@@ -224,3 +224,13 @@ html, body { height: 100%; }
    otherwise a quiet-looking bar would be hiding a report. */
 .ov-t.hot { color: #ffd98a; border-color: #7a5a20; }
 .ov-star { fill: #ffd98a; text-anchor: middle; pointer-events: none; }
+
+/* ---- ESI activity numbers ---- */
+/* Below the dot: the system label already owns the space above it, and the
+   watch star the upper left. */
+.ov-act { text-anchor: middle; pointer-events: none; font-variant-numeric: tabular-nums; }
+
+/* ---- jump range ---- */
+/* Faded, not hidden — what you can't reach is context worth keeping. */
+.ov-node.jr-out { opacity: 0.16; }
+.ov-node.jr-in .ov-dot { stroke: #7fd4ff; stroke-width: 1.4; }

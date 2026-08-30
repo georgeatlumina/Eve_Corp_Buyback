@@ -14,11 +14,12 @@
     region: null, layout: null, index: null, byName: null, nodeEls: new Map(),
     intel: new Map(), kills: new Map(), feed: [],
     chars: [], fleet: null, fleetMembers: [], bridges: [], thera: [], sov: null, route: null,
-    intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true, sov: false },
-    follow: false, loaded: false, poll: null, tick: null, charPoll: null,
+    intelSince: 0, killSince: 0, ov: { intel: true, kills: true, chars: true, sov: false, jumprange: false },
+    follow: true, loaded: false, poll: null, tick: null, charPoll: null,
     alertJumps: new Map(), alertKey: null, alertsOwned: false, loopsOn: false,
     focusId: null, centred: false,
     watch: [], killLog: [], popId: null, needFit: false,
+    jump: { ship: 'blops', skill: 5, data: null }, jumpShips: null,
     view: { s: 1, tx: 0, ty: 0 },
   };
   const $id = (x) => document.getElementById(x);
@@ -100,6 +101,8 @@
       renderBridges();
       renderTheraOnMap();
       applySov();
+      applyActivity();
+      applyJumpRange();
       renderRoute();
       setStatus('');
       if (focusId) centerOn(focusId);
@@ -178,7 +181,7 @@
         if (st.feed.length > 200) st.feed.length = 200;
         if (!st.alertsOwned) SmtAlerts.intel(d.events, st.alertJumps);
         if (d.events.length) { renderFeed(); if (st.follow) followLatest(); }
-        setStatus(d.watching ? '' : (d.log_dir_ok ? 'No intel channels selected — open ⚙ Logs.' : 'Set your EVE chat-logs folder in ⚙ Logs to see intel.'));
+        setStatus(d.watching ? '' : (d.log_dir_ok ? 'No intel channels selected — open ⚙ Select Intel Channels.' : 'Set your EVE chat-logs folder in ⚙ Select Intel Channels to see intel.'));
       }
       if (st.ov.kills) {
         const d = await j(`/api/smt/kills?since=${st.killSince}`);
@@ -311,7 +314,7 @@
     const list = $id('smt-feed-list'); const cnt = $id('smt-feed-count');
     if (!list) return;
     if (cnt) cnt.textContent = st.feed.length ? `(${st.feed.length})` : '';
-    if (!st.feed.length) { list.innerHTML = '<p class="muted small">No intel yet. Configure your chat-logs folder and channels in ⚙ Logs.</p>'; return; }
+    if (!st.feed.length) { list.innerHTML = '<p class="muted small">No intel yet. Configure your chat-logs folder and channels in ⚙ Select Intel Channels.</p>'; return; }
     list.innerHTML = st.feed.slice(0, 120).map((e) => {
       const t = new Date(e.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       // System names and ship names are picked out inside the line itself, so
@@ -670,6 +673,188 @@
     });
   }
 
+  // ---- jump range ----
+  // Which systems a jump drive can actually reach from one origin. Distance is
+  // real 3-D separation in light years, not stargate jumps, so this cuts across
+  // the gate graph the rest of the map is drawn from — a system two constellations
+  // away by gate can be next door to a jump drive.
+  async function loadJumpShips() {
+    if (st.jumpShips) return;
+    try {
+      const d = await j('/api/smt/jump-ships');
+      st.jumpShips = d.ships || [];
+      const prefs = await j('/api/smt/jump-prefs');
+      st.jump.ship = prefs.ship; st.jump.skill = prefs.skill;
+    } catch (_) { return; }
+    const ship = $id('smt-jump-ship'), skill = $id('smt-jump-skill');
+    if (ship) ship.innerHTML = st.jumpShips.map((s) => `<option value="${esc(s.key)}"${s.key === st.jump.ship ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+    if (skill) skill.innerHTML = [0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}"${n === st.jump.skill ? ' selected' : ''}>${n === 5 ? 'V (max)' : ['0', 'I', 'II', 'III', 'IV'][n]}</option>`).join('');
+  }
+  const jumpOriginName = () => {
+    const typed = ($id('smt-jump-origin')?.value || '').trim();
+    if (typed) return typed;
+    const c = st.chars.find((x) => String(x.character_id) === String(st.focusId)) || st.chars.find((x) => x.system_id);
+    return (c && c.system_name) || '';
+  };
+  async function refreshJumpRange() {
+    const info = $id('smt-jump-info');
+    if (!st.ov.jumprange) { st.jump.data = null; applyJumpRange(); return; }
+    const from = jumpOriginName();
+    if (!from) {
+      st.jump.data = null; applyJumpRange();
+      if (info) info.textContent = 'Pick a system to measure from.';
+      return;
+    }
+    if (info) info.textContent = 'Measuring…';
+    try {
+      const d = await j(`/api/smt/jump-range?system=${encodeURIComponent(from)}&ship=${encodeURIComponent(st.jump.ship)}&skill=${st.jump.skill}`);
+      if (d.error) { st.jump.data = null; if (info) info.textContent = d.error; applyJumpRange(); return; }
+      st.jump.data = d;
+      if (info) info.textContent = `${d.ly} ly from ${d.origin.name} — ${d.count} system${d.count === 1 ? '' : 's'} in range`;
+    } catch (e) {
+      st.jump.data = null;
+      if (info) info.textContent = `Failed: ${e.message || e}`;
+    }
+    applyJumpRange();
+  }
+  // Fade rather than hide: an out-of-range system still has to be readable as
+  // context, otherwise you can't see what you're *not* reaching.
+  function applyJumpRange() {
+    const on = !!(st.ov.jumprange && st.jump.data);
+    const inRange = on ? st.jump.data.systems : null;
+    st.nodeEls.forEach((el, id) => {
+      el.classList.toggle('sm-jr-out', on && !(id in inRange));
+      el.classList.toggle('sm-jr-in', on && (id in inRange));
+      el.classList.toggle('sm-jr-origin', on && String(st.jump.data.origin.id) === id);
+    });
+    const root = $id('smt-root');
+    if (root) root.classList.toggle('sm-jr-on', on);
+  }
+  async function saveJumpPrefs() {
+    try {
+      await j('/api/smt/jump-prefs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ship: st.jump.ship, skill: st.jump.skill }),
+      });
+      if (window.api && window.api.jumpPrefsChanged) window.api.jumpPrefsChanged();
+    } catch (_) { /* the overlay will pick it up on its next poll */ }
+  }
+
+  // ---- ESI activity layers ----
+  // NPC / ship / pod kills and ship jumps, last hour, from /api/map/live. Any
+  // combination can be on at once, so each draws its own tagged number beside
+  // the system rather than competing for the dot colour the way Sov does.
+  async function loadActivityCfg() {
+    try { SmtActivity.setConfig(await j('/api/smt/activity')); } catch (_) { /* defaults stand */ }
+    syncActivityToggles();
+    renderActivityPanel();
+  }
+  async function pollLive(force) {
+    if (!force && !SmtActivity.wanted()) return;
+    try {
+      SmtActivity.setLive(await j('/api/map/live'));
+      applyActivity();
+    } catch (_) { /* transient — keep the numbers we have */ }
+  }
+  // The toolbar buttons and the panel checkboxes are two views of one setting.
+  function syncActivityToggles() {
+    document.querySelectorAll('.smt-ov-act').forEach((b) => {
+      b.classList.toggle('on', !!SmtActivity.layer(b.dataset.ov).on);
+    });
+  }
+  // Saves are serialised and each builds its payload when it runs. Toggling
+  // two layers quickly would otherwise have the first POST's response — which
+  // predates the second toggle — land last and switch it back off.
+  let actQ = Promise.resolve();
+  function queueActivity(fn) {
+    actQ = actQ.then(() => saveActivity(fn())).catch(() => {});
+    return actQ;
+  }
+  function setActivityLayer(name, on) {
+    const snapshot = () => Object.fromEntries(SmtActivity.ORDER.map((k) => {
+      const l = SmtActivity.layer(k);
+      return [k, { on: k === name ? !!on : !!l.on, bands: (l.bands || []).map((b) => ({ ...b })) }];
+    }));
+    SmtActivity.setConfig({ layers: snapshot() });   // optimistic: the map reacts now
+    syncActivityToggles();
+    applyActivity();
+    if (SmtActivity.wanted() && !SmtActivity.live()) pollLive(true);
+    return queueActivity(snapshot);
+  }
+  async function saveActivity(layers) {
+    const el = $id('smt-activity-status');
+    try {
+      SmtActivity.setConfig(await j('/api/smt/activity', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layers }),
+      }));
+      if (el) el.textContent = '';
+      if (window.api && window.api.activityChanged) window.api.activityChanged();
+    } catch (e) { if (el) el.textContent = `Failed: ${e.message || e}`; }
+    syncActivityToggles();
+    renderActivityPanel();
+    applyActivity();
+  }
+
+  // One <text> per system holding a coloured tspan per enabled layer. Rebuilt
+  // wholesale rather than diffed — it only changes when a poll lands or a
+  // toggle flips, and the node count is a region's worth, not the cluster's.
+  function applyActivity() {
+    const root = $id('smt-root'); if (!root) return;
+    root.querySelectorAll('.sm-actlayer').forEach((e) => e.remove());
+    if (!SmtActivity.wanted() || !st.layout || !SmtActivity.live()) return;
+    const layer = document.createElementNS(SVGNS, 'g');
+    layer.setAttribute('class', 'sm-actlayer');
+    for (const sys of st.layout.systems) {
+      const cells = SmtActivity.cellsFor(sys.id);
+      if (!cells.length) continue;
+      const t = document.createElementNS(SVGNS, 'text');
+      t.setAttribute('class', 'sm-act');
+      t.setAttribute('x', sys.x + 8);
+      t.setAttribute('y', sys.y + 12);
+      for (const c of cells) {
+        const sp = document.createElementNS(SVGNS, 'tspan');
+        sp.setAttribute('fill', c.colour);
+        sp.textContent = `${c.tag}${c.value} `;
+        t.appendChild(sp);
+      }
+      layer.appendChild(t);
+    }
+    root.appendChild(layer);
+  }
+
+  function renderActivityPanel() {
+    const box = $id('smt-activity-layers'); if (!box) return;
+    box.innerHTML = SmtActivity.ORDER.map((name) => {
+      const l = SmtActivity.layer(name);
+      const bands = (l.bands || []).map((b, i) => `<span class="smt-act-band" data-layer="${name}" data-i="${i}">
+        <input type="number" class="smt-act-min" min="0" step="1" value="${b.min}" title="Show this colour from this many and up" />
+        <input type="color" class="smt-act-col" value="${esc(b.colour)}" />
+        <button class="smt-al-del smt-act-del" type="button" title="Remove this band">✕</button></span>`).join('');
+      return `<div class="smt-act-row" data-layer="${name}">
+        <label class="smt-al-t smt-act-name" title="${esc(SmtActivity.HINT[name])}">
+          <input type="checkbox" class="smt-act-on"${l.on ? ' checked' : ''} />
+          <span class="sm-act-eg">${SmtActivity.TAG[name]}</span> ${esc(SmtActivity.LABEL[name])}</label>
+        <span class="smt-act-bands">${bands}</span>
+        <button class="secondary smt-act-add" type="button" data-layer="${name}" title="Add a threshold">+ band</button>
+      </div>`;
+    }).join('');
+  }
+  function readActivity() {
+    const layers = {};
+    for (const name of SmtActivity.ORDER) {
+      const row = document.querySelector(`.smt-act-row[data-layer="${name}"]`);
+      if (!row) { const l = SmtActivity.layer(name); layers[name] = { on: !!l.on, bands: (l.bands || []).map((b) => ({ ...b })) }; continue; }
+      layers[name] = {
+        on: row.querySelector('.smt-act-on').checked,
+        bands: [...row.querySelectorAll('.smt-act-band')].map((b) => ({
+          min: Number(b.querySelector('.smt-act-min').value) || 0,
+          colour: b.querySelector('.smt-act-col').value,
+        })),
+      };
+    }
+    return layers;
+  }
+
   // ---- watchlist ----
   // Systems you always want to hear about, whatever the distance. The distance
   // tiers only reach as far as their furthest `max`; a watch is checked before
@@ -872,6 +1057,7 @@
       <div class="sp-row">${ks.length ? `${ks.length} in the last hour · ${esc(iskShort(isk))}` : 'None in the last hour.'}</div>
       <div class="sp-acts">
         <button type="button" data-pop="watch"${watched ? ' class="on"' : ''}>${watched ? '★ Watching' : '★ Watch'}</button>
+        <button type="button" data-pop="jump">⤭ Jump range</button>
         <button type="button" data-pop="route-from">Route from</button>
         <button type="button" data-pop="route-to">Route to</button>
         <button type="button" data-pop="dotlan">Dotlan</button>
@@ -901,11 +1087,15 @@
   // ---- wiring ----
   function wire() {
     $id('smt-region')?.addEventListener('change', (e) => { st.centred = true; showRegion(e.target.value); });
-    document.querySelectorAll('.smt-ov').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.smt-ov-act').forEach((b) => b.addEventListener('click', () => {
+      setActivityLayer(b.dataset.ov, !b.classList.contains('on'));
+    }));
+    document.querySelectorAll('.smt-ov:not(.smt-ov-act)').forEach((b) => b.addEventListener('click', () => {
       b.classList.toggle('on'); st.ov[b.dataset.ov] = b.classList.contains('on');
       applyLayers();
       if (b.dataset.ov === 'chars') { if (st.ov.chars) pollChars(); else { renderCharChips(); renderCharMarkers(); } }
       if (b.dataset.ov === 'sov') { if (st.ov.sov && !st.sov) loadSov(); else applySov(); }
+      if (b.dataset.ov === 'jumprange') { loadJumpShips().then(refreshJumpRange); }
       saveView({ ov: { ...st.ov } });
     }));
     $id('smt-chars')?.addEventListener('click', (e) => {
@@ -947,6 +1137,40 @@
     });
     panel('smt-alerts-btn', 'smt-alerts-bar', loadAlerts);
     panel('smt-watch-btn', 'smt-watch-bar', loadWatch);
+    panel('smt-jump-btn', 'smt-jump-bar', () => loadJumpShips().then(refreshJumpRange));
+    $id('smt-jump-ship')?.addEventListener('change', (e) => { st.jump.ship = e.target.value; saveJumpPrefs(); refreshJumpRange(); });
+    $id('smt-jump-skill')?.addEventListener('change', (e) => { st.jump.skill = Number(e.target.value); saveJumpPrefs(); refreshJumpRange(); });
+    $id('smt-jump-origin')?.addEventListener('change', refreshJumpRange);
+    $id('smt-jump-origin')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') refreshJumpRange(); });
+    $id('smt-jump-here')?.addEventListener('click', () => { const o = $id('smt-jump-origin'); if (o) o.value = ''; refreshJumpRange(); });
+    panel('smt-activity-btn', 'smt-activity-bar', loadActivityCfg);
+    $id('smt-activity-bar')?.addEventListener('change', (e) => { if (e.target.closest('input')) queueActivity(readActivity); });
+    $id('smt-activity-bar')?.addEventListener('click', (e) => {
+      const add = e.target.closest('.smt-act-add');
+      if (add) {
+        const layers = readActivity();
+        const bands = layers[add.dataset.layer].bands;
+        const last = bands[bands.length - 1];
+        bands.push({ min: last ? last.min * 2 || 1 : 1, colour: last ? last.colour : '#c8b93a' });
+        queueActivity(() => layers);
+        return;
+      }
+      const del = e.target.closest('.smt-act-del');
+      if (del) {
+        const band = del.closest('.smt-act-band');
+        const layers = readActivity();
+        layers[band.dataset.layer].bands.splice(Number(band.dataset.i), 1);
+        queueActivity(() => layers);
+      }
+    });
+    $id('smt-act-reset')?.addEventListener('click', async () => {
+      const el = $id('smt-activity-status'); if (el) el.textContent = 'Resetting…';
+      // An empty layer set makes the sidecar fall back to its own defaults,
+      // so the defaults live in one place rather than being mirrored here.
+      await queueActivity(() => Object.fromEntries(
+        SmtActivity.ORDER.map((k) => [k, { on: SmtActivity.layer(k).on, bands: [] }])));
+      if (el) el.textContent = '';
+    });
     $id('smt-alerts-bar')?.addEventListener('change', (e) => { if (e.target.closest('input, select')) saveAlerts(); });
     $id('smt-alerts-bar')?.addEventListener('click', (e) => {
       const t = e.target.closest('.smt-al-test'); if (t) { SmtAlerts.test(t.dataset.test); return; }
@@ -989,6 +1213,16 @@
       const id = st.popId, sys = popSys(id), act = b.dataset.pop;
       if (act === 'close') { hidePop(); return; }
       if (act === 'watch') { toggleWatch(id); return; }
+      if (act === 'jump') {
+        const bar = $id('smt-jump-bar');
+        if (bar && bar.hidden) { bar.hidden = false; savePanels(); }
+        const o = $id('smt-jump-origin'); if (o) o.value = sys.name || '';
+        const btn = document.querySelector('.smt-ov[data-ov="jumprange"]');
+        if (btn && !btn.classList.contains('on')) { btn.classList.add('on'); st.ov.jumprange = true; saveView({ ov: { ...st.ov } }); }
+        hidePop();
+        loadJumpShips().then(refreshJumpRange);
+        return;
+      }
       if (act === 'route-from' || act === 'route-to') {
         const bar = $id('smt-route-bar');
         if (bar && bar.hidden) { bar.hidden = false; savePanels(); }
@@ -1046,6 +1280,7 @@
     st.charPoll = setInterval(() => { if (pollActive()) pollChars(); }, 8000);
     st.theraPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadThera(); }, 120000);
     st.sovPoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) loadSov(); }, 180000);
+    st.livePoll = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) pollLive(); }, 60000);
     st.tick = setInterval(() => { const p = $id('tab-smt-intel'); if (p && p.offsetParent !== null) { applyLayers(); tickSov(); renderWatchStrip(); } }, 1000);
   }
 
@@ -1085,6 +1320,7 @@
         })
         .catch((e) => setStatus(`Failed to load map: ${e.message || e}`, true));
       loadConfig(); loadBridges(); loadThera(); loadSov(); loadAlerts(); loadWatch();
+      loadActivityCfg().then(() => pollLive());
       startLoops();
     } else if (st.layout) {
       // Coming back to the tab keeps where you were, unless a resize while it

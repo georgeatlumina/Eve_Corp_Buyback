@@ -319,7 +319,7 @@ const OVERLAY_DEFAULTS = {
   width: 460, height: 500, x: null, y: null,
   jumps: 6, opacity: 0.9, clickThrough: false, alwaysOnTop: true,
   labels: true, feed: true, follow: true, system: '', muted: false, mode: 'radial',
-  zoom: 1, labelScale: 1, watchPin: false,
+  zoom: 1, labelScale: 1, watchPin: false, activity: false, jumpRange: false,
 };
 
 function overlayStatePath() {

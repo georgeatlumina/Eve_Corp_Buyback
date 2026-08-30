@@ -30,7 +30,7 @@
     chars: [], charSys: null, watching: null,
     clickThrough: false, hoverUi: false, loadKey: null, err: '',
     alertJumps: new Map(), alertKey: null,
-    watch: [], watchHot: false,
+    watch: [], watchHot: false, jr: null, jrKey: null,
     regionLayout: null, regionName: null,
   };
 
@@ -177,11 +177,13 @@
         + `<circle class="ov-dot" r="${NR}" style="fill:${secCol(s.sec)}" stroke-width="${U / 22}" opacity="${dim}" />`
         + (chars.has(String(s.id)) && !home ? `<circle class="ov-chr" cx="${NR * 1.6}" cy="${-NR * 1.6}" r="${NR * 0.7}" />` : '')
         + (isWatched(s.id) ? `<text class="ov-star" x="${(-NR * 1.7).toFixed(1)}" y="${(-NR * 1.3).toFixed(1)}" font-size="${(U * 0.85).toFixed(2)}">★</text>` : '')
+        + activitySvg(s.id, U, NR)
         + (st.prefs.labels ? `<text class="ov-lbl" y="${-NR * 1.9}" font-size="${(U * 0.8 * (Number(st.prefs.labelScale) || 1)).toFixed(2)}"`
           + ` fill-opacity="${dim}">${esc(s.name)}</text>` : '')
         + `</g>`;
     }
     root.innerHTML = `<g>${g.rings}</g><g>${edges}</g><g>${nodes}</g>`;
+    applyJumpRange();
     applyLayers();
     updateBar();
   }
@@ -358,7 +360,7 @@
     }
     if (!rows.length) {
       box.innerHTML = st.watching === false
-        ? '<span class="muted">No intel channels watched — set them up in the SMT tab (⚙ Logs).</span>'
+        ? '<span class="muted">No intel channels watched — set them up in the SMT tab (⚙ Select Intel Channels).</span>'
         : '<span class="muted">No intel in range.</span>';
       return;
     }
@@ -391,6 +393,58 @@
     if (!m) return `rgba(120, 20, 20, ${a})`;
     const n = parseInt(m[1], 16);
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+  }
+
+  // ---- jump range --------------------------------------------------------
+  // Measured from whatever this window is centred on. Hull and skill come from
+  // the sidecar, set once in the Intel Map — this toolbar has no room for two
+  // more dropdowns, and having them disagree between windows would be worse
+  // than not having them here at all.
+  async function loadJumpRange() {
+    if (!st.prefs.jumpRange || !st.origin) { st.jr = null; return; }
+    let prefs;
+    try { prefs = await j('/api/smt/jump-prefs'); } catch (_) { return; }
+    const key = `${st.origin.id}|${prefs.ship}|${prefs.skill}`;
+    if (key === st.jrKey && st.jr) return;            // nothing moved
+    try {
+      const d = await j(`/api/smt/jump-range?system=${st.origin.id}&ship=${encodeURIComponent(prefs.ship)}&skill=${prefs.skill}`);
+      if (d.error) { st.jr = null; return; }
+      st.jr = d;
+      st.jrKey = key;
+    } catch (_) { /* transient */ }
+  }
+  function applyJumpRange() {
+    const on = !!(st.prefs.jumpRange && st.jr);
+    document.querySelectorAll('#ov-root .ov-node').forEach((el) => {
+      const inRange = on && (el.dataset.id in st.jr.systems);
+      el.classList.toggle('jr-out', on && !inRange);
+      el.classList.toggle('jr-in', inRange);
+    });
+  }
+
+  // ---- ESI activity numbers ----------------------------------------------
+  // Which layers are on is set once in the Intel Map's Activity panel and read
+  // from the sidecar here — this toolbar is icon-sized, and four more buttons
+  // on it would cost more than they'd buy. The ◧ button just shows or hides
+  // whatever is enabled there.
+  async function loadActivity() {
+    try { SmtActivity.setConfig(await j('/api/smt/activity')); } catch (_) { /* defaults stand */ }
+    await pollLive();
+  }
+  async function pollLive() {
+    if (!st.prefs.activity || !SmtActivity.wanted()) return;
+    try {
+      SmtActivity.setLive(await j('/api/map/live'));
+      render();
+    } catch (_) { /* transient — keep what we have */ }
+  }
+  function activitySvg(id, U, NR) {
+    if (!st.prefs.activity) return '';
+    const cells = SmtActivity.cellsFor(id);
+    if (!cells.length) return '';
+    const size = (U * 0.62 * (Number(st.prefs.labelScale) || 1)).toFixed(2);
+    const spans = cells.map((c) => `<tspan fill="${esc(c.colour)}">${c.tag}${c.value} </tspan>`).join('');
+    return `<text class="ov-act" y="${(NR * 2.6).toFixed(1)}" font-size="${size}">${spans}</text>`;
   }
 
   // ---- watchlist ---------------------------------------------------------
@@ -533,6 +587,23 @@
         ? 'Click-through is ON — press Ctrl+Alt+O, or the ⊞ Overlay button in the app, to release it'
         : 'Click-through is ON — hover this bar, or press Ctrl+Alt+O, to release it')
       : 'Click-through — let clicks pass to EVE (Ctrl+Alt+O)';
+    const jr = $('ov-jr-t');
+    if (jr) {
+      jr.classList.toggle('on', !!st.prefs.jumpRange);
+      jr.title = st.prefs.jumpRange
+        ? (st.jr ? `Jump range: ${st.jr.ly} ly from ${st.jr.origin.name} — ${st.jr.count} systems. Hull/skill in the Intel Map's Jump range panel`
+          : 'Jump range on — measuring…')
+        : 'Fade everything outside jump range of the system in view';
+    }
+    const at = $('ov-act-t');
+    if (at) {
+      const on = !!st.prefs.activity;
+      at.classList.toggle('on', on);
+      const live = SmtActivity.enabled().map((k) => SmtActivity.TAG[k]).join('');
+      at.title = !on ? 'Show the ESI activity numbers (last hour) — pick layers in the Intel Map’s Activity panel'
+        : live ? `Showing ${live} — change which layers in the Intel Map’s Activity panel`
+          : 'Activity numbers are on, but no layers are enabled — turn some on in the Intel Map’s Activity panel';
+    }
     const wt = $('ov-watch-t');
     if (wt) {
       wt.classList.toggle('on', !!st.prefs.watchPin);
@@ -584,6 +655,18 @@
     $('ov-labels').addEventListener('click', () => { savePrefs({ labels: !st.prefs.labels }); render(); });
     $('ov-feed-t').addEventListener('click', () => { savePrefs({ feed: !st.prefs.feed }); renderFeed(); updateBar(); });
     $('ov-watch-t').addEventListener('click', () => { savePrefs({ watchPin: !st.prefs.watchPin }); renderWatchStrip(); updateBar(); });
+    $('ov-jr-t').addEventListener('click', async () => {
+      savePrefs({ jumpRange: !st.prefs.jumpRange });
+      updateBar();
+      await loadJumpRange();
+      render();
+    });
+    $('ov-act-t').addEventListener('click', async () => {
+      savePrefs({ activity: !st.prefs.activity });
+      updateBar();
+      if (st.prefs.activity && !SmtActivity.live()) await pollLive();
+      render();
+    });
     $('ov-pin').addEventListener('click', () => {
       savePrefs({ alwaysOnTop: !st.prefs.alwaysOnTop });
       if (ovApi.setAlwaysOnTop) ovApi.setAlwaysOnTop(st.prefs.alwaysOnTop);
@@ -676,6 +759,8 @@
     updateBar();
     await loadAlerts();
     await loadWatch();
+    await loadActivity();
+    await loadJumpRange();
     await pollChars();
     await loadMap();
     pollLayers();
@@ -683,6 +768,11 @@
     setInterval(pollLayers, 4000);
     setInterval(pollChars, 10000);
     setInterval(() => { loadAlerts(); loadWatch(); }, 30000);
+    // ESI refreshes these hourly and the sidecar caches 60s; anything faster is
+    // wasted requests for numbers that cannot have changed.
+    setInterval(() => { loadActivity(); }, 60000);
+    // Cheap: it no-ops unless the origin, hull or skill actually changed.
+    setInterval(() => { loadJumpRange().then(applyJumpRange); }, 20000);
     setInterval(() => { applyLayers(); renderFeed(); renderWatchStrip(); }, 2000);
     // Cheap self-heal: if the sidecar was down (or the origin never resolved),
     // keep trying rather than sitting on an error until the window is reopened.

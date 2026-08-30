@@ -1297,6 +1297,7 @@ async function runValidateStream() {
   renderPayoutTotal('moon');
   $('#run-status').textContent = 'starting…';
   $('#moon-status').textContent = 'starting…';
+  clearRunWarnings();
   showProgress('buyback', 0, 0);
   showProgress('moon', 0, 0);
 
@@ -1382,12 +1383,37 @@ function handleStreamEvent(ev) {
       fetchMoonLocationNames().then(renderMoonTab);
       break;
     }
+    case 'warning':
+      // Non-fatal: the scan carries on with something degraded. It can't go in
+      // #run-status, which the very next event overwrites — a warning you can't
+      // read is the same as no warning.
+      addRunWarning(ev.message);
+      break;
     case 'error':
       $('#run-status').textContent = `Error: ${ev.message}`;
       $('#moon-status').textContent = `Error: ${ev.message}`;
       hideProgress('buyback');
       hideProgress('moon');
       break;
+  }
+}
+
+// Warnings persist for the whole run, in both tabs, until the next scan.
+function clearRunWarnings() {
+  for (const id of ['run-warnings', 'moon-warnings']) {
+    const el = document.getElementById(id);
+    if (el) { el.hidden = true; el.innerHTML = ''; }
+  }
+}
+function addRunWarning(message) {
+  console.warn('[contracts]', message);
+  for (const id of ['run-warnings', 'moon-warnings']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.hidden = false;
+    const div = document.createElement('div');
+    div.textContent = `⚠ ${message}`;      // ESI/server text — never innerHTML
+    el.appendChild(div);
   }
 }
 

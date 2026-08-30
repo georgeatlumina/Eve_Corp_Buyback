@@ -347,6 +347,7 @@
         <button id="btn-refresh-wallets" class="secondary">Refresh wallets</button>
       </div>
       <p id="run-status" class="muted"></p>
+      <div id="run-warnings" class="run-warnings" hidden></div>
       <div class="progress-area" id="buyback-progress" hidden>
         <div class="progress-bar"><div class="progress-fill"></div></div>
         <div class="progress-step muted">starting…</div>
@@ -372,6 +373,7 @@
             <button id="btn-toggle-calc" class="secondary" type="button">Hide calculator</button>
           </div>
           <p id="moon-status" class="muted"></p>
+          <div id="moon-warnings" class="run-warnings" hidden></div>
           <div class="progress-area" id="moon-progress" hidden>
             <div class="progress-bar"><div class="progress-fill"></div></div>
             <div class="progress-step muted">starting…</div>
@@ -962,15 +964,24 @@
           <button class="smt-ov on" type="button" data-ov="kills" title="Show live zKillboard kills on the map">Kills</button>
           <button class="smt-ov on" type="button" data-ov="chars" title="Show your SMT characters + fleet on the map">Chars</button>
           <button class="smt-ov" type="button" data-ov="sov" title="Colour by sovereignty, show ADM + contested systems">Sov</button>
+          <span class="smt-ov-sep" aria-hidden="true"></span>
+          <button class="smt-ov smt-ov-act" type="button" data-ov="npc" title="NPC kills in the last hour (ESI) — ratting activity">NPC</button>
+          <button class="smt-ov smt-ov-act" type="button" data-ov="ship" title="Ship kills in the last hour (ESI) — actual fighting">Ship</button>
+          <button class="smt-ov smt-ov-act" type="button" data-ov="pod" title="Pod kills in the last hour (ESI)">Pod</button>
+          <button class="smt-ov smt-ov-act" type="button" data-ov="jumps" title="Ship jumps into the system in the last hour (ESI) — traffic">Jumps</button>
+          <span class="smt-ov-sep" aria-hidden="true"></span>
+          <button class="smt-ov" type="button" data-ov="jumprange" title="Fade everything outside jump range of one system">Jump range</button>
         </div>
-        <label class="smt-follow" title="Jump the map to wherever the newest intel is"><input type="checkbox" id="smt-follow" /> Follow intel</label>
+        <label class="smt-follow" title="Jump the map to wherever the newest intel is"><input type="checkbox" id="smt-follow" checked /> Follow intel</label>
         <button id="smt-route-btn" class="secondary" type="button" title="Plan a route (bridge / Thera-aware)">Route…</button>
         <button id="smt-bridges-btn" class="secondary" type="button" title="Manage your jump-bridge network">Bridges…</button>
         <button id="smt-thera-btn" class="secondary" type="button" title="Live Thera / Turnur connections (eve-scout)">Thera…</button>
         <button id="smt-sov-btn" class="secondary" type="button" title="Active sov campaigns + faction-warfare timers">Sov…</button>
+        <button id="smt-jump-btn" class="secondary" type="button" title="Jump-range overlay — pick the hull and skill level">⤭ Jump range…</button>
+        <button id="smt-activity-btn" class="secondary" type="button" title="Colour thresholds for the NPC / Ship / Pod / Jumps activity numbers">◧ Activity…</button>
         <button id="smt-watch-btn" class="secondary" type="button" title="Watchlist — systems that alarm at any distance, each with its own sound">★ Watch</button>
         <button id="smt-alerts-btn" class="secondary" type="button" title="Intel alarm — play a sound when intel lands near you">🔔 Alerts</button>
-        <button id="smt-config-btn" class="secondary" type="button" title="Chat-log settings">⚙ Logs</button>
+        <button id="smt-config-btn" class="secondary" type="button" title="Pick which EVE chat channels are watched for intel, and where your chat logs live">⚙ Select Intel Channels</button>
         <button class="popout-btn secondary" data-popout="smt-intel" type="button" title="Open the Intel Map in its own window">⤢ Pop out</button>
         <button id="smt-overlay-btn" class="secondary" type="button" title="Pop out the transparent intel overlay to sit over your EVE client (Ctrl+Alt+M to hide/show)">&#8862; Overlay</button>
         <span id="smt-focus" class="smt-focus"></span>
@@ -1034,6 +1045,24 @@
           <button id="smt-al-reset" class="secondary" type="button" title="Back to the default three tiers">Reset tiers</button>
         </div>
         <div class="muted small">Distance is measured from your first online <strong>SMT character</strong> (or the overlay's pinned system). With neither, reports fall into the furthest tier. The overlay window takes over the alarm while it's open, so you never hear it twice.</div>
+      </div>
+      <div id="smt-jump-bar" class="smt-jump-bar" hidden>
+        <div class="smt-jump-row">
+          <label class="smt-al-t">From <input id="smt-jump-origin" list="smt-syslist" type="text" placeholder="System…" spellcheck="false" autocomplete="off" /></label>
+          <button id="smt-jump-here" class="secondary" type="button" title="Use the system your followed character is in">⌖ My character</button>
+          <label class="smt-al-t">Hull <select id="smt-jump-ship"></select></label>
+          <label class="smt-al-t" title="Jump Drive Calibration — each level adds 20% of the hull's base range">JDC <select id="smt-jump-skill"></select></label>
+          <span id="smt-jump-info" class="muted small"></span>
+        </div>
+        <div class="smt-watch-h muted small">Range is measured in <strong>light years through space</strong>, not stargate jumps. High-sec is never in range — a jump drive can't end there. Turn the <strong>Jump range</strong> layer on to fade everything out of reach.</div>
+      </div>
+      <div id="smt-activity-bar" class="smt-activity-bar" hidden>
+        <div class="smt-watch-h muted small">Activity numbers come from ESI’s hourly <code>system_kills</code> / <code>system_jumps</code> feeds, so they always cover the <strong>last hour</strong> — ESI publishes no longer window. Each enabled layer draws its own tagged number beside the system (<span class="sm-act-eg">N</span>PC, <span class="sm-act-eg">S</span>hip, <span class="sm-act-eg">P</span>od, <span class="sm-act-eg">J</span>umps), so several can be read at once. A value below the lowest threshold isn’t drawn.</div>
+        <div id="smt-activity-layers" class="smt-activity-layers"></div>
+        <div class="smt-alerts-row">
+          <button id="smt-act-reset" class="secondary" type="button" title="Back to the default thresholds">Reset thresholds</button>
+          <span id="smt-activity-status" class="muted small"></span>
+        </div>
       </div>
       <div id="smt-watch-bar" class="smt-watch-bar" hidden>
         <div class="smt-watch-add">
@@ -1198,6 +1227,7 @@
       <h2>PI Colonies <button id="pic-refresh" type="button" class="secondary">Refresh</button> <button class="popout-btn" data-popout="pi-colonies" type="button" title="Open in its own window">⤢ Pop out</button></h2>
       <p class="muted">Live planetary colonies across your authenticated characters, sorted by soonest extractor expiry. Countdowns update live so you can see what needs restarting.</p>
       <p id="pic-status" class="muted"></p>
+      <div id="pic-issues" class="pic-issues" hidden></div>
       <div id="pic-list" class="pic-list"></div>
     </section>
 
@@ -1746,6 +1776,7 @@
   <script src="structures.js"></script>
   <script src="smt-highlight.js"></script>
   <script src="smt-alerts.js"></script>
+  <script src="smt-activity.js"></script>
   <script src="smt.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>
