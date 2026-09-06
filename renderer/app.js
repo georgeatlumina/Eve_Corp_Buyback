@@ -571,6 +571,7 @@ async function loadConfig() {
   $('[name=corp_id]').value = cfg.corp_id || '';
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
   if ($('[name=home_structure_id]')) $('[name=home_structure_id]').value = cfg.home_structure_id || '';
+  if ($('[name=corp_hangar_structure_id]')) $('[name=corp_hangar_structure_id]').value = cfg.corp_hangar_structure_id || '';
   if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
   renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
   renderQuotas(Array.isArray(cfg.quotas_institute) ? cfg.quotas_institute : [], $('#quotas-institute-tbody'));
@@ -721,6 +722,7 @@ function collectConfigForm() {
     moon_payout_fraction: parseFloat(fd.get('moon_payout_fraction')) || 0.80,
     non_moon_payout_fraction: parseFloat(fd.get('non_moon_payout_fraction')) || 0.90,
     home_structure_id: parseInt(fd.get('home_structure_id')) || 0,
+    corp_hangar_structure_id: parseInt(fd.get('corp_hangar_structure_id')) || 0,
     home_region_id: parseInt(fd.get('home_region_id')) || 0,
     quotas: collectQuotas(),
     quotas_institute: collectQuotas($('#quotas-institute-tbody')),
@@ -3860,21 +3862,6 @@ $('#btn-lookup-region')?.addEventListener('click', async () => {
 // --- Contracts scan ---
 let lastContractsScan = null;
 const contractsScanCache = {};
-let activeContractsAlliance = 'main';
-
-document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
-  const btn = ev.target.closest('[data-alliance]');
-  if (!btn) return;
-  if (btn.dataset.alliance === activeContractsAlliance) return;
-  activeContractsAlliance = btn.dataset.alliance;
-  document.querySelectorAll('.alliance-btn').forEach((b) => b.classList.toggle('active', b === btn));
-  const _btnSold = $('#btn-contracts-sold-scan');
-  if (_btnSold && !_contractsScanRunning) _btnSold.disabled = !contractsScanCache[activeContractsAlliance];
-  if (contractsScanCache[activeContractsAlliance]) {
-    lastContractsScan = contractsScanCache[activeContractsAlliance];
-    renderContractsDashboard(lastContractsScan);
-  }
-});
 
 $('#btn-contracts-scan')?.addEventListener('click', runContractsScan);
 $('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
@@ -3933,7 +3920,7 @@ async function runContractsScan() {
   try {
     let res;
     try {
-      res = await fetch(`${API}/api/contracts/scan?alliance=${activeContractsAlliance}`);
+      res = await fetch(`${API}/api/contracts/scan?alliance=${'all'}`);
     } catch (e) {
       status.textContent = `Network error: ${e}`;
       progress.hidden = true;
@@ -3961,14 +3948,14 @@ async function runContractsScan() {
         status.textContent = `Error: ${evt.message}`;
       } else if (evt.event === 'done') {
         lastContractsScan = evt.payload;
-        contractsScanCache[activeContractsAlliance] = evt.payload;
+        contractsScanCache['all'] = evt.payload;
         renderContractsDashboard(evt.payload);
         pushxQty = {};
         step.textContent = 'done';
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);
         prefetchHullPrices(evt.payload.quotas || []);
-        publishDoctrineStock(activeContractsAlliance, evt.payload);
+        publishDoctrineStock('all', evt.payload);
         const failedItems = (evt.payload.contracts || []).filter(c => c.items_error).length;
         if (failedItems > 0) {
           status.textContent = `⚠ ESI errors: items could not be fetched for ${failedItems} contract(s) — ship counts may be lower than actual. Try re-scanning.`;
@@ -3984,7 +3971,7 @@ async function runContractsScan() {
     _contractsScanRunning = false;
     if (btnScan) btnScan.disabled = false;
     // Enable sold button only if a scan result exists for this alliance.
-    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
+    if (btnSold) btnSold.disabled = !contractsScanCache['all'];
     const _st = $('#contracts-status');
     if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
   }
@@ -4035,7 +4022,7 @@ async function runSold30dScan() {
   try {
     let res;
     try {
-      res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${activeContractsAlliance}`);
+      res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${'all'}`);
     } catch (e) {
       status.textContent = `Network error: ${e}`;
       progress.hidden = true;
@@ -4117,7 +4104,7 @@ async function runSold30dScan() {
     });
   } finally {
     if (btnScan) btnScan.disabled = false;
-    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
+    if (btnSold) btnSold.disabled = !contractsScanCache['all'];
     const _st = $('#contracts-status');
     if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
   }
@@ -4573,7 +4560,7 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
     if (!soldEl || !q.ship_type_id) return;
     soldEl.textContent = '…';
     try {
-      const params = new URLSearchParams({ ship_type_id: q.ship_type_id, alliance: activeContractsAlliance });
+      const params = new URLSearchParams({ ship_type_id: q.ship_type_id, alliance: 'all' });
       if (q.title_filter) params.set('title_filter', q.title_filter);
       const res = await fetch(`${API}/api/contracts/sold-30d?${params}`);
       const data = await res.json();

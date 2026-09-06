@@ -201,6 +201,7 @@ class ConfigUpdate(BaseModel):
     srp_reject_body: Optional[str] = None
     link_open_mode: Optional[str] = None
     home_structure_id: Optional[int] = None
+    corp_hangar_structure_id: Optional[int] = None
     home_region_id: Optional[int] = None
     quotas: Optional[list[dict]] = None
     quotas_institute: Optional[list[dict]] = None
@@ -6019,6 +6020,10 @@ def _scan_contracts_stream(alliance: str = 'all'):
         yield _emit('error', message='Log in at least one slot on the Auth tab')
         return
 
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.warning('[contracts/scan] structure_id=%s slots=%s', structure_id, slots)
+
     ua = get_user_agent()
     client_id, secret_key = get_app_credentials()
 
@@ -6093,6 +6098,11 @@ def _scan_contracts_stream(alliance: str = 'all'):
             continue
 
         kept = 0
+        total_contracts = len(corp_contracts)
+        item_exchange = [c for c in corp_contracts if c.get('type') == 'item_exchange' and (c.get('status') or '').lower() == 'outstanding']
+        at_structure = [c for c in item_exchange if int(c.get('start_location_id') or 0) == structure_id]
+        _log.warning('[contracts/scan] slot=%s corp_id=%s total=%d item_exchange_outstanding=%d at_structure=%d',
+                     slot, corp_id, total_contracts, len(item_exchange), len(at_structure))
         for c in corp_contracts:
             if c.get('type') != 'item_exchange':
                 continue
@@ -6623,7 +6633,7 @@ def get_corp_assets():
     """
     SCOPE = 'esi-assets.read_corporation_assets.v1'
     cfg = load_config()
-    structure_id = int(cfg.get('home_structure_id') or 0)
+    structure_id = int(cfg.get('corp_hangar_structure_id') or cfg.get('home_structure_id') or 0)
     if not structure_id:
         return {'ok': False, 'reason': 'no_home_structure'}
 
@@ -6659,10 +6669,24 @@ def get_corp_assets():
     if not token or not corp_id:
         return {'ok': False, 'reason': 'missing_scope'}
 
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.warning('[corp/assets] using slot with corp_id=%s structure_id=%s', corp_id, structure_id)
+
     try:
         all_assets = fetch_corp_assets(corp_id, token, ua)
     except Exception as e:
+        _log.warning('[corp/assets] fetch_corp_assets failed: %s', e)
         return {'ok': False, 'reason': 'fetch_failed', 'detail': str(e)}
+
+    _log.warning('[corp/assets] total_assets=%d', len(all_assets))
+    from collections import Counter as _Counter
+    _hangar_locs = _Counter(
+        int(a.get('location_id') or 0)
+        for a in all_assets
+        if a.get('location_flag') in _CORP_HANGAR_FLAGS
+    )
+    _log.warning('[corp/assets] corp-hangar items by location_id: %s', dict(_hangar_locs.most_common(10)))
 
     # Filter to items directly in a corp hangar at the home structure.
     hangar_items = [
@@ -6670,6 +6694,7 @@ def get_corp_assets():
         if int(a.get('location_id') or 0) == structure_id
         and a.get('location_flag') in _CORP_HANGAR_FLAGS
     ]
+    _log.warning('[corp/assets] hangar_items after filter: %d', len(hangar_items))
 
     # Resolve type names + category_id from local type_meta first.
     import os as _os
