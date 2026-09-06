@@ -5798,6 +5798,11 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
     }
     await acquisitionsSave();
     renderAcquisitionsResults(hullsEl, itemsEl);
+    // Clear stale analysis sections — inventory changed so results are invalid
+    ['#acq-section-inventory', '#acq-section-market', '#acq-section-shopping', '#acq-section-outofreach', '#acq-analysis-progress'].forEach((sel) => {
+      const el = root.querySelector(sel);
+      if (el) { el.hidden = true; el.innerHTML = ''; }
+    });
     statusEl.textContent = mode === 'replace' ? 'Replaced inventory with corp inventory.' : 'Added corp inventory to existing inventory.';
     setTimeout(() => { statusEl.textContent = ''; }, 3000);
     breakdownEl.hidden = true;
