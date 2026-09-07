@@ -6638,6 +6638,56 @@ def sync_acquisitions_inventory():
     return {'hulls': hulls, 'items': items, 'updated_at': saved['updated_at']}
 
 
+@app.post('/api/acquisitions/push')
+def push_acquisitions_inventory():
+    """Push the local acquisitions inventory to acquisitions-inventory.json
+    in the alliance quota repo. Gated by alliance_quota_allow_push."""
+    cfg = load_config()
+    if not cfg.get('alliance_quota_allow_push'):
+        raise HTTPException(403, 'Push is disabled on this machine. Tick "Allow push from this machine" in Config to enable.')
+    url = (cfg.get('alliance_quota_url') or '').strip()
+    if not url:
+        raise HTTPException(400, 'alliance_quota_url is not set')
+    blob = _parse_github_blob_url(url)
+    if not blob:
+        raise HTTPException(400, f'Could not parse GitHub URL: {url!r}')
+    owner, repo, branch, _path = blob
+    write_pat = (cfg.get('alliance_quota_pat_write') or '').strip()
+    if not write_pat:
+        raise HTTPException(400, 'alliance_quota_pat_write is not set — provide a PAT with Contents: read+write permission on this repo.')
+    inventory = load_acquisitions()
+    hulls = inventory.get('hulls') or []
+    items = inventory.get('items') or []
+    text = json.dumps({'hulls': hulls, 'items': items,
+                       'updated_at': datetime.now(timezone.utc).isoformat()}, indent=2) + '\n'
+    ua = get_user_agent()
+    sha = None
+    try:
+        _existing, sha = _github_contents_get(owner, repo, branch, _ACQ_INVENTORY_REPO_PATH, write_pat, ua)
+    except FileNotFoundError:
+        sha = None
+    except PermissionError as e:
+        raise HTTPException(403, f'Push failed at read step: {e}')
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(502, f'Push failed at read step: {e}')
+    message = f'Update acquisitions inventory — {len(hulls)} hull(s), {len(items)} item(s)'
+    try:
+        result = _github_contents_put(owner, repo, branch, _ACQ_INVENTORY_REPO_PATH,
+                                      text, sha, write_pat, ua, message)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409 if 'Conflict' in str(e) else 502, str(e))
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(502, f'Push failed: {e}')
+    return {
+        'pushed_hulls': len(hulls),
+        'pushed_items': len(items),
+        'commit_sha': result.get('commit_sha'),
+        'commit_html_url': result.get('commit_html_url'),
+    }
+
+
 # ESI location_flag → friendly hangar division name shown in the EVE client.
 # Corp hangar divisions are named "Division 1"…"Division 7" in EVE; ESI uses
 # HangarAll for the first division and CorpSAG2…CorpSAG7 for the rest.
