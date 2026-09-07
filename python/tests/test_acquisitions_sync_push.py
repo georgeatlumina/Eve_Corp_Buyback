@@ -40,7 +40,7 @@ class TestAcquisitionsSync:
         assert resp.status_code == 200
         assert 'error' in resp.json()
 
-    def test_syncs_from_github_and_writes_local(self, client, acq_store):
+    def test_syncs_from_github_and_writes_local(self, client, acq_store, tmp_path):
         cfg = {
             'alliance_quota_url': 'https://github.com/acme/alliance/blob/main/quotas.json',
             'alliance_quota_pat_read': 'read-pat',
@@ -51,7 +51,11 @@ class TestAcquisitionsSync:
         data = resp.json()
         assert data['hulls'] == SAMPLE_HULLS
         assert data['items'] == SAMPLE_ITEMS
-        assert data['updated_at'] == '2026-09-07T10:00:00+00:00'
+        assert data['updated_at']  # freshly-written timestamp from save_acquisitions
+        import json as _json
+        saved = _json.loads((tmp_path / 'acquisitions_inventory.json').read_text())
+        assert saved['hulls'] == SAMPLE_HULLS
+        assert saved['items'] == SAMPLE_ITEMS
 
     def test_github_failure_returns_error_json(self, client, acq_store):
         cfg = {

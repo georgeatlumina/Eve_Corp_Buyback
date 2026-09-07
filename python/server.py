@@ -6634,9 +6634,8 @@ def sync_acquisitions_inventory():
         return {'error': 'acquisitions-inventory.json in repo is not valid JSON'}
     hulls = data.get('hulls') or []
     items = data.get('items') or []
-    updated_at = data.get('updated_at')
-    save_acquisitions(hulls, items)
-    return {'hulls': hulls, 'items': items, 'updated_at': updated_at}
+    saved = save_acquisitions(hulls, items)
+    return {'hulls': hulls, 'items': items, 'updated_at': saved['updated_at']}
 
 
 # ESI location_flag → friendly hangar division name shown in the EVE client.
