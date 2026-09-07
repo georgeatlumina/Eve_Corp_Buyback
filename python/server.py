@@ -6650,7 +6650,7 @@ def push_acquisitions_inventory():
         raise HTTPException(400, 'alliance_quota_url is not set')
     blob = _parse_github_blob_url(url)
     if not blob:
-        raise HTTPException(400, f'Could not parse GitHub URL: {url!r}')
+        raise HTTPException(400, 'Push is only supported for github.com repo file URLs. Gist push is not supported here — convert the gist to a private repo first.')
     owner, repo, branch, _path = blob
     write_pat = (cfg.get('alliance_quota_pat_write') or '').strip()
     if not write_pat:

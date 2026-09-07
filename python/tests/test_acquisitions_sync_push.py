@@ -105,6 +105,14 @@ class TestAcquisitionsPush:
             resp = client.post('/api/acquisitions/push')
         assert resp.status_code == 400
 
+    def test_400_when_url_not_parseable(self, client, acq_store):
+        acq_store.save_acquisitions(SAMPLE_HULLS, SAMPLE_ITEMS)
+        with patch('server.load_config', return_value={'alliance_quota_allow_push': True,
+                                                        'alliance_quota_url': 'https://gist.github.com/user/abc123',
+                                                        'alliance_quota_pat_write': 'write-pat'}):
+            resp = client.post('/api/acquisitions/push')
+        assert resp.status_code == 400
+
     def test_pushes_to_github(self, client, acq_store):
         acq_store.save_acquisitions(SAMPLE_HULLS, SAMPLE_ITEMS)
         cfg = {
@@ -128,3 +136,41 @@ class TestAcquisitionsPush:
         assert written['hulls'] == SAMPLE_HULLS
         assert written['items'] == SAMPLE_ITEMS
         assert 'updated_at' in written
+
+    def test_403_when_read_step_permission_error(self, client, acq_store):
+        acq_store.save_acquisitions(SAMPLE_HULLS, SAMPLE_ITEMS)
+        cfg = {
+            'alliance_quota_allow_push': True,
+            'alliance_quota_url': 'https://github.com/acme/alliance/blob/main/quotas.json',
+            'alliance_quota_pat_write': 'write-pat',
+        }
+        with patch('server.load_config', return_value=cfg), \
+             patch('server._github_contents_get', side_effect=PermissionError('bad token')):
+            resp = client.post('/api/acquisitions/push')
+        assert resp.status_code == 403
+
+    def test_403_when_write_step_permission_error(self, client, acq_store):
+        acq_store.save_acquisitions(SAMPLE_HULLS, SAMPLE_ITEMS)
+        cfg = {
+            'alliance_quota_allow_push': True,
+            'alliance_quota_url': 'https://github.com/acme/alliance/blob/main/quotas.json',
+            'alliance_quota_pat_write': 'write-pat',
+        }
+        with patch('server.load_config', return_value=cfg), \
+             patch('server._github_contents_get', side_effect=FileNotFoundError()), \
+             patch('server._github_contents_put', side_effect=PermissionError('bad token')):
+            resp = client.post('/api/acquisitions/push')
+        assert resp.status_code == 403
+
+    def test_409_when_write_step_conflict(self, client, acq_store):
+        acq_store.save_acquisitions(SAMPLE_HULLS, SAMPLE_ITEMS)
+        cfg = {
+            'alliance_quota_allow_push': True,
+            'alliance_quota_url': 'https://github.com/acme/alliance/blob/main/quotas.json',
+            'alliance_quota_pat_write': 'write-pat',
+        }
+        with patch('server.load_config', return_value=cfg), \
+             patch('server._github_contents_get', side_effect=FileNotFoundError()), \
+             patch('server._github_contents_put', side_effect=RuntimeError('Conflict: sha mismatch')):
+            resp = client.post('/api/acquisitions/push')
+        assert resp.status_code == 409
