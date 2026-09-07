@@ -5945,7 +5945,9 @@ function renderAcquisitionsTab() {
   });
   root.querySelector('#acq-corp-load').addEventListener('click', () => acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl));
   root.querySelector('#acq-push-inventory')?.addEventListener('click', async () => {
-    const statusEl = root.querySelector('#acq-status');
+    const btn = root.querySelector('#acq-push-inventory');
+    if (btn.disabled) return;
+    btn.disabled = true;
     statusEl.textContent = 'Pushing…';
     try {
       const res = await fetch(`${API}/api/acquisitions/push`, { method: 'POST' });
@@ -5955,9 +5957,12 @@ function renderAcquisitionsTab() {
       } else {
         const sha = data.commit_sha ? data.commit_sha.slice(0, 7) : '?';
         statusEl.textContent = `Pushed — commit ${sha}`;
+        setTimeout(() => { if (statusEl.textContent.startsWith('Pushed')) statusEl.textContent = ''; }, 3000);
       }
     } catch (e) {
       statusEl.textContent = `Push failed: ${e.message}`;
+    } finally {
+      btn.disabled = false;
     }
   });
   // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
