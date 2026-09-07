@@ -6604,6 +6604,41 @@ def post_acquisitions(req: AcquisitionsSaveRequest):
     return save_acquisitions(req.hulls, req.items)
 
 
+_ACQ_INVENTORY_REPO_PATH = 'acquisitions-inventory.json'
+
+
+@app.post('/api/acquisitions/sync')
+def sync_acquisitions_inventory():
+    """Pull acquisitions-inventory.json from the alliance quota repo and
+    write it to the local cache. Returns the inventory on success, or
+    {"error": "..."} on any failure — caller falls back to local file."""
+    cfg = load_config()
+    url = (cfg.get('alliance_quota_url') or '').strip()
+    if not url:
+        return {'error': 'alliance_quota_url is not configured'}
+    blob = _parse_github_blob_url(url)
+    if not blob:
+        return {'error': f'Could not parse GitHub URL: {url!r}'}
+    owner, repo, branch, _path = blob
+    pat = (cfg.get('alliance_quota_pat_read') or cfg.get('alliance_quota_pat_write') or '').strip() or None
+    ua = get_user_agent()
+    try:
+        text, _sha = _github_contents_get(owner, repo, branch, _ACQ_INVENTORY_REPO_PATH, pat, ua)
+    except FileNotFoundError:
+        return {'error': 'acquisitions-inventory.json not found in quota repo — push from the admin machine first'}
+    except Exception as e:
+        return {'error': str(e)}
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return {'error': 'acquisitions-inventory.json in repo is not valid JSON'}
+    hulls = data.get('hulls') or []
+    items = data.get('items') or []
+    updated_at = data.get('updated_at')
+    save_acquisitions(hulls, items)
+    return {'hulls': hulls, 'items': items, 'updated_at': updated_at}
+
+
 # ESI location_flag → friendly hangar division name shown in the EVE client.
 # Corp hangar divisions are named "Division 1"…"Division 7" in EVE; ESI uses
 # HangarAll for the first division and CorpSAG2…CorpSAG7 for the rest.
