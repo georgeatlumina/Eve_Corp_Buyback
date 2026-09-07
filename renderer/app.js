@@ -4795,6 +4795,7 @@ let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsPasteText = '';  // session-only: survives tab switches, not app restart
 let acquisitionsUpdatedAt = null;  // ISO8601 from the backend's last save, or null if never saved
+let acqAllowPush = false;  // true when alliance_quota_allow_push is set in config
 // Persists the last Analyse Hulls result across tab navigation.
 let acqHullAnalysisResult = null; // { s1, s2, s3, s4, statusText } — innerHTML snapshots
 
@@ -4818,6 +4819,16 @@ function acqHullCountFor(typeId) {
 }
 
 async function acquisitionsLoad() {
+  try {
+    const sync = await fetch(`${API}/api/acquisitions/sync`, { method: 'POST' }).then((r) => r.json());
+    if (!sync.error) {
+      acquisitionsHulls = sync.hulls || [];
+      acquisitionsItems = sync.items || [];
+      acquisitionsUpdatedAt = sync.updated_at || null;
+      return;
+    }
+  } catch (_) {}
+  // Fall back to local store
   try {
     const data = await fetch(`${API}/api/acquisitions`).then((r) => r.json());
     acquisitionsHulls = data.hulls || [];
@@ -5334,11 +5345,13 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPric
   const pct = Math.round(JITA_CONTRACT_MULTIPLIER * 100);
   const rows = [...groups.entries()].map(([key, g]) => {
     const [ship, fit] = key.split('||');
-    const uexoStr = fmtIskShort(g.uexoCost);
-    const jitaStr = g.jitaComplete ? fmtIskShort(g.jitaCost) : '—';
+    const uexoPerShip = g.uexoCost / g.n;
+    const jitaPerShip = g.jitaComplete ? g.jitaCost / g.n : null;
+    const uexoStr = fmtIskShort(uexoPerShip);
+    const jitaStr = jitaPerShip != null ? fmtIskShort(jitaPerShip) : '—';
     let deltaHtml = '';
-    if (g.jitaComplete && g.jitaCost > 0) {
-      const deltaPct = Math.round(((g.uexoCost - g.jitaCost) / g.jitaCost) * 100);
+    if (jitaPerShip != null && jitaPerShip > 0) {
+      const deltaPct = Math.round(((uexoPerShip - jitaPerShip) / jitaPerShip) * 100);
       const sign = deltaPct > 0 ? '+' : '';
       const color = deltaPct <= 0 ? '#4ade80' : '#f87171';
       deltaHtml = ` <span style="color:${color}">(${sign}${deltaPct}%)</span>`;
@@ -5372,7 +5385,7 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPric
                 <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
                 <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
                 <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
-                <th style="padding:0.3rem 0.5rem;text-align:right">UEXO vs Jita (missing items)</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">UEXO vs Jita / ship (missing items)</th>
                 <th style="padding:0.3rem 0.5rem;text-align:right">${pct}% Jita sell / fit</th>
               </tr></thead>
               <tbody>${rows}</tbody>
@@ -5825,6 +5838,7 @@ function renderAcquisitionsTab() {
       <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
       <button id="acq-copy-inventory" class="btn" title="Copy full inventory as Janice-format text">Copy inventory</button>
       <button id="acq-corp-load" class="btn secondary" title="Load corp hangar contents via ESI (requires Director re-auth with corp assets scope)">Corp inventory (needs director access)</button>
+      ${acqAllowPush ? '<button id="acq-push-inventory" class="btn secondary" title="Publish inventory to alliance quota repo so all users see it">Push inventory</button>' : ''}
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
@@ -5930,6 +5944,22 @@ function renderAcquisitionsTab() {
     });
   });
   root.querySelector('#acq-corp-load').addEventListener('click', () => acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl));
+  root.querySelector('#acq-push-inventory')?.addEventListener('click', async () => {
+    const statusEl = root.querySelector('#acq-status');
+    statusEl.textContent = 'Pushing…';
+    try {
+      const res = await fetch(`${API}/api/acquisitions/push`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = `Push failed: ${data.detail || res.statusText}`;
+      } else {
+        const sha = data.commit_sha ? data.commit_sha.slice(0, 7) : '?';
+        statusEl.textContent = `Pushed — commit ${sha}`;
+      }
+    } catch (e) {
+      statusEl.textContent = `Push failed: ${e.message}`;
+    }
+  });
   // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -5939,8 +5969,14 @@ function renderAcquisitionsTab() {
   });
 }
 
-// Load acquisitions inventory on startup
-acquisitionsLoad();
+// Load acquisitions inventory and allow-push flag on startup
+(async () => {
+  try {
+    const cfg = await fetch(`${API}/api/config`).then((r) => r.json());
+    acqAllowPush = !!cfg?.alliance_quota_allow_push;
+  } catch (_) {}
+  await acquisitionsLoad();
+})();
 
 // ============================================================
 // Plan PushX tab
