@@ -5798,11 +5798,19 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
     }
     await acquisitionsSave();
     renderAcquisitionsResults(hullsEl, itemsEl);
-    // Clear stale analysis sections — inventory changed so results are invalid
-    ['#acq-section-inventory', '#acq-section-market', '#acq-section-shopping', '#acq-section-outofreach', '#acq-analysis-progress'].forEach((sel) => {
+    // Clear stale analysis sections — inventory changed so results are invalid.
+    // #acq-analysis-progress is excluded: it's static scaffolding (acqProgressSet
+    // expects its .progress-fill/.progress-step/.progress-bar children to always
+    // exist), not disposable result content — wiping its innerHTML here left the
+    // next Analyse Hulls click crashing on a missing .progress-fill before it
+    // could un-hide any section, until a tab switch rebuilt the template fresh.
+    ['#acq-section-inventory', '#acq-section-market', '#acq-section-shopping', '#acq-section-outofreach'].forEach((sel) => {
       const el = root.querySelector(sel);
       if (el) { el.hidden = true; el.innerHTML = ''; }
     });
+    const progressEl = root.querySelector('#acq-analysis-progress');
+    if (progressEl) progressEl.hidden = true;
+    acqHullAnalysisResult = null;
     statusEl.textContent = mode === 'replace' ? 'Replaced inventory with corp inventory.' : 'Added corp inventory to existing inventory.';
     setTimeout(() => { statusEl.textContent = ''; }, 3000);
     breakdownEl.hidden = true;
