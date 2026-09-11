@@ -5292,7 +5292,7 @@ function renderAcqSection1(el, result, janiceFitPrices = new Map(), neededMap = 
       ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
       : `<span style="color:#4b5563">—</span>`;
     const needed = neededMap.get(`${e.shipTypeId}||${e.fitName}`);
-    const neededNote = (needed != null && e.n > needed)
+    const neededNote = needed != null
       ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed} needed)</span>`
       : '';
     return `<tr style="border-bottom:1px solid #1e2533">
