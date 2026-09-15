@@ -201,6 +201,7 @@ class ConfigUpdate(BaseModel):
     srp_reject_body: Optional[str] = None
     link_open_mode: Optional[str] = None
     home_structure_id: Optional[int] = None
+    corp_hangar_structure_id: Optional[int] = None
     home_region_id: Optional[int] = None
     quotas: Optional[list[dict]] = None
     quotas_institute: Optional[list[dict]] = None
@@ -6019,6 +6020,10 @@ def _scan_contracts_stream(alliance: str = 'all'):
         yield _emit('error', message='Log in at least one slot on the Auth tab')
         return
 
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.warning('[contracts/scan] structure_id=%s slots=%s', structure_id, slots)
+
     ua = get_user_agent()
     client_id, secret_key = get_app_credentials()
 
@@ -6093,6 +6098,11 @@ def _scan_contracts_stream(alliance: str = 'all'):
             continue
 
         kept = 0
+        total_contracts = len(corp_contracts)
+        item_exchange = [c for c in corp_contracts if c.get('type') == 'item_exchange' and (c.get('status') or '').lower() == 'outstanding']
+        at_structure = [c for c in item_exchange if int(c.get('start_location_id') or 0) == structure_id]
+        _log.warning('[contracts/scan] slot=%s corp_id=%s total=%d item_exchange_outstanding=%d at_structure=%d',
+                     slot, corp_id, total_contracts, len(item_exchange), len(at_structure))
         for c in corp_contracts:
             if c.get('type') != 'item_exchange':
                 continue
@@ -6594,6 +6604,90 @@ def post_acquisitions(req: AcquisitionsSaveRequest):
     return save_acquisitions(req.hulls, req.items)
 
 
+_ACQ_INVENTORY_REPO_PATH = 'acquisitions-inventory.json'
+
+
+@app.post('/api/acquisitions/sync')
+def sync_acquisitions_inventory():
+    """Pull acquisitions-inventory.json from the alliance quota repo and
+    write it to the local cache. Returns the inventory on success, or
+    {"error": "..."} on any failure — caller falls back to local file."""
+    cfg = load_config()
+    url = (cfg.get('alliance_quota_url') or '').strip()
+    if not url:
+        return {'error': 'alliance_quota_url is not configured'}
+    blob = _parse_github_blob_url(url)
+    if not blob:
+        return {'error': f'Could not parse GitHub URL: {url!r}'}
+    owner, repo, branch, _path = blob
+    pat = (cfg.get('alliance_quota_pat_read') or cfg.get('alliance_quota_pat_write') or '').strip() or None
+    ua = get_user_agent()
+    try:
+        text, _sha = _github_contents_get(owner, repo, branch, _ACQ_INVENTORY_REPO_PATH, pat, ua)
+    except FileNotFoundError:
+        return {'error': 'acquisitions-inventory.json not found in quota repo — push from the admin machine first'}
+    except Exception as e:
+        return {'error': str(e)}
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return {'error': 'acquisitions-inventory.json in repo is not valid JSON'}
+    hulls = data.get('hulls') or []
+    items = data.get('items') or []
+    saved = save_acquisitions(hulls, items)
+    return {'hulls': hulls, 'items': items, 'updated_at': saved['updated_at']}
+
+
+@app.post('/api/acquisitions/push')
+def push_acquisitions_inventory():
+    """Push the local acquisitions inventory to acquisitions-inventory.json
+    in the alliance quota repo. Gated by alliance_quota_allow_push."""
+    cfg = load_config()
+    if not cfg.get('alliance_quota_allow_push'):
+        raise HTTPException(403, 'Push is disabled on this machine. Tick "Allow push from this machine" in Config to enable.')
+    url = (cfg.get('alliance_quota_url') or '').strip()
+    if not url:
+        raise HTTPException(400, 'alliance_quota_url is not set')
+    blob = _parse_github_blob_url(url)
+    if not blob:
+        raise HTTPException(400, 'Push is only supported for github.com repo file URLs. Gist push is not supported here — convert the gist to a private repo first.')
+    owner, repo, branch, _path = blob
+    write_pat = (cfg.get('alliance_quota_pat_write') or '').strip()
+    if not write_pat:
+        raise HTTPException(400, 'alliance_quota_pat_write is not set — provide a PAT with Contents: read+write permission on this repo.')
+    inventory = load_acquisitions()
+    hulls = inventory.get('hulls') or []
+    items = inventory.get('items') or []
+    text = json.dumps({'hulls': hulls, 'items': items,
+                       'updated_at': datetime.now(timezone.utc).isoformat()}, indent=2) + '\n'
+    ua = get_user_agent()
+    sha = None
+    try:
+        _existing, sha = _github_contents_get(owner, repo, branch, _ACQ_INVENTORY_REPO_PATH, write_pat, ua)
+    except FileNotFoundError:
+        sha = None
+    except PermissionError as e:
+        raise HTTPException(403, f'Push failed at read step: {e}')
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(502, f'Push failed at read step: {e}')
+    message = f'Update acquisitions inventory — {len(hulls)} hull(s), {len(items)} item(s)'
+    try:
+        result = _github_contents_put(owner, repo, branch, _ACQ_INVENTORY_REPO_PATH,
+                                      text, sha, write_pat, ua, message)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409 if 'Conflict' in str(e) else 502, str(e))
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(502, f'Push failed: {e}')
+    return {
+        'pushed_hulls': len(hulls),
+        'pushed_items': len(items),
+        'commit_sha': result.get('commit_sha'),
+        'commit_html_url': result.get('commit_html_url'),
+    }
+
+
 # ESI location_flag → friendly hangar division name shown in the EVE client.
 # Corp hangar divisions are named "Division 1"…"Division 7" in EVE; ESI uses
 # HangarAll for the first division and CorpSAG2…CorpSAG7 for the rest.
@@ -6623,7 +6717,7 @@ def get_corp_assets():
     """
     SCOPE = 'esi-assets.read_corporation_assets.v1'
     cfg = load_config()
-    structure_id = int(cfg.get('home_structure_id') or 0)
+    structure_id = int(cfg.get('corp_hangar_structure_id') or cfg.get('home_structure_id') or 0)
     if not structure_id:
         return {'ok': False, 'reason': 'no_home_structure'}
 
@@ -6659,10 +6753,24 @@ def get_corp_assets():
     if not token or not corp_id:
         return {'ok': False, 'reason': 'missing_scope'}
 
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.warning('[corp/assets] using slot with corp_id=%s structure_id=%s', corp_id, structure_id)
+
     try:
         all_assets = fetch_corp_assets(corp_id, token, ua)
     except Exception as e:
+        _log.warning('[corp/assets] fetch_corp_assets failed: %s', e)
         return {'ok': False, 'reason': 'fetch_failed', 'detail': str(e)}
+
+    _log.warning('[corp/assets] total_assets=%d', len(all_assets))
+    from collections import Counter as _Counter
+    _hangar_locs = _Counter(
+        int(a.get('location_id') or 0)
+        for a in all_assets
+        if a.get('location_flag') in _CORP_HANGAR_FLAGS
+    )
+    _log.warning('[corp/assets] corp-hangar items by location_id: %s', dict(_hangar_locs.most_common(10)))
 
     # Filter to items directly in a corp hangar at the home structure.
     hangar_items = [
@@ -6670,6 +6778,7 @@ def get_corp_assets():
         if int(a.get('location_id') or 0) == structure_id
         and a.get('location_flag') in _CORP_HANGAR_FLAGS
     ]
+    _log.warning('[corp/assets] hangar_items after filter: %d', len(hangar_items))
 
     # Resolve type names + category_id from local type_meta first.
     import os as _os

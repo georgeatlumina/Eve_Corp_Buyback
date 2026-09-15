@@ -571,11 +571,9 @@ async function loadConfig() {
   $('[name=corp_id]').value = cfg.corp_id || '';
   $('[name=janice_api_key]').value = cfg.janice_api_key || '';
   if ($('[name=home_structure_id]')) $('[name=home_structure_id]').value = cfg.home_structure_id || '';
+  if ($('[name=corp_hangar_structure_id]')) $('[name=corp_hangar_structure_id]').value = cfg.corp_hangar_structure_id || '';
   if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
   renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
-  renderQuotas(Array.isArray(cfg.quotas_institute) ? cfg.quotas_institute : [], $('#quotas-institute-tbody'));
-  if ($('[name=alliance_id_main]')) $('[name=alliance_id_main]').value = cfg.alliance_id_main || '';
-  if ($('[name=alliance_id_institute]')) $('[name=alliance_id_institute]').value = cfg.alliance_id_institute || '';
   if ($('[name=alliance_quota_url]')) {
     $('[name=alliance_quota_url]').value = cfg.alliance_quota_url || '';
   }
@@ -721,11 +719,9 @@ function collectConfigForm() {
     moon_payout_fraction: parseFloat(fd.get('moon_payout_fraction')) || 0.80,
     non_moon_payout_fraction: parseFloat(fd.get('non_moon_payout_fraction')) || 0.90,
     home_structure_id: parseInt(fd.get('home_structure_id')) || 0,
+    corp_hangar_structure_id: parseInt(fd.get('corp_hangar_structure_id')) || 0,
     home_region_id: parseInt(fd.get('home_region_id')) || 0,
     quotas: collectQuotas(),
-    quotas_institute: collectQuotas($('#quotas-institute-tbody')),
-    alliance_id_main: parseInt(fd.get('alliance_id_main')) || 0,
-    alliance_id_institute: parseInt(fd.get('alliance_id_institute')) || 0,
     alliance_quota_url: (fd.get('alliance_quota_url') || '').toString().trim(),
     alliance_quota_auto_sync: $('[name=alliance_quota_auto_sync]')?.checked || false,
     alliance_quota_pat_read: (fd.get('alliance_quota_pat_read') || '').toString().trim(),
@@ -3379,17 +3375,6 @@ bindQuotaSection('quotas-tbody', {
   exportFilename: 'quotas-nldo',
 });
 
-bindQuotaSection('quotas-institute-tbody', {
-  addBtnId: 'btn-add-quota-institute',
-  importCsvBtnId: 'btn-quota-institute-import-csv',
-  importJsonBtnId: 'btn-quota-institute-import-json',
-  exportCsvBtnId: 'btn-quota-institute-export-csv',
-  exportJsonBtnId: 'btn-quota-institute-export-json',
-  importFileId: 'quota-institute-import-file',
-  ioStatusId: 'quota-institute-io-status',
-  exportFilename: 'quotas-nldf',
-});
-
 // Paste-from-spreadsheet support: if the user pastes multi-line tab-separated
 // data into ANY quota input, expand into one row per line, mapping columns
 // left-to-right (name, type_id, ship_name, required, title_filter).
@@ -3860,21 +3845,6 @@ $('#btn-lookup-region')?.addEventListener('click', async () => {
 // --- Contracts scan ---
 let lastContractsScan = null;
 const contractsScanCache = {};
-let activeContractsAlliance = 'main';
-
-document.querySelector('.alliance-toggle')?.addEventListener('click', (ev) => {
-  const btn = ev.target.closest('[data-alliance]');
-  if (!btn) return;
-  if (btn.dataset.alliance === activeContractsAlliance) return;
-  activeContractsAlliance = btn.dataset.alliance;
-  document.querySelectorAll('.alliance-btn').forEach((b) => b.classList.toggle('active', b === btn));
-  const _btnSold = $('#btn-contracts-sold-scan');
-  if (_btnSold && !_contractsScanRunning) _btnSold.disabled = !contractsScanCache[activeContractsAlliance];
-  if (contractsScanCache[activeContractsAlliance]) {
-    lastContractsScan = contractsScanCache[activeContractsAlliance];
-    renderContractsDashboard(lastContractsScan);
-  }
-});
 
 $('#btn-contracts-scan')?.addEventListener('click', runContractsScan);
 $('#btn-contracts-sold-scan')?.addEventListener('click', runSold30dScan);
@@ -3933,7 +3903,7 @@ async function runContractsScan() {
   try {
     let res;
     try {
-      res = await fetch(`${API}/api/contracts/scan?alliance=${activeContractsAlliance}`);
+      res = await fetch(`${API}/api/contracts/scan?alliance=${'all'}`);
     } catch (e) {
       status.textContent = `Network error: ${e}`;
       progress.hidden = true;
@@ -3961,14 +3931,14 @@ async function runContractsScan() {
         status.textContent = `Error: ${evt.message}`;
       } else if (evt.event === 'done') {
         lastContractsScan = evt.payload;
-        contractsScanCache[activeContractsAlliance] = evt.payload;
+        contractsScanCache['all'] = evt.payload;
         renderContractsDashboard(evt.payload);
         pushxQty = {};
         step.textContent = 'done';
         fill.style.width = '100%';
         setTimeout(() => { progress.hidden = true; }, 600);
         prefetchHullPrices(evt.payload.quotas || []);
-        publishDoctrineStock(activeContractsAlliance, evt.payload);
+        publishDoctrineStock('all', evt.payload);
         const failedItems = (evt.payload.contracts || []).filter(c => c.items_error).length;
         if (failedItems > 0) {
           status.textContent = `⚠ ESI errors: items could not be fetched for ${failedItems} contract(s) — ship counts may be lower than actual. Try re-scanning.`;
@@ -3984,7 +3954,7 @@ async function runContractsScan() {
     _contractsScanRunning = false;
     if (btnScan) btnScan.disabled = false;
     // Enable sold button only if a scan result exists for this alliance.
-    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
+    if (btnSold) btnSold.disabled = !contractsScanCache['all'];
     const _st = $('#contracts-status');
     if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
   }
@@ -4035,7 +4005,7 @@ async function runSold30dScan() {
   try {
     let res;
     try {
-      res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${activeContractsAlliance}`);
+      res = await fetch(`${API}/api/contracts/sold-30d/scan?alliance=${'all'}`);
     } catch (e) {
       status.textContent = `Network error: ${e}`;
       progress.hidden = true;
@@ -4117,7 +4087,7 @@ async function runSold30dScan() {
     });
   } finally {
     if (btnScan) btnScan.disabled = false;
-    if (btnSold) btnSold.disabled = !contractsScanCache[activeContractsAlliance];
+    if (btnSold) btnSold.disabled = !contractsScanCache['all'];
     const _st = $('#contracts-status');
     if (_st && (_st.textContent === _SCAN_BUSY_MSG || _st.textContent === _SCAN_FIRST_MSG)) _st.textContent = '';
   }
@@ -4573,7 +4543,7 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
     if (!soldEl || !q.ship_type_id) return;
     soldEl.textContent = '…';
     try {
-      const params = new URLSearchParams({ ship_type_id: q.ship_type_id, alliance: activeContractsAlliance });
+      const params = new URLSearchParams({ ship_type_id: q.ship_type_id, alliance: 'all' });
       if (q.title_filter) params.set('title_filter', q.title_filter);
       const res = await fetch(`${API}/api/contracts/sold-30d?${params}`);
       const data = await res.json();
@@ -4808,6 +4778,7 @@ let acquisitionsHulls = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsItems = [];  // [{type_id, name, quantity, category_id}]
 let acquisitionsPasteText = '';  // session-only: survives tab switches, not app restart
 let acquisitionsUpdatedAt = null;  // ISO8601 from the backend's last save, or null if never saved
+let acqAllowPush = false;  // true when alliance_quota_allow_push is set in config
 // Persists the last Analyse Hulls result across tab navigation.
 let acqHullAnalysisResult = null; // { s1, s2, s3, s4, statusText } — innerHTML snapshots
 
@@ -4831,6 +4802,16 @@ function acqHullCountFor(typeId) {
 }
 
 async function acquisitionsLoad() {
+  try {
+    const sync = await fetch(`${API}/api/acquisitions/sync`, { method: 'POST' }).then((r) => r.json());
+    if (!sync.error) {
+      acquisitionsHulls = sync.hulls || [];
+      acquisitionsItems = sync.items || [];
+      acquisitionsUpdatedAt = sync.updated_at || null;
+      return;
+    }
+  } catch (_) {}
+  // Fall back to local store
   try {
     const data = await fetch(`${API}/api/acquisitions`).then((r) => r.json());
     acquisitionsHulls = data.hulls || [];
@@ -5294,7 +5275,7 @@ function renderAcqSection1(el, result, janiceFitPrices = new Map(), neededMap = 
       ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
       : `<span style="color:#4b5563">—</span>`;
     const needed = neededMap.get(`${e.shipTypeId}||${e.fitName}`);
-    const neededNote = (needed != null && e.n > needed)
+    const neededNote = needed != null
       ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed} needed)</span>`
       : '';
     return `<tr style="border-bottom:1px solid #1e2533">
@@ -5347,11 +5328,13 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPric
   const pct = Math.round(JITA_CONTRACT_MULTIPLIER * 100);
   const rows = [...groups.entries()].map(([key, g]) => {
     const [ship, fit] = key.split('||');
-    const uexoStr = fmtIskShort(g.uexoCost);
-    const jitaStr = g.jitaComplete ? fmtIskShort(g.jitaCost) : '—';
+    const uexoPerShip = g.uexoCost / g.n;
+    const jitaPerShip = g.jitaComplete ? g.jitaCost / g.n : null;
+    const uexoStr = fmtIskShort(uexoPerShip);
+    const jitaStr = jitaPerShip != null ? fmtIskShort(jitaPerShip) : '—';
     let deltaHtml = '';
-    if (g.jitaComplete && g.jitaCost > 0) {
-      const deltaPct = Math.round(((g.uexoCost - g.jitaCost) / g.jitaCost) * 100);
+    if (jitaPerShip != null && jitaPerShip > 0) {
+      const deltaPct = Math.round(((uexoPerShip - jitaPerShip) / jitaPerShip) * 100);
       const sign = deltaPct > 0 ? '+' : '';
       const color = deltaPct <= 0 ? '#4ade80' : '#f87171';
       deltaHtml = ` <span style="color:${color}">(${sign}${deltaPct}%)</span>`;
@@ -5385,7 +5368,7 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPric
                 <th style="padding:0.3rem 0.5rem;text-align:left">Ship</th>
                 <th style="padding:0.3rem 0.5rem;text-align:left">Fit</th>
                 <th style="padding:0.3rem 0.75rem;text-align:right">Qty</th>
-                <th style="padding:0.3rem 0.5rem;text-align:right">UEXO vs Jita (missing items)</th>
+                <th style="padding:0.3rem 0.5rem;text-align:right">UEXO vs Jita / ship (missing items)</th>
                 <th style="padding:0.3rem 0.5rem;text-align:right">${pct}% Jita sell / fit</th>
               </tr></thead>
               <tbody>${rows}</tbody>
@@ -5798,9 +5781,21 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
     }
     await acquisitionsSave();
     renderAcquisitionsResults(hullsEl, itemsEl);
+    // Clear stale analysis sections — inventory changed so results are invalid.
+    // #acq-analysis-progress is excluded: it's static scaffolding (acqProgressSet
+    // expects its .progress-fill/.progress-step/.progress-bar children to always
+    // exist), not disposable result content — wiping its innerHTML here left the
+    // next Analyse Hulls click crashing on a missing .progress-fill before it
+    // could un-hide any section, until a tab switch rebuilt the template fresh.
+    ['#acq-section-inventory', '#acq-section-market', '#acq-section-shopping', '#acq-section-outofreach'].forEach((sel) => {
+      const el = root.querySelector(sel);
+      if (el) { el.hidden = true; el.innerHTML = ''; }
+    });
+    const progressEl = root.querySelector('#acq-analysis-progress');
+    if (progressEl) progressEl.hidden = true;
+    acqHullAnalysisResult = null;
     statusEl.textContent = mode === 'replace' ? 'Replaced inventory with corp inventory.' : 'Added corp inventory to existing inventory.';
     setTimeout(() => { statusEl.textContent = ''; }, 3000);
-    breakdownEl.hidden = true;
     fetch(`${API}/api/hangar-selection`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5833,6 +5828,7 @@ function renderAcquisitionsTab() {
       <button id="acq-replace" class="btn" title="Discard the current inventory and replace it with this paste">Replace inventory</button>
       <button id="acq-copy-inventory" class="btn" title="Copy full inventory as Janice-format text">Copy inventory</button>
       <button id="acq-corp-load" class="btn secondary" title="Load corp hangar contents via ESI (requires Director re-auth with corp assets scope)">Corp inventory (needs director access)</button>
+      ${acqAllowPush ? '<button id="acq-push-inventory" class="btn secondary" title="Publish inventory to alliance quota repo so all users see it">Push inventory</button>' : ''}
       <button id="acq-clear" class="link-btn" style="color:#8899aa">Clear</button>
       <span id="acq-status" style="font-size:0.8rem;color:#8899aa;margin-left:0.5rem"></span>
     </div>
@@ -5938,6 +5934,27 @@ function renderAcquisitionsTab() {
     });
   });
   root.querySelector('#acq-corp-load').addEventListener('click', () => acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl));
+  root.querySelector('#acq-push-inventory')?.addEventListener('click', async () => {
+    const btn = root.querySelector('#acq-push-inventory');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    statusEl.textContent = 'Pushing…';
+    try {
+      const res = await fetch(`${API}/api/acquisitions/push`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = `Push failed: ${data.detail || res.statusText}`;
+      } else {
+        const sha = data.commit_sha ? data.commit_sha.slice(0, 7) : '?';
+        statusEl.textContent = `Pushed — commit ${sha}`;
+        setTimeout(() => { if (statusEl.textContent.startsWith('Pushed')) statusEl.textContent = ''; }, 3000);
+      }
+    } catch (e) {
+      statusEl.textContent = `Push failed: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
   // Ctrl/Cmd+Enter runs the non-destructive Add, so a reflexive shortcut can't wipe inventory.
   textarea.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -5947,8 +5964,14 @@ function renderAcquisitionsTab() {
   });
 }
 
-// Load acquisitions inventory on startup
-acquisitionsLoad();
+// Load acquisitions inventory and allow-push flag on startup
+(async () => {
+  try {
+    const cfg = await fetch(`${API}/api/config`).then((r) => r.json());
+    acqAllowPush = !!cfg?.alliance_quota_allow_push;
+  } catch (_) {}
+  await acquisitionsLoad();
+})();
 
 // ============================================================
 // Plan PushX tab

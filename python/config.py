@@ -173,6 +173,7 @@ DEFAULTS = {
     'link_open_mode': 'panel',
     # Contracts page settings.
     'home_structure_id': 0,
+    'corp_hangar_structure_id': 0,
     'home_region_id': 0,
     # List of {name, ship_type_id, ship_name, required, title_filter}.
     'quotas': [],
