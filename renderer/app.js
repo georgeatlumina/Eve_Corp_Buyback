@@ -574,9 +574,6 @@ async function loadConfig() {
   if ($('[name=corp_hangar_structure_id]')) $('[name=corp_hangar_structure_id]').value = cfg.corp_hangar_structure_id || '';
   if ($('[name=home_region_id]')) $('[name=home_region_id]').value = cfg.home_region_id || '';
   renderQuotas(Array.isArray(cfg.quotas) ? cfg.quotas : []);
-  renderQuotas(Array.isArray(cfg.quotas_institute) ? cfg.quotas_institute : [], $('#quotas-institute-tbody'));
-  if ($('[name=alliance_id_main]')) $('[name=alliance_id_main]').value = cfg.alliance_id_main || '';
-  if ($('[name=alliance_id_institute]')) $('[name=alliance_id_institute]').value = cfg.alliance_id_institute || '';
   if ($('[name=alliance_quota_url]')) {
     $('[name=alliance_quota_url]').value = cfg.alliance_quota_url || '';
   }
@@ -725,9 +722,6 @@ function collectConfigForm() {
     corp_hangar_structure_id: parseInt(fd.get('corp_hangar_structure_id')) || 0,
     home_region_id: parseInt(fd.get('home_region_id')) || 0,
     quotas: collectQuotas(),
-    quotas_institute: collectQuotas($('#quotas-institute-tbody')),
-    alliance_id_main: parseInt(fd.get('alliance_id_main')) || 0,
-    alliance_id_institute: parseInt(fd.get('alliance_id_institute')) || 0,
     alliance_quota_url: (fd.get('alliance_quota_url') || '').toString().trim(),
     alliance_quota_auto_sync: $('[name=alliance_quota_auto_sync]')?.checked || false,
     alliance_quota_pat_read: (fd.get('alliance_quota_pat_read') || '').toString().trim(),
@@ -3381,17 +3375,6 @@ bindQuotaSection('quotas-tbody', {
   exportFilename: 'quotas-nldo',
 });
 
-bindQuotaSection('quotas-institute-tbody', {
-  addBtnId: 'btn-add-quota-institute',
-  importCsvBtnId: 'btn-quota-institute-import-csv',
-  importJsonBtnId: 'btn-quota-institute-import-json',
-  exportCsvBtnId: 'btn-quota-institute-export-csv',
-  exportJsonBtnId: 'btn-quota-institute-export-json',
-  importFileId: 'quota-institute-import-file',
-  ioStatusId: 'quota-institute-io-status',
-  exportFilename: 'quotas-nldf',
-});
-
 // Paste-from-spreadsheet support: if the user pastes multi-line tab-separated
 // data into ANY quota input, expand into one row per line, mapping columns
 // left-to-right (name, type_id, ship_name, required, title_filter).
@@ -5813,7 +5796,6 @@ async function acqLoadCorpInventory(root, statusEl, hullsEl, itemsEl) {
     acqHullAnalysisResult = null;
     statusEl.textContent = mode === 'replace' ? 'Replaced inventory with corp inventory.' : 'Added corp inventory to existing inventory.';
     setTimeout(() => { statusEl.textContent = ''; }, 3000);
-    breakdownEl.hidden = true;
     fetch(`${API}/api/hangar-selection`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
