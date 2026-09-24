@@ -4,6 +4,40 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.9 — Station Trading, and a shared acquisitions inventory
+
+**New — Station Trading.** A tab under General: pick two NPC hubs (Jita, Amarr, Dodixie, Rens, Hek built
+in), hit Analyse, and see what's worth buying at one and selling at the other.
+
+- **Both plays on every row.** *Instant* — buy the sell order here, hit the buy order there; no waiting,
+  no undercut risk. *Patient* — list your own sell order at the far end; more margin, if it fills and
+  nobody undercuts you.
+- **Ranked by realisable ISK/day, not raw spread.** A 34% margin on something that trades twice a day
+  isn't a trade. The list sorts on per-unit profit times the units that genuinely change hands.
+- **Two volume columns, deliberately.** *On book* is what's resting at the best price at that station;
+  *vol/day* is what the destination region actually traded per day last week. Thousands on the book that
+  move three a day is a trap, and only the second column shows it.
+- **Profit calculator** — units, hauler (Blockade Runner to Freighter, editable capacity), then cost,
+  revenue after fees, profit, total m³, trips, jumps and profit per trip. It warns when you buy past what
+  the book holds, since the real margin is thinner beyond that point.
+- **Saved station pairs**, and an **item search with typeahead** that falls back to an exact ESI lookup
+  for items the app has never seen.
+- **A ticker** of watched pairs — live spread and day-on-day change, pausing on hover — and a **chart**
+  for any of them.
+- **Sales tax and broker fee are yours to set.** Recorded history is kept before fees, so it stays true
+  when your skills change.
+
+**On the chart, honestly.** ESI publishes price history per *region*, never per station. The chart draws
+each station's region as an explicitly-labelled proxy — fair for Jita↔Amarr, where each hub dominates its
+region — and records the real spread between the two stations from the day you add the pair to the
+ticker, filling in over following days. Where both stations share a region the app says so, because the
+proxy cannot tell them apart.
+
+**New — shared acquisitions inventory** (contributed by Thanatos). Directors can publish the acquisitions
+hangar inventory to the alliance quota repo and every client pulls it on startup, so the alliance sees one
+stock list without pasting exports around. Gated by the same admin checkbox as quota push, and falls back
+to the local file when the repo isn't configured.
+
 ## v3.12.8 — Activity layers, jump range, and a scan that no longer hangs
 
 **Fix — contract scans stuck on "Resolving issuer names…".** A moon or buyback scan could sit on that step
