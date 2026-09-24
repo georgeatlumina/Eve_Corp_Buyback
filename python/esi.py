@@ -136,6 +136,32 @@ def resolve_ids(names, user_agent):
     return out
 
 
+def resolve_type_id(name, user_agent):
+    """Resolve an exact item name -> type_id via POST /universe/ids/ (the
+    `inventory_types` bucket).
+
+    The station-trading search matches substrings against the local metadata
+    cache, which only knows types the app has already seen. This covers the rest
+    of the game for anyone who types a name in full — ESI's resolver is exact
+    only, so it complements prefix matching rather than replacing it.
+    """
+    n = (name or '').strip()
+    if not n:
+        return None
+    resp = _session.post(
+        f'{ESI_BASE}/universe/ids/',
+        headers={'Accept': 'application/json', 'Content-Type': 'application/json',
+                 'User-Agent': user_agent},
+        params={'datasource': 'tranquility'},
+        json=[n],
+    )
+    resp.raise_for_status()
+    for ent in ((resp.json() or {}).get('inventory_types') or []):
+        if (ent.get('name') or '').lower() == n.lower():
+            return ent.get('id')
+    return None
+
+
 def resolve_system_id(name, user_agent):
     """Resolve a solar-system name -> ``(system_id, canonical_name)`` via POST
     /universe/ids/ (the `systems` bucket). Returns ``(None, None)`` if the name

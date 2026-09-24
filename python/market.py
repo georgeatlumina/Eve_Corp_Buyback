@@ -22,7 +22,7 @@ META_CACHE = os.path.join(AUTH_DIR, 'type_meta.json')
 _RESOLVE_WORKERS = 16
 
 _lock = threading.Lock()
-_cache = None  # str(type_id) -> {name, group_id, group_name, category_id, category_name}
+_cache = None  # str(type_id) -> {name, group_id, group_name, category_id, category_name, volume}
 
 
 def _load_cache():
@@ -68,7 +68,11 @@ def missing_ids(type_ids):
         if t in seen:
             continue
         seen.add(t)
-        if str(t) not in cache:
+        rec = cache.get(str(t))
+        # A cache written before volumes were stored is incomplete, not absent —
+        # treat it as missing so it gets backfilled rather than reporting 0 m3
+        # and silently breaking the hauler maths.
+        if rec is None or 'volume' not in rec:
             out.append(t)
     return out
 
@@ -76,10 +80,15 @@ def missing_ids(type_ids):
 def _resolve_one(type_id, user_agent, group_meta, glock):
     """Resolve one type to its metadata. `group_meta` memoizes group/category
     lookups across the batch so shared groups aren't fetched repeatedly."""
-    entry = {'name': '', 'group_id': 0, 'group_name': '', 'category_id': 0, 'category_name': ''}
+    entry = {'name': '', 'group_id': 0, 'group_name': '', 'category_id': 0, 'category_name': '',
+             'volume': 0.0}
     try:
         ti = fetch_type_info(type_id, user_agent)
         entry['name'] = ti.get('name', '') or ''
+        # Packaged volume is what a hauler actually carries; ships and containers
+        # are far smaller packaged than assembled. Station trading moves packaged
+        # goods, so prefer it and fall back to the assembled figure.
+        entry['volume'] = float(ti.get('packaged_volume') or ti.get('volume') or 0.0)
         gid = ti.get('group_id') or 0
         entry['group_id'] = gid
         if gid:

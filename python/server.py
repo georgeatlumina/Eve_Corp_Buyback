@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import sys
+import queue
 import threading
 import time
 import webbrowser
@@ -100,6 +101,7 @@ from esi import (
     fetch_system_kills,
     resolve_names,
     resolve_ids,
+    resolve_type_id,
     resolve_system_id,
     resolve_type_ids,
     send_evemail,
@@ -123,7 +125,10 @@ import industry
 import liquidation
 import pi as pi_planner
 import pi_layout
+import market
 import smt as smt_intel
+import station_trade
+import trade_history
 import stockpile
 import hangar_selection
 try:
@@ -1475,6 +1480,479 @@ def smt_jump_range(system: str = Query(...), ship: str = SMT_JUMP_DEFAULT_SHIP,
                        'sec': origin.get('sec')},
             'ship': ship, 'skill': max(0, min(int(skill), 5)), 'ly': reach,
             'systems': out, 'count': len(out), 'no_position': missing}
+
+
+# ---- station trading --------------------------------------------------------
+# Typical *fitted* cargo capacities in m3. Real capacity swings enormously with
+# fit and skills, so these are a starting point the UI lets you overwrite —
+# quoting them as fact would be worse than useless when a trip count is what
+# decides whether a run is worth flying.
+TRADE_HAULERS = [
+    {'key': 'br', 'label': 'Blockade Runner', 'm3': 5000, 'note': 'cloaky, warp-stable'},
+    {'key': 't1', 'label': 'T1 Industrial', 'm3': 8000, 'note': 'cheap, slow'},
+    {'key': 'dst', 'label': 'Deep Space Transport', 'm3': 62000, 'note': 'tanky'},
+    {'key': 'orca', 'label': 'Orca', 'm3': 400000, 'note': 'fleet hangar'},
+    {'key': 'jf', 'label': 'Jump Freighter', 'm3': 340000, 'note': 'jumps, no gates'},
+    {'key': 'freighter', 'label': 'Freighter', 'm3': 1100000, 'note': 'huge, gates only'},
+]
+
+
+class TradePreset(BaseModel):
+    label: str = ''
+    from_station: int
+    to_station: int
+
+
+class TradePresets(BaseModel):
+    presets: list[TradePreset] = []
+
+
+def _trade_ua():
+    return get_user_agent()
+
+
+@app.get('/api/trade/stations')
+def trade_stations():
+    """NPC hubs worth pairing, plus the hauler presets the calculator offers."""
+    return {'stations': station_trade.hubs(_trade_ua()),
+            'haulers': TRADE_HAULERS,
+            'default_sales_tax': station_trade.DEFAULT_SALES_TAX,
+            'default_broker_fee': station_trade.DEFAULT_BROKER_FEE}
+
+
+@app.get('/api/trade/route')
+def trade_route(from_station: int = Query(..., alias='from'), to_station: int = Query(..., alias='to')):
+    """Gate jumps between two stations' systems — what a hauler actually flies."""
+    ua = _trade_ua()
+    a = station_trade.station_info(from_station, ua)
+    b = station_trade.station_info(to_station, ua)
+    if not a.get('system_id') or not b.get('system_id'):
+        return {'error': 'Could not resolve both stations'}
+    r = eve_map.route(a['system_id'], b['system_id'], 'shortest')
+    jumps = (r or {}).get('jumps')
+    return {'from': a, 'to': b, 'jumps': jumps,
+            'same_region': a.get('region_id') == b.get('region_id')}
+
+
+@app.get('/api/trade/pairs')
+def trade_pairs(
+    from_station: int = Query(..., alias='from'),
+    to_station: int = Query(..., alias='to'),
+    limit: int = 10,
+    min_profit: float = 100.0,
+    min_margin: float = 0.03,
+    min_units: int = 1,
+    min_orders: int = 2,
+    max_buy_price: float = 0.0,
+    sales_tax: float = station_trade.DEFAULT_SALES_TAX,
+    broker_fee: float = station_trade.DEFAULT_BROKER_FEE,
+    force: bool = False,
+):
+    """Items worth buying at ``from`` and selling at ``to``.
+
+    Two profit figures per row — *instant* (hit the bid at the far end) and
+    *patient* (list at the far end's ask) — because traders run both plays and
+    the gap between them is the decision. Ranking is on the instant figure so
+    the list can't flatter itself.
+
+    The top rows are then enriched with real traded volume from ESI's regional
+    history: on-book depth alone would happily recommend an item with 50k units
+    resting on it that moves two a day.
+    """
+    ua = _trade_ua()
+    try:
+        a_info, a_book, a_entry = station_trade.station_book(from_station, ua, force=force)
+        b_info, b_book, b_entry = station_trade.station_book(to_station, ua, force=force)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f'Could not load market data: {redact_secrets(e)}')
+    if not a_book:
+        return {'error': f"No orders found at {a_info['name']}", 'from': a_info, 'to': b_info}
+    if not b_book:
+        return {'error': f"No orders found at {b_info['name']}", 'from': a_info, 'to': b_info}
+
+    rows = station_trade.evaluate(a_book, b_book, sales_tax=sales_tax, broker_fee=broker_fee,
+                                  min_profit=min_profit, min_margin=min_margin,
+                                  min_units=min_units, min_orders=min_orders,
+                                  max_buy_price=max_buy_price)
+    total = len(rows)
+    top = station_trade.enrich_rows(rows, b_info['region_id'], ua, limit=max(1, min(limit, 50)))
+    return {
+        'from': a_info, 'to': b_info,
+        'rows': top, 'matched': total,
+        'types_at_from': len(a_book), 'types_at_to': len(b_book),
+        'fetched_at': int(min(a_entry['ts'], b_entry['ts'])),
+        'orders_scanned': a_entry['orders'] + b_entry['orders'],
+        'same_region': a_info.get('region_id') == b_info.get('region_id'),
+        'sales_tax': sales_tax, 'broker_fee': broker_fee,
+    }
+
+
+@app.get('/api/trade/pairs/stream')
+def trade_pairs_stream(
+    from_station: int = Query(..., alias='from'),
+    to_station: int = Query(..., alias='to'),
+    limit: int = 10,
+    min_profit: float = 100.0,
+    min_margin: float = 0.03,
+    min_units: int = 1,
+    min_orders: int = 2,
+    max_buy_price: float = 0.0,
+    sales_tax: float = station_trade.DEFAULT_SALES_TAX,
+    broker_fee: float = station_trade.DEFAULT_BROKER_FEE,
+    force: bool = False,
+):
+    """The same analysis as /api/trade/pairs, reported as it happens.
+
+    Paging a busy region is ~400 requests and about half a minute, which is a
+    long time to watch a spinner that can't say whether it's nearly done or
+    stuck. Event types: start | progress | done | error, one JSON object a line.
+    """
+    ua = get_user_agent()
+    args = dict(limit=limit, min_profit=min_profit, min_margin=min_margin, min_units=min_units,
+                min_orders=min_orders, max_buy_price=max_buy_price, sales_tax=sales_tax,
+                broker_fee=broker_fee, force=force)
+    return StreamingResponse(_trade_pairs_stream(from_station, to_station, ua, args),
+                             media_type='application/x-ndjson')
+
+
+def _trade_pairs_stream(from_station, to_station, ua, args):
+    """Bridge the worker's progress callbacks onto the response.
+
+    station_trade calls ``progress`` synchronously from whichever thread drains
+    its page futures, and a callback cannot yield. So the work runs on its own
+    thread and posts to a queue this generator reads — which also means a slow
+    ESI page can't stop the response reporting what's already done.
+    """
+    q = queue.Queue()
+
+    def emit(kind, **data):
+        q.put((kind, data))
+
+    def work():
+        try:
+            def phase(label, station):
+                def cb(done, total):
+                    emit('progress', phase=label, station=station, done=done, total=total)
+                return cb
+
+            a_info = station_trade.station_info(from_station, ua)
+            b_info = station_trade.station_info(to_station, ua)
+            emit('start', **{'from': a_info, 'to': b_info})
+
+            _, a_book, a_entry = station_trade.station_book(
+                from_station, ua, force=args['force'], progress=phase('buy', a_info['name']))
+            _, b_book, b_entry = station_trade.station_book(
+                to_station, ua, force=args['force'], progress=phase('sell', b_info['name']))
+
+            if not a_book or not b_book:
+                empty = a_info['name'] if not a_book else b_info['name']
+                emit('error', message=f'No orders found at {empty}')
+                return
+
+            emit('progress', phase='evaluate', done=0, total=0,
+                 station=f'{len(a_book)} x {len(b_book)} types')
+            rows = station_trade.evaluate(
+                a_book, b_book, sales_tax=args['sales_tax'], broker_fee=args['broker_fee'],
+                min_profit=args['min_profit'], min_margin=args['min_margin'],
+                min_units=args['min_units'], min_orders=args['min_orders'],
+                max_buy_price=args['max_buy_price'])
+
+            limit = max(1, min(args['limit'], 50))
+            emit('progress', phase='enrich', done=0, total=min(limit, len(rows)),
+                 station='traded volume')
+            top = station_trade.enrich_rows(rows, b_info['region_id'], ua, limit=limit)
+
+            emit('done', **{
+                'from': a_info, 'to': b_info, 'rows': top, 'matched': len(rows),
+                'types_at_from': len(a_book), 'types_at_to': len(b_book),
+                'fetched_at': int(min(a_entry['ts'], b_entry['ts'])),
+                'orders_scanned': a_entry['orders'] + b_entry['orders'],
+                'same_region': a_info.get('region_id') == b_info.get('region_id'),
+                'sales_tax': args['sales_tax'], 'broker_fee': args['broker_fee'],
+            })
+        except Exception as e:  # noqa: BLE001
+            emit('error', message=f'Could not load market data: {redact_secrets(e)}')
+        finally:
+            q.put((None, None))
+
+    threading.Thread(target=work, daemon=True, name='trade-pairs').start()
+    while True:
+        kind, data = q.get()
+        if kind is None:
+            return
+        yield _emit(kind, **data)
+
+
+@app.get('/api/trade/item')
+def trade_item(
+    type_id: int = Query(...),
+    from_station: int = Query(..., alias='from'),
+    to_station: int = Query(..., alias='to'),
+    sales_tax: float = station_trade.DEFAULT_SALES_TAX,
+    broker_fee: float = station_trade.DEFAULT_BROKER_FEE,
+):
+    """One item across one station pair — both directions.
+
+    Search wants the answer for an item you've already decided on, including
+    when it's the *other* way round that pays, so both directions come back.
+    """
+    ua = _trade_ua()
+    try:
+        a_info, a_book, _ = station_trade.station_book(from_station, ua)
+        b_info, b_book, _ = station_trade.station_book(to_station, ua)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f'Could not load market data: {redact_secrets(e)}')
+
+    meta = market.enrich([type_id], ua).get(int(type_id)) or {}
+    a = a_book.get(int(type_id))
+    b = b_book.get(int(type_id))
+
+    def one_way(src_book, dst_book, dst_region):
+        if not src_book or not dst_book:
+            return None
+        rows = station_trade.evaluate({int(type_id): src_book}, {int(type_id): dst_book},
+                                      sales_tax=sales_tax, broker_fee=broker_fee,
+                                      min_profit=-1e18, min_margin=-1e18, min_units=0)
+        if not rows:
+            return None
+        return station_trade.enrich_rows(rows, dst_region, ua, limit=1)[0]
+
+    return {
+        'type_id': type_id,
+        'name': meta.get('name') or f'type {type_id}',
+        'group': meta.get('group_name') or '', 'm3': meta.get('volume') or 0.0,
+        'from': a_info, 'to': b_info,
+        'book_from': a, 'book_to': b,
+        'forward': one_way(a, b, b_info['region_id']),
+        'reverse': one_way(b, a, a_info['region_id']),
+    }
+
+
+@app.get('/api/trade/search')
+def trade_search(q: str = Query(..., min_length=2), limit: int = 20):
+    """Type-name search for the item picker's typeahead.
+
+    Two sources, because neither alone is enough. The local metadata cache gives
+    instant substring matching but only knows types the app has already seen —
+    thin on a fresh install. So when it comes up short, the exact typed name is
+    put to ESI's name resolver, which knows every type in the game. That covers
+    both "I'm browsing" and "I know exactly what I want and you've never heard
+    of it".
+    """
+    needle = q.strip().lower()
+    cache = market._load_cache()
+    hits = []
+    for tid, m in cache.items():
+        name = (m.get('name') or '')
+        if needle in name.lower():
+            hits.append({'type_id': int(tid), 'name': name,
+                         'group': m.get('group_name') or '', 'volume': m.get('volume') or 0.0})
+            if len(hits) >= limit * 4:
+                break
+    # Prefix matches first, then shortest — "Tritanium" should beat
+    # "Compressed Tritanium Bar" for the query "trit".
+    hits.sort(key=lambda h: (not h['name'].lower().startswith(needle), len(h['name'])))
+
+    exact = False
+    if not hits:
+        try:
+            tid = resolve_type_id(q.strip(), get_user_agent())
+            if tid:
+                m = market.enrich([tid], get_user_agent()).get(int(tid)) or {}
+                if m.get('name'):
+                    hits = [{'type_id': int(tid), 'name': m['name'],
+                             'group': m.get('group_name') or '', 'volume': m.get('volume') or 0.0}]
+                    exact = True
+        except Exception:  # noqa: BLE001 — the cache result stands on its own
+            pass
+    return {'results': hits[:limit], 'cached_types': len(cache), 'exact_lookup': exact}
+
+
+@app.get('/api/trade/presets')
+def trade_presets_get():
+    """Saved station pairs, resolved to full station records for display."""
+    ua = _trade_ua()
+    out = []
+    for p in (load_config().get('trade_presets') or []):
+        try:
+            a = station_trade.station_info(int(p['from_station']), ua)
+            b = station_trade.station_info(int(p['to_station']), ua)
+        except Exception:  # noqa: BLE001 — a preset naming a dead station is dropped, not fatal
+            continue
+        out.append({'label': p.get('label') or f"{a['system']} → {b['system']}",
+                    'from': a, 'to': b})
+    return {'presets': out}
+
+
+@app.post('/api/trade/presets')
+def trade_presets_set(req: TradePresets):
+    """Replace the saved station pairs. Capped at 12 — they're quick-access
+    buttons, and past a dozen they stop being quicker than the dropdowns."""
+    clean = []
+    for p in (req.presets or [])[:12]:
+        if p.from_station and p.to_station and p.from_station != p.to_station:
+            clean.append({'label': (p.label or '')[:40],
+                          'from_station': int(p.from_station),
+                          'to_station': int(p.to_station)})
+    cfg = load_config()
+    cfg['trade_presets'] = clean
+    save_config(cfg)
+    return trade_presets_get()
+
+
+class TradeTickerEntry(BaseModel):
+    type_id: int
+    from_station: int
+    to_station: int
+
+
+class TradeTicker(BaseModel):
+    items: list[TradeTickerEntry] = []
+
+
+def _ticker_config():
+    out = []
+    for t in (load_config().get('trade_ticker') or []):
+        try:
+            out.append({'type_id': int(t['type_id']), 'from_station': int(t['from_station']),
+                        'to_station': int(t['to_station'])})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+@app.get('/api/trade/ticker')
+def trade_ticker_get(quotes: bool = True):
+    """The watched item+pair list, with a live quote for each.
+
+    Quotes come from the same cached station books the pairs table uses, so a
+    ticker over pairs you're already looking at costs nothing extra. Each quote
+    is recorded as today's point for that pair, which is how the spread chart
+    accrues real per-station history — ESI publishes none.
+    """
+    ua = _trade_ua()
+    watched = _ticker_config()
+    if not watched:
+        return {'items': [], 'stats': trade_history.stats()}
+
+    # Names only. Pricing the strip means paging a region's whole order book —
+    # ~50s from cold — and a strip that stays invisible for a minute reads as
+    # broken, so the caller can render the names first and fill prices in after.
+    if not quotes:
+        meta = market.enrich([w['type_id'] for w in watched], ua)
+        return {'items': [{**w, 'name': (meta.get(w['type_id']) or {}).get('name') or f"type {w['type_id']}",
+                           'pending': True} for w in watched],
+                'stats': trade_history.stats()}
+
+    # Group by station so each book is fetched once however many items watch it.
+    books, infos, failed = {}, {}, {}
+    for w in watched:
+        for sid in (w['from_station'], w['to_station']):
+            if sid in books or sid in failed:
+                continue
+            try:
+                info, book, _ = station_trade.station_book(sid, ua)
+                books[sid], infos[sid] = book, info
+            except Exception as e:  # noqa: BLE001 — one dead station mustn't blank the ticker
+                failed[sid] = f'{type(e).__name__}: {e}'
+
+    meta = market.enrich([w['type_id'] for w in watched], ua)
+    out = []
+    for w in watched:
+        a_book, b_book = books.get(w['from_station']), books.get(w['to_station'])
+        m = meta.get(w['type_id']) or {}
+        row = {'type_id': w['type_id'], 'name': m.get('name') or f"type {w['type_id']}",
+               'from_station': w['from_station'], 'to_station': w['to_station'],
+               'from': infos.get(w['from_station']), 'to': infos.get(w['to_station'])}
+        if a_book is None or b_book is None:
+            row['error'] = failed.get(w['from_station']) or failed.get(w['to_station']) or 'no data'
+            out.append(row)
+            continue
+        a, b = a_book.get(w['type_id']), b_book.get(w['type_id'])
+        if not a or not b or not a.get('ask') or not b.get('bid'):
+            row['error'] = 'not listed at both stations'
+            out.append(row)
+            continue
+        series = trade_history.load_series(w['type_id'], w['from_station'], w['to_station'])
+        point = trade_history.record(w['type_id'], w['from_station'], w['to_station'],
+                                     a['ask'], b['bid'], far_ask=b.get('ask'),
+                                     ask_vol=a.get('ask_vol'), bid_vol=b.get('bid_vol'))
+        # Change is measured against the last *previous* day, not against today's
+        # earlier reading — an intraday delta would flicker on every refresh.
+        prior = [p for p in series if p.get('d') != (point or {}).get('d')]
+        prev = prior[-1] if prior else None
+        row.update({'ask': a['ask'], 'bid': b['bid'], 'far_ask': b.get('ask'),
+                    'margin': (point or {}).get('margin', 0.0),
+                    'prev_margin': prev.get('margin') if prev else None,
+                    'change': round((point or {}).get('margin', 0.0) - prev['margin'], 4) if prev else None,
+                    'points': len(series) + (0 if (prev and series and series[-1].get('d') == point.get('d')) else 1)})
+        out.append(row)
+    return {'items': out, 'stats': trade_history.stats()}
+
+
+@app.post('/api/trade/ticker')
+def trade_ticker_set(req: TradeTicker):
+    """Replace the ticker watchlist. Capped at 40 — past that it scrolls for
+    longer than anyone waits to see the item they care about."""
+    clean, seen = [], set()
+    for t in (req.items or []):
+        if not t.type_id or t.from_station == t.to_station:
+            continue
+        k = (t.type_id, t.from_station, t.to_station)
+        if k in seen:
+            continue
+        seen.add(k)
+        clean.append({'type_id': int(t.type_id), 'from_station': int(t.from_station),
+                      'to_station': int(t.to_station)})
+        if len(clean) >= 40:
+            break
+    cfg = load_config()
+    cfg['trade_ticker'] = clean
+    save_config(cfg)
+    return {'ok': True, 'count': len(clean)}
+
+
+@app.get('/api/trade/history')
+def trade_history_get(
+    type_id: int = Query(...),
+    from_station: int = Query(..., alias='from'),
+    to_station: int = Query(..., alias='to'),
+    days: int = 120,
+):
+    """How one item has traded across one station pair over time.
+
+    Two different things come back, and the chart must keep them apart:
+
+    * ``regions`` — ESI's daily history for each station's region. Available
+      immediately and ~13 months deep, but it covers *every* station in that
+      region, so it is a proxy, and a useless one when both stations share a
+      region.
+    * ``spread`` — what this app actually recorded for these two stations. The
+      real answer, but it only exists from the day you started watching.
+    """
+    ua = _trade_ua()
+    a = station_trade.station_info(from_station, ua)
+    b = station_trade.station_info(to_station, ua)
+    meta = market.enrich([type_id], ua).get(int(type_id)) or {}
+
+    def region_history(region_id):
+        if not region_id:
+            return []
+        try:
+            return (fetch_region_market_history(region_id, type_id, ua) or [])[-days:]
+        except Exception:  # noqa: BLE001 — an item with no history is a fact, not an error
+            return []
+
+    return {
+        'type_id': type_id, 'name': meta.get('name') or f'type {type_id}',
+        'from': a, 'to': b,
+        'same_region': a.get('region_id') == b.get('region_id'),
+        'regions': {
+            'from': {'region': a.get('region'), 'history': region_history(a.get('region_id'))},
+            'to': {'region': b.get('region'), 'history': region_history(b.get('region_id'))},
+        },
+        'spread': trade_history.load_series(type_id, from_station, to_station)[-days:],
+    }
 
 
 @app.get('/api/smt/overlay')

@@ -26,6 +26,7 @@
           <button class="tab-btn" data-tab="module-sorter">Module Sorter</button>
           <button class="tab-btn" data-tab="plex-value">PLEX Value</button>
           <button class="tab-btn" data-tab="market">Market</button>
+          <button class="tab-btn" data-tab="station-trade">Station Trading</button>
           <button class="tab-btn" data-tab="dotlan">Maps</button>
           <button class="tab-btn" data-tab="zkill">zKillboard</button>
           <button class="tab-btn" data-tab="assets">My Assets</button>
@@ -1338,6 +1339,86 @@
       </div>
     </section>
 
+    <section id="tab-station-trade" class="tab">
+      <h2>Station Trading</h2>
+      <p class="muted">Buy low at one NPC hub, sell high at another. Prices are live from ESI (cached 5 minutes, matching ESI's own window); a first look at a busy region takes ~30s to page through its order book.</p>
+
+      <div class="st-pair-row">
+        <label>From <select id="st-from"></select></label>
+        <button id="st-swap" class="secondary" type="button" title="Swap the two stations">⇄</button>
+        <label>To <select id="st-to"></select></label>
+        <button id="st-run" type="button">Analyse</button>
+        <button id="st-save-preset" class="secondary" type="button" title="Save this pair for quick access">+ Save pair</button>
+        <span id="st-route" class="muted small"></span>
+      </div>
+
+      <div id="st-presets" class="st-presets"></div>
+
+      <div id="st-ticker-wrap" class="st-ticker-wrap" hidden>
+        <div class="st-ticker-label" title="Live gross spread for the pairs you're watching. Click one for its chart.">WATCH</div>
+        <div id="st-ticker" class="st-ticker"><div id="st-ticker-track" class="st-ticker-track"></div></div>
+        <button id="st-ticker-pause" class="st-ticker-btn" type="button" title="Pause the scroll">❚❚</button>
+        <button id="st-ticker-clear" class="st-ticker-btn" type="button" title="Stop watching everything">✕</button>
+      </div>
+
+      <details id="st-filters" class="st-filters">
+        <summary>Filters &amp; fees</summary>
+        <div class="st-filter-grid">
+          <label title="Ignore anything thinner than this at the best price">Min units <input id="st-min-units" type="number" min="0" step="1" value="1" /></label>
+          <label title="Orders needed on each side before an item counts — a hull listed once at each end is not a market">Min orders/side <input id="st-min-orders" type="number" min="0" step="1" value="2" /></label>
+          <label title="Instant margin below this is ignored">Min margin <input id="st-min-margin" type="number" min="0" step="0.5" value="3" />%</label>
+          <label title="Skip items costing more than this per unit (0 = no cap)">Max buy price <input id="st-max-price" type="number" min="0" step="1000000" value="0" /></label>
+          <label title="Your sales tax — Accounting skill">Sales tax <input id="st-tax" type="number" min="0" max="20" step="0.1" value="3.6" />%</label>
+          <label title="Your broker fee — Broker Relations and standings">Broker fee <input id="st-broker" type="number" min="0" max="20" step="0.1" value="1.5" />%</label>
+          <label title="How many rows to return">Rows <input id="st-limit" type="number" min="1" max="50" step="1" value="10" /></label>
+        </div>
+      </details>
+
+      <p id="st-status" class="muted"></p>
+      <div id="st-progress" class="st-progress" hidden>
+        <div class="st-progress-bar"><div id="st-progress-fill" class="st-progress-fill"></div></div>
+        <span id="st-progress-label" class="muted small"></span>
+      </div>
+      <div id="st-warn" class="st-warn" hidden></div>
+
+      <div class="st-cols">
+        <div class="st-main">
+          <div class="st-h">Top opportunities <span id="st-count" class="muted"></span></div>
+          <div id="st-results" class="st-results"><p class="muted">Pick two stations and hit <strong>Analyse</strong>.</p></div>
+        </div>
+        <aside class="st-side">
+          <div class="st-h">Find an item</div>
+          <div class="st-search-row">
+            <input id="st-search" type="text" placeholder="Item name…" spellcheck="false" autocomplete="off" />
+          </div>
+          <div id="st-search-results" class="st-search-results"></div>
+
+          <div class="st-h">Profit calculator</div>
+          <div id="st-calc" class="st-calc">
+            <p class="muted small">Click any row, or search an item, to load it here.</p>
+          </div>
+        </aside>
+      </div>
+
+      <div id="st-chart-panel" class="st-chart-panel" hidden>
+        <div class="st-chart-head">
+          <strong id="st-chart-title"></strong>
+          <span id="st-chart-sub" class="muted small"></span>
+          <span class="st-spacer"></span>
+          <button id="st-chart-close" class="secondary" type="button">Close</button>
+        </div>
+        <div id="st-chart-warn" class="st-warn" hidden></div>
+        <div id="st-chart-body" class="st-chart-body"></div>
+        <div class="st-chart-legend">
+          <span><i class="st-k-from"></i> <span id="st-chart-legend-from"></span> region avg (ESI, proxy)</span>
+          <span><i class="st-k-to"></i> <span id="st-chart-legend-to"></span> region avg (ESI, proxy)</span>
+          <span><i class="st-k-spread"></i> recorded station spread</span>
+        </div>
+      </div>
+
+      <p class="st-foot muted small">On-book depth is what's resting at the best price right now; <strong>vol/day</strong> is what the destination region actually traded per day over the last week — an item with thousands on the book that moves three a day is not a trade you can exit. ESI publishes traded volume per region only, so it covers every station in that region, not just the one you picked.</p>
+    </section>
+
     <section id="tab-market" class="tab">
       <h2>Market analytics</h2>
       <p class="muted">Live snapshot of the first configured structure's market (<span id="market-structure-label">…</span>). This market is seeded mostly with sell orders, so the dashboard leads with sell-side liquidity. <strong>Snapshot only</strong> — no history (ESI exposes none for player structures). Cached 5&nbsp;min; hit Refresh to re-fetch.</p>
@@ -1735,6 +1816,7 @@
   <script src="smt-highlight.js"></script>
   <script src="smt-alerts.js"></script>
   <script src="smt-activity.js"></script>
+  <script src="station-trade.js"></script>
   <script src="smt.js"></script>
   <script src="pi.js"></script>
   <script src="pi-builder.js"></script>

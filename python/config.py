@@ -279,7 +279,7 @@ DEFAULTS = {
     'acq_shopping_max_isk_gap': 500_000_000.0,
 }
 
-_USER_KEYS = set(DEFAULTS) | {'smt_log_dir', 'smt_channels', 'smt_jump_bridges', 'smt_alerts', 'smt_watchlist', 'smt_activity', 'smt_jump'}
+_USER_KEYS = set(DEFAULTS) | {'smt_log_dir', 'smt_channels', 'smt_jump_bridges', 'smt_alerts', 'smt_watchlist', 'smt_activity', 'smt_jump', 'trade_presets', 'trade_ticker'}
 
 
 def _fresh_default():
