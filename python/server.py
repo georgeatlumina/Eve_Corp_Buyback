@@ -3344,6 +3344,22 @@ def _root_location(asset, by_item):
     return cur.get('location_id'), cur.get('location_type')
 
 
+def _root_container(asset, by_item):
+    """Walk an asset up its container/ship chain to whatever it ultimately
+    sits directly in. Unlike _root_location, returns the container asset
+    itself — callers need its location_flag (the hangar division), not just
+    its location_id. A module fitted to a ship reports location_id as the
+    ship's own item_id, not the structure's; this resolves it to the ship,
+    which does sit directly in the structure."""
+    cur = asset
+    seen = set()
+    while (cur.get('location_type') == 'item' and cur.get('location_id') in by_item
+           and cur.get('item_id') not in seen and len(seen) < 32):
+        seen.add(cur['item_id'])
+        cur = by_item[cur['location_id']]
+    return cur
+
+
 def _resolve_asset_locations(pairs, ua):
     """{(location_id, location_type)} -> {location_id: name}. Stations via the
     public endpoint, player structures via any scoped token, systems via
@@ -7486,12 +7502,20 @@ def get_corp_assets(structure_id: Optional[int] = None):
     )
     _log.warning('[corp/assets] corp-hangar items by location_id: %s', dict(_hangar_locs.most_common(10)))
 
-    # Filter to items directly in a corp hangar at the home structure.
-    hangar_items = [
-        a for a in all_assets
-        if int(a.get('location_id') or 0) == structure_id
-        and a.get('location_flag') in _CORP_HANGAR_FLAGS
-    ]
+    # Filter to items directly in a corp hangar at the home structure, or
+    # nested inside something that is (e.g. modules fitted to a ship, or
+    # ammo/drones stowed in one) — those report location_id as the ship's own
+    # item_id, not the structure's, so a flat location_id match would drop
+    # them even though they're really sitting in that hangar.
+    by_item = {a['item_id']: a for a in all_assets if 'item_id' in a}
+    hangar_items = []      # (asset, hangar_flag) — hangar_flag is the ROOT
+                            # container's flag, e.g. a fitted module's own
+                            # flag is a slot ('LoSlot0'), not a hangar division
+    for a in all_assets:
+        root = _root_container(a, by_item)
+        root_flag = root.get('location_flag')
+        if int(root.get('location_id') or 0) == structure_id and root_flag in _CORP_HANGAR_FLAGS:
+            hangar_items.append((a, root_flag))
     _log.warning('[corp/assets] hangar_items after filter: %d', len(hangar_items))
 
     # Resolve type names + category_id from local type_meta first.
@@ -7507,7 +7531,7 @@ def get_corp_assets(structure_id: Optional[int] = None):
         pass
 
     # Collect type_ids we don't have locally so we can batch-enrich them.
-    unknown_ids = list({int(a['type_id']) for a in hangar_items
+    unknown_ids = list({int(a['type_id']) for a, _flag in hangar_items
                         if int(a['type_id']) not in local_meta})
     enriched = {}
     if unknown_ids:
@@ -7529,8 +7553,7 @@ def get_corp_assets(structure_id: Optional[int] = None):
     # Group by hangar division.
     from collections import defaultdict
     by_flag = defaultdict(list)
-    for a in hangar_items:
-        flag = a.get('location_flag', 'HangarAll')
+    for a, flag in hangar_items:
         name, category_id, group_id = _resolve(a['type_id'])
         by_flag[flag].append({
             'type_id': int(a['type_id']),
