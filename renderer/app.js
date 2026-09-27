@@ -210,6 +210,10 @@ function collectDivisionLabels() {
   return out;
 }
 const JITA_CONTRACT_MULTIPLIER = 1.2;
+// Mirrors _MARKET_TTL_SECONDS in server.py — past this age the server's own
+// cache has expired too, so treating aaState.market as still current would
+// report market availability that may no longer be true (see acqRunHullAnalysis).
+const ACQ_MARKET_MAX_AGE_SECONDS = 300;
 
 const lastResults = { buyback: [], moon: [] };
 const filterState = { buyback: 'all', moon: 'all' };
@@ -5285,6 +5289,13 @@ async function acqRunHullAnalysis(root, statusEl) {
   statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. ⏳ Loading UEXO market…`;
 
   let market = aaState.market || null;
+  if (market) {
+    const ageSec = Date.now() / 1000 - (market.fetched_at || 0);
+    if (ageSec >= ACQ_MARKET_MAX_AGE_SECONDS) {
+      appLog(`analyse-hulls: cached market is ${Math.round(ageSec)}s old, re-fetching…`);
+      market = null;
+    }
+  }
   if (!market) {
     appLog('analyse-hulls: market not cached, loading UEXO…');
     const marketStart = performance.now();
@@ -5343,7 +5354,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult, neededMap));
 
   renderAcqSection1(s1, fullResult, janiceFitPrices, neededMap);
-  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices, janiceFitPrices);
+  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices, janiceFitPrices, neededMap);
   s2.hidden = false;
   appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
 
@@ -5488,7 +5499,7 @@ function renderAcqSection1(el, result, janiceFitPrices = new Map(), neededMap = 
     </div>`;
 }
 
-function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPrices = new Map()) {
+function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPrices = new Map(), neededMap = new Map()) {
   const byType = market?.by_type || {};
   const groups = new Map();
   for (const b of builds) {
@@ -5523,10 +5534,14 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPric
     const contractPrice = fitPrice != null
       ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
       : `<span style="color:#4b5563">—</span>`;
+    const needed = neededMap.get(fitPriceKey);
+    const neededNote = needed != null
+      ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed.needed} of ${needed.quota} needed)</span>`
+      : '';
     return `<tr style="border-bottom:1px solid #1e2533">
         <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
         <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
-        <td style="padding:0.3rem 0.75rem;text-align:right">${g.n}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${g.n}${neededNote}</td>
         <td style="padding:0.3rem 0.5rem;text-align:right">${uexoStr} vs ${jitaStr}${deltaHtml}</td>
         <td style="padding:0.3rem 0.5rem;text-align:right;font-size:0.82rem" title="Janice Jita sell × ${pct}%">${contractPrice}</td>
       </tr>`;
