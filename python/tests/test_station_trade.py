@@ -33,12 +33,21 @@ class TestFold:
         assert e['bid_vol'] == 20
         assert e['bid_depth'] == 90
 
-    def test_player_structures_are_skipped(self):
-        """Structure markets need an authorized character with docking access,
-        so an order at one can't be read and must not look like a station's."""
+    def test_player_structures_are_kept(self):
+        """A public citadel's orders are in the region feed like any other — one
+        in The Forge carried 1306 of them — so they're tradeable. Only *naming*
+        one needs an authed character, and an unnamed structure is still a
+        perfectly good place to buy."""
         book = {}
+        sid = 1_040_000_000_000
+        stq._fold(book, order(sid, 34, 5.0, 100))
+        assert book[sid][34]['ask'] == 5.0
+
+    def test_the_structure_floor_separates_the_two_kinds(self):
+        book = {}
+        stq._fold(book, order(60003760, 34, 5.0, 100))
         stq._fold(book, order(1_040_000_000_000, 34, 5.0, 100))
-        assert book == {}
+        assert [k < stq.STRUCTURE_ID_FLOOR for k in sorted(book)] == [True, False]
 
     @pytest.mark.parametrize('bad', [
         {'location_id': 0, 'type_id': 34, 'price': 5, 'volume_remain': 1},
@@ -144,3 +153,54 @@ class TestHubs:
         assert by_id[60003760]['region'] == 'The Forge'
         assert by_id[60008494]['system'] == 'Amarr'
         assert by_id[60008494]['region'] == 'Domain'
+
+
+class TestStructureNaming:
+    def test_an_unresolvable_structure_is_still_usable(self, monkeypatch):
+        """No docking access means no name and no *system* — but its orders are
+        in the region feed regardless, so it must stay selectable and its book
+        readable. The region is stamped from where it was discovered, since
+        /universe/structures is the only thing that knows where a citadel is."""
+        monkeypatch.setattr(stq, '_structure_resolver', None)
+        stq._station_meta.pop(1_040_000_000_000, None)
+        info = stq.station_info(1_040_000_000_000, 'ua', region_hint=10000042)
+        assert info['structure'] is True
+        assert info['named'] is False
+        assert info['name'].startswith('Structure ')
+        assert info['region_id'] == 10000042     # book still readable
+        assert info['system_id'] is None         # but not routable
+
+    def test_a_resolvable_structure_gets_its_real_name_and_system(self, monkeypatch):
+        sid = 1_040_000_000_001
+        stq._station_meta.pop(sid, None)
+        monkeypatch.setattr(stq, '_structure_resolver',
+                            lambda s: {'name': 'Tranquility Trading Tower', 'solar_system_id': 30000144})
+        info = stq.station_info(sid, 'ua')
+        assert info['name'] == 'Tranquility Trading Tower'
+        assert info['named'] is True
+        assert info['system_id'] == 30000144
+        assert info['region_id']                  # derived from the system
+
+    def test_an_unnamed_structure_is_retried_once_a_resolver_exists(self, monkeypatch):
+        """Caching an unnamed one forever would mean logging in a character who
+        can dock there never helps."""
+        sid = 1_040_000_000_002
+        stq._station_meta.pop(sid, None)
+        monkeypatch.setattr(stq, '_structure_resolver', None)
+        assert stq.station_info(sid, 'ua', region_hint=10000002)['named'] is False
+        monkeypatch.setattr(stq, '_structure_resolver',
+                            lambda s: {'name': 'Now Visible', 'solar_system_id': 30000142})
+        assert stq.station_info(sid, 'ua')['name'] == 'Now Visible'
+
+    def test_npc_stations_are_cached_and_not_retried(self, monkeypatch):
+        calls = []
+
+        def fake(sid, ua):
+            calls.append(sid)
+            return {'name': 'Somewhere', 'system_id': 30000142}
+
+        stq._station_meta.pop(60003760, None)
+        monkeypatch.setattr(stq.esi, 'fetch_station_info', fake)
+        stq.station_info(60003760, 'ua')
+        stq.station_info(60003760, 'ua')
+        assert len(calls) == 1

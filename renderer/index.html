@@ -112,6 +112,16 @@
         <label>Corporation ID <input name="corp_id" type="number" /></label>
 
         <fieldset>
+          <legend>Corp wallet divisions</legend>
+          <p class="muted">EVE numbers corp wallet divisions 1&ndash;7 but each corp names them itself, so set yours here &mdash; these labels appear on the Buyback and Moon wallet tiles. Leave one blank to show &ldquo;Division N&rdquo;. The two dropdowns decide which tile is highlighted as <em>the</em> buyback and moon wallet.</p>
+          <div id="division-labels" class="division-labels"></div>
+          <div class="division-picks">
+            <label>Buyback wallet <select name="buyback_division" id="buyback-division"></select></label>
+            <label>Moon wallet <select name="moon_division" id="moon-division"></select></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend>Link handling</legend>
           <p class="muted">How external links (zKillboard, Janice, etc.) open when clicked inside the app.</p>
           <label>Open links in
@@ -1341,12 +1351,12 @@
 
     <section id="tab-station-trade" class="tab">
       <h2>Station Trading</h2>
-      <p class="muted">Buy low at one NPC hub, sell high at another. Prices are live from ESI (cached 5 minutes, matching ESI's own window); a first look at a busy region takes ~30s to page through its order book.</p>
+      <p class="muted">Buy low at one station, sell high at another &mdash; NPC stations and public citadels alike. Prices are live from ESI (cached 5 minutes, matching ESI's own window); a first look at a busy region takes ~30s to page through its order book. Jumps, trips and ISK/jump are quoted on the <strong>safest</strong> route, with the shortest shown alongside so you can see what the detour costs.</p>
 
       <div class="st-pair-row">
-        <label>From <select id="st-from"></select></label>
+        <label>From <button id="st-from-btn" class="st-station-btn" type="button">Choose a station…</button></label>
         <button id="st-swap" class="secondary" type="button" title="Swap the two stations">⇄</button>
-        <label>To <select id="st-to"></select></label>
+        <label>To <button id="st-to-btn" class="st-station-btn" type="button">Choose a station…</button></label>
         <button id="st-run" type="button">Analyse</button>
         <button id="st-save-preset" class="secondary" type="button" title="Save this pair for quick access">+ Save pair</button>
         <span id="st-route" class="muted small"></span>
@@ -1398,6 +1408,29 @@
             <p class="muted small">Click any row, or search an item, to load it here.</p>
           </div>
         </aside>
+      </div>
+
+      <div id="st-picker" class="st-picker" hidden>
+        <div class="st-picker-box">
+          <div class="st-picker-head">
+            <strong id="st-picker-title">Choose a station</strong>
+            <span class="st-spacer"></span>
+            <button id="st-picker-close" class="secondary" type="button">Close</button>
+          </div>
+          <input id="st-picker-search" type="text" placeholder="Filter by name or system…" spellcheck="false" autocomplete="off" />
+          <div class="st-picker-row">
+            <label>Browse region
+              <select id="st-picker-region"><option value="">— trade hubs —</option></select>
+            </label>
+            <label>or paste an ID
+              <input id="st-picker-id" type="number" placeholder="60003760" />
+            </label>
+            <button id="st-picker-id-go" class="secondary" type="button">Use ID</button>
+          </div>
+          <p id="st-picker-status" class="muted small"></p>
+          <div id="st-picker-list" class="st-picker-list"></div>
+          <p class="muted small">A region's list is built from its live order book — every station and public citadel that currently has orders, busiest first. Player structures only reveal their system to a character who can dock there; one that can't be placed still trades, it just can't be routed.</p>
+        </div>
       </div>
 
       <div id="st-chart-panel" class="st-chart-panel" hidden>

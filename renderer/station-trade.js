@@ -24,6 +24,7 @@
   const st = {
     stations: [], haulers: [], presets: [], loaded: false,
     data: null, route: null, selected: null, busy: false,
+    pair: { from: null, to: null }, regions: [],
     ticker: [], chart: null, tickerTimer: null,
   };
 
@@ -62,13 +63,18 @@
     const d = await api('/api/trade/stations');
     st.stations = d.stations || [];
     st.haulers = d.haulers || [];
-    const opts = st.stations.map((s) => `<option value="${s.station_id}">${esc(s.system)} — ${esc(s.name)}</option>`).join('');
-    for (const [id, dflt] of [['st-from', 0], ['st-to', 1]]) {
-      const sel = $id(id);
-      if (!sel) continue;
-      sel.innerHTML = opts;
-      if (st.stations[dflt]) sel.value = st.stations[dflt].station_id;
-    }
+    // Open on the classic pair so the tab is usable without picking anything.
+    if (!st.pair.from && st.stations[0]) setSide('from', st.stations[0]);
+    if (!st.pair.to && st.stations[1]) setSide('to', st.stations[1]);
+    try {
+      const r = await api('/api/trade/regions');
+      st.regions = r.regions || [];
+      const sel = $id('st-picker-region');
+      if (sel) {
+        sel.innerHTML = '<option value="">— trade hubs —</option>'
+          + st.regions.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+      }
+    } catch (_) { /* the hub list still works without regions */ }
     const tax = $id('st-tax'), broker = $id('st-broker');
     if (tax) tax.value = ((d.default_sales_tax || 0) * 100).toFixed(1);
     if (broker) broker.value = ((d.default_broker_fee || 0) * 100).toFixed(1);
@@ -83,7 +89,7 @@
     if (!box) return;
     if (!st.presets.length) { box.innerHTML = '<span class="muted small">No saved pairs yet — pick two stations and hit <strong>+ Save pair</strong>.</span>'; return; }
     box.innerHTML = st.presets.map((p, i) => `<span class="st-preset">
-      <button type="button" class="st-preset-go" data-from="${p.from.station_id}" data-to="${p.to.station_id}"
+      <button type="button" class="st-preset-go" data-i="${i}"
         title="${esc(p.from.name)} → ${esc(p.to.name)}">${esc(p.label)}</button>
       <button type="button" class="st-preset-del" data-i="${i}" title="Remove">✕</button></span>`).join('');
   }
@@ -100,8 +106,102 @@
     label: p.label, from_station: p.from.station_id, to_station: p.to.station_id,
   }));
 
+  // ---- station picker ----
+  // The five hubs are a starting point, not the set. Any station or public
+  // citadel with orders can be an endpoint, and ESI lists stations nowhere — so
+  // a region's own order book is the index, and pasting an id covers the rest.
+  const picker = { side: null, all: [], filtered: [] };
+
+  function stationLabel(s) {
+    const where = s.system || (s.structure ? 'location unknown' : '');
+    return `${s.name}${where ? ` — ${where}` : ''}`;
+  }
+  function setSide(side, station) {
+    if (!station || !station.station_id) return;
+    st.pair[side] = station;
+    const btn = $id(side === 'from' ? 'st-from-btn' : 'st-to-btn');
+    if (btn) {
+      btn.textContent = stationLabel(station);
+      btn.title = `${station.name}${station.region ? ` · ${station.region}` : ''} · id ${station.station_id}`;
+      btn.classList.toggle('unplaced', !!station.structure && !station.system_id);
+    }
+    const run = $id('st-run');
+    if (run) run.disabled = !(st.pair.from && st.pair.to);
+  }
+
+  function openPicker(side) {
+    picker.side = side;
+    $id('st-picker').hidden = false;
+    $id('st-picker-title').textContent = side === 'from' ? 'Buy at…' : 'Sell at…';
+    $id('st-picker-search').value = '';
+    $id('st-picker-search').focus();
+    showHubs();
+  }
+  const closePicker = () => { $id('st-picker').hidden = true; };
+
+  function showHubs() {
+    picker.all = st.stations.map((s) => ({ ...s, orders: null }));
+    $id('st-picker-status').textContent = `${picker.all.length} trade hubs — or browse a region for everything else.`;
+    renderPickerList();
+  }
+
+  async function loadRegionStations(regionId) {
+    const status = $id('st-picker-status');
+    // A filter left over from the hub list would hide the whole region behind
+    // an empty-state message, which reads like the fetch failed.
+    const search = $id('st-picker-search');
+    if (search) search.value = '';
+    status.textContent = 'Reading that region’s order book — up to ~30s the first time…';
+    $id('st-picker-list').innerHTML = '';
+    try {
+      const d = await api(`/api/trade/stations/in-region?region_id=${regionId}&limit=80`);
+      picker.all = d.stations || [];
+      status.textContent = `${num(d.total_locations)} locations have orders; showing the busiest ${picker.all.length}.`;
+      renderPickerList();
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  }
+
+  function renderPickerList() {
+    const q = ($id('st-picker-search').value || '').trim().toLowerCase();
+    picker.filtered = picker.all.filter((s) => !q
+      || (s.name || '').toLowerCase().includes(q)
+      || (s.system || '').toLowerCase().includes(q)
+      || (s.region || '').toLowerCase().includes(q));
+    const box = $id('st-picker-list');
+    if (!picker.filtered.length) {
+      box.innerHTML = '<p class="muted small">Nothing matches. Try a region, or paste the station id.</p>';
+      return;
+    }
+    box.innerHTML = picker.filtered.map((s, i) => {
+      const unplaced = s.structure && !s.system_id;
+      return `<button type="button" class="st-pick${unplaced ? ' unplaced' : ''}" data-i="${i}">
+        <span class="st-pick-name">${esc(s.name)}</span>
+        <span class="st-pick-meta muted">${esc(s.system || (s.structure ? 'location unknown' : ''))}${s.region ? ` · ${esc(s.region)}` : ''}</span>
+        ${s.orders ? `<span class="st-pick-orders">${num(s.orders)} orders</span>` : ''}
+        ${s.structure ? '<span class="st-pick-tag">citadel</span>' : ''}</button>`;
+    }).join('');
+  }
+
+  async function useStationId(raw) {
+    const id = Number(raw);
+    if (!id) return;
+    const status = $id('st-picker-status');
+    status.textContent = 'Looking that up…';
+    try {
+      const d = await api(`/api/trade/station?station_id=${id}`);
+      if (d.error) { status.textContent = d.error; return; }
+      setSide(picker.side, d);
+      closePicker();
+    } catch (e) { status.textContent = e.message; }
+  }
+
   // ---- the analysis ----
-  const pair = () => ({ from: Number($id('st-from')?.value), to: Number($id('st-to')?.value) });
+  const pair = () => ({
+    from: st.pair.from ? st.pair.from.station_id : 0,
+    to: st.pair.to ? st.pair.to.station_id : 0,
+  });
   const pct = (id, d) => { const v = Number($id(id)?.value); return Number.isFinite(v) ? v / 100 : d; };
   const int = (id, d) => { const v = Number($id(id)?.value); return Number.isFinite(v) ? v : d; };
 
@@ -166,7 +266,10 @@
     });
     hideProgress();
     try {
-      api(`/api/trade/route?from=${from}&to=${to}`).then((r) => { st.route = r; }).catch(() => {});
+      api(`/api/trade/route?from=${from}&to=${to}`).then((r) => {
+        st.route = r;
+        if (r && r.error) warn(r.error);
+      }).catch(() => {});
       let res;
       try {
         res = await fetch(`${API}/api/trade/pairs/stream?${q}`);
@@ -208,11 +311,22 @@
     }
   }
 
+  // Trips and ISK/jump are quoted on the safe route, because that's the one a
+  // loaded hauler actually flies. The shortest count rides along so the size of
+  // the detour is visible — Jita to Amarr is 11 short and 34 safe, and costing a
+  // run at 11 would flatter it badly.
+  function routeText() {
+    const r = st.route;
+    if (!r) return '? jumps';
+    if (r.error || r.jumps == null) return 'no route';
+    if (r.shortest != null && r.shortest !== r.jumps) return `${r.jumps} jumps safest (${r.shortest} shortest)`;
+    return `${r.jumps} jumps`;
+  }
+
   function renderResults() {
     const d = st.data;
     const rows = d.rows || [];
-    const jumps = st.route && st.route.jumps;
-    setStatus(`${esc(d.from.system)} → ${esc(d.to.system)} · ${jumps == null ? '?' : jumps} jumps · `
+    setStatus(`${esc(d.from.name)} → ${esc(d.to.name)} · ${routeText()} · `
       + `${num(d.orders_scanned)} orders scanned · ${num(d.matched)} items passed the filters · `
       + `updated ${new Date((d.fetched_at || 0) * 1000).toLocaleTimeString()}`);
     // Region-level traded volume can't tell two stations in one region apart.
@@ -554,7 +668,7 @@
     const perUnit = patient ? r.patient_profit : r.instant_profit;
     const m3 = (r.m3 || 0) * units;
     const trips = r.m3 > 0 ? Math.ceil(m3 / cap) : (units > 0 ? 1 : 0);
-    const jumps = st.route && st.route.jumps;
+    const jumps = st.route && st.route.jumps;   // safest — what a hauler flies
     const spend = r.buy_price * units;
     const profit = perUnit * units;
     // Over-buying past what the book holds is the commonest way these numbers
@@ -564,7 +678,7 @@
         <tr><td>Cost to buy</td><td class="num">${isk(spend)}</td></tr>
         <tr><td>Revenue after fees</td><td class="num">${isk(spend + profit)}</td></tr>
         <tr class="st-calc-total"><td>Profit</td><td class="num ${profit > 0 ? 'st-pos' : 'st-neg'}">${isk(profit)}</td></tr>
-        <tr><td>Per jump</td><td class="num">${jumps ? isk(profit / jumps) : '—'}</td></tr>
+        <tr><td>Per jump <span class="muted">(safest)</span></td><td class="num">${jumps ? isk(profit / jumps) : '—'}</td></tr>
         <tr><td>Volume</td><td class="num">${num(m3, 1)} m³</td></tr>
         <tr><td>Trips</td><td class="num">${num(trips)}${jumps ? ` × ${jumps} jumps = ${num(trips * jumps)}` : ''}</td></tr>
         <tr><td>Profit per trip</td><td class="num">${trips ? isk(profit / trips) : '—'}</td></tr>
@@ -583,15 +697,32 @@
     if (runBtn) { runBtn.disabled = true; runBtn.title = 'Loading stations…'; }
     $id('st-run')?.addEventListener('click', runAnalysis);
     $id('st-swap')?.addEventListener('click', () => {
-      const f = $id('st-from'), t = $id('st-to');
-      if (!f || !t) return;
-      const v = f.value; f.value = t.value; t.value = v;
+      const { from, to } = st.pair;
+      if (from) setSide('to', from);
+      if (to) setSide('from', to);
+    });
+    $id('st-from-btn')?.addEventListener('click', () => openPicker('from'));
+    $id('st-to-btn')?.addEventListener('click', () => openPicker('to'));
+    $id('st-picker-close')?.addEventListener('click', closePicker);
+    $id('st-picker')?.addEventListener('click', (e) => { if (e.target.id === 'st-picker') closePicker(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$id('st-picker')?.hidden) closePicker(); });
+    $id('st-picker-search')?.addEventListener('input', renderPickerList);
+    $id('st-picker-region')?.addEventListener('change', (e) => {
+      if (e.target.value) loadRegionStations(e.target.value);
+      else showHubs();
+    });
+    $id('st-picker-id-go')?.addEventListener('click', () => useStationId($id('st-picker-id').value));
+    $id('st-picker-id')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') useStationId(e.target.value); });
+    $id('st-picker-list')?.addEventListener('click', (e) => {
+      const b = e.target.closest('.st-pick');
+      if (!b) return;
+      setSide(picker.side, picker.filtered[Number(b.dataset.i)]);
+      closePicker();
     });
     $id('st-save-preset')?.addEventListener('click', () => {
       const { from, to } = pair();
       if (!from || !to || from === to) return;
-      const a = st.stations.find((s) => s.station_id === from);
-      const b = st.stations.find((s) => s.station_id === to);
+      const a = st.pair.from, b = st.pair.to;
       const list = presetPayload();
       if (list.some((p) => p.from_station === from && p.to_station === to)) return;
       list.push({ label: `${a ? a.system : from} → ${b ? b.system : to}`, from_station: from, to_station: to });
@@ -600,9 +731,8 @@
     $id('st-presets')?.addEventListener('click', (e) => {
       const go = e.target.closest('.st-preset-go');
       if (go) {
-        $id('st-from').value = go.dataset.from;
-        $id('st-to').value = go.dataset.to;
-        runAnalysis();
+        const p = st.presets[Number(go.dataset.i)];
+        if (p) { setSide('from', p.from); setSide('to', p.to); runAnalysis(); }
         return;
       }
       const del = e.target.closest('.st-preset-del');

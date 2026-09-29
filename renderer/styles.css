@@ -2401,3 +2401,37 @@ body.popout-calc .pib-calc > summary { display: none; }
 .st-hit b { color: #7fd4ff; font-weight: 700; }
 .st-hit-group { font-size: 0.85em; white-space: nowrap; }
 .st-sug-empty { padding: 0.5em 0.6em; margin: 0; line-height: 1.45; }
+
+/* ---- corp wallet divisions (Config) ---- */
+.division-labels { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.4em; margin-bottom: 0.6em; }
+.division-row { display: flex; align-items: center; gap: 0.45em; }
+.division-row input { flex: 1 1 auto; min-width: 0; }
+.division-n { display: inline-flex; align-items: center; justify-content: center; width: 1.6em; height: 1.6em;
+  background: #1a3a2a; border: 1px solid #2d5a44; border-radius: 4px; color: #cfd; font-size: 0.8em; flex: 0 0 auto; }
+.division-picks { display: flex; gap: 1em; flex-wrap: wrap; }
+
+/* ---- Station Trading: station picker ---- */
+.st-station-btn { background: #1e232a; color: #eaf2fa; border: 1px solid #39404a; border-radius: 4px;
+  padding: 0.3em 0.7em; cursor: pointer; min-width: 18em; text-align: left; font-size: 0.9em; }
+.st-station-btn:hover { background: #28303a; border-color: #3f7fae; }
+.st-station-btn.unplaced { border-color: #7a5a20; color: #f0c880; }
+.st-picker { position: fixed; inset: 0; z-index: 60; background: #000a; display: flex; align-items: flex-start; justify-content: center; padding: 6vh 1em; }
+.st-picker[hidden] { display: none; }
+.st-picker-box { background: #14171c; border: 1px solid #39404a; border-radius: 8px; box-shadow: 0 10px 40px #000c;
+  width: min(760px, 100%); max-height: 84vh; display: flex; flex-direction: column; gap: 0.5em; padding: 0.8em 1em; }
+.st-picker-head { display: flex; align-items: center; gap: 0.6em; color: #eaf2fa; }
+.st-picker-box input[type="text"], .st-picker-box input[type="number"], .st-picker-box select {
+  background: #1e1e1e; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: 0.35em 0.5em; }
+.st-picker-box > input[type="text"] { width: 100%; }
+.st-picker-row { display: flex; gap: 0.8em; align-items: flex-end; flex-wrap: wrap; }
+.st-picker-row label { display: flex; flex-direction: column; gap: 0.2em; color: #cde; font-size: 0.85em; }
+.st-picker-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; min-height: 120px; }
+.st-pick { display: grid; grid-template-columns: 1fr auto auto; gap: 0.6em; align-items: baseline;
+  background: #1a1d22; border: 1px solid #23272e; border-radius: 4px; color: #cdd6df;
+  padding: 0.4em 0.6em; cursor: pointer; text-align: left; font-size: 0.87em; }
+.st-pick:hover { background: #24303a; border-color: #3f7fae; }
+.st-pick.unplaced { border-left: 3px solid #7a5a20; }
+.st-pick-name { color: #eaf2fa; grid-column: 1; }
+.st-pick-meta { grid-column: 1; font-size: 0.85em; }
+.st-pick-orders { grid-row: 1; grid-column: 2; font-variant-numeric: tabular-nums; color: #9fb0c0; }
+.st-pick-tag { grid-row: 1; grid-column: 3; background: #3a2f14; color: #ffd98a; border-radius: 3px; padding: 0 0.4em; font-size: 0.8em; }

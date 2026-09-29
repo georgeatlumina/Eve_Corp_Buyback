@@ -138,6 +138,11 @@ document.getElementById('btn-check-update')?.addEventListener('click', async (e)
   window.api.pendingUpdate?.().then(show).catch(() => {});
 })();
 
+// Corp wallet divisions are numbered 1-7 by EVE but named per corp, so these
+// come from config rather than being baked in — a division holding SRP in one
+// corp holds something else in the next, and a mislabelled tile misreports
+// money. These are the fallbacks until /api/config lands; applyDivisionConfig()
+// overwrites them.
 const DIVISION_LABELS = {
   1: 'Master',
   2: 'Contracts',
@@ -147,8 +152,63 @@ const DIVISION_LABELS = {
   6: 'Moon mining',
   7: 'Command',
 };
-const BUYBACK_DIVISION = 3;
-const MOON_DIVISION = 6;
+const DIVISIONS = { buyback: 3, moon: 6 };
+const divisionLabel = (n) => DIVISION_LABELS[n] || `Division ${n}`;
+
+// Config -> the live label map + which tiles are highlighted, and the Config
+// form's own inputs.
+function applyDivisionConfig(cfg) {
+  const labels = cfg.wallet_division_labels || {};
+  for (let n = 1; n <= 7; n++) {
+    const v = (labels[n] ?? labels[String(n)] ?? '').toString().trim();
+    if (v) DIVISION_LABELS[n] = v;
+    else delete DIVISION_LABELS[n];     // fall through to "Division N"
+  }
+  DIVISIONS.buyback = Number(cfg.buyback_division) || 3;
+  DIVISIONS.moon = Number(cfg.moon_division) || 6;
+
+  const box = $('#division-labels');
+  if (box) {
+    box.innerHTML = '';
+    for (let n = 1; n <= 7; n++) {
+      const label = document.createElement('label');
+      label.className = 'division-row';
+      label.innerHTML = `<span class="division-n">${n}</span>`;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = `wallet_division_label_${n}`;
+      input.placeholder = `Division ${n}`;
+      input.maxLength = 32;
+      input.value = DIVISION_LABELS[n] || '';
+      label.appendChild(input);
+      box.appendChild(label);
+    }
+  }
+  for (const [id, val] of [['#buyback-division', DIVISIONS.buyback], ['#moon-division', DIVISIONS.moon]]) {
+    const sel = $(id);
+    if (!sel) continue;
+    sel.innerHTML = '';
+    for (let n = 1; n <= 7; n++) {
+      const opt = document.createElement('option');
+      opt.value = String(n);
+      opt.textContent = `${n} — ${divisionLabel(n)}`;
+      sel.appendChild(opt);
+    }
+    sel.value = String(val);
+  }
+}
+
+// Read the seven boxes back out. A blank one is simply omitted, so it renders
+// as "Division N" rather than an empty tile with money in it.
+function collectDivisionLabels() {
+  const out = {};
+  for (let n = 1; n <= 7; n++) {
+    const el = $(`[name=wallet_division_label_${n}]`);
+    const v = (el?.value || '').trim();
+    if (v) out[String(n)] = v;
+  }
+  return out;
+}
 const JITA_CONTRACT_MULTIPLIER = 1.2;
 
 const lastResults = { buyback: [], moon: [] };
@@ -598,6 +658,7 @@ async function loadConfig() {
   if ($('[name=market_history_pat_write]')) {
     $('[name=market_history_pat_write]').value = cfg.market_history_pat_write || '';
   }
+  applyDivisionConfig(cfg);
   if ($('[name=stockpile_group_name]')) {
     $('[name=stockpile_group_name]').value = cfg.stockpile_group_name || '';
   }
@@ -708,6 +769,9 @@ function collectConfigForm() {
   const fd = new FormData(form);
   return {
     corp_id: parseInt(fd.get('corp_id')) || 0,
+    wallet_division_labels: collectDivisionLabels(),
+    buyback_division: parseInt(fd.get('buyback_division')) || 3,
+    moon_division: parseInt(fd.get('moon_division')) || 6,
     structures: collectStructures(),
     janice_market: $('#janice-market').value,
     janice_api_key: fd.get('janice_api_key'),
@@ -1465,8 +1529,8 @@ $('#btn-refresh-moon-wallets').addEventListener('click', refreshWallets);
 
 async function refreshWallets() {
   const targets = [
-    { sel: '#wallet-summary', highlight: BUYBACK_DIVISION },
-    { sel: '#moon-wallet-summary', highlight: MOON_DIVISION },
+    { sel: '#wallet-summary', highlight: DIVISIONS.buyback },
+    { sel: '#moon-wallet-summary', highlight: DIVISIONS.moon },
   ].filter((t) => $(t.sel));
 
   for (const { sel } of targets) $(sel).innerHTML = '<span class="muted">loading wallets…</span>';
@@ -1503,7 +1567,7 @@ function renderWalletTiles(root, data, highlightDivision) {
     const tile = document.createElement('div');
     const isHighlight = w.division === highlightDivision;
     tile.className = `wallet-tile${isHighlight ? ' total' : ''}`;
-    const label = DIVISION_LABELS[w.division] || `Division ${w.division}`;
+    const label = divisionLabel(w.division);
     tile.innerHTML = `<div class="label">${label} (div ${w.division})</div><div class="amount">${Math.round(w.balance).toLocaleString()} ISK</div>`;
     root.appendChild(tile);
   }
@@ -7666,7 +7730,7 @@ function renderSrpList(root) {
   if (srpState.wallet) {
     const w = srpState.wallet;
     const tiles = [`<div class="wallet-tile total"><div class="label">Corp wallet (all divisions)</div><div class="amount">${Math.round(w.total).toLocaleString()} ISK</div></div>`]
-      .concat((w.wallets || []).map((d) => `<div class="wallet-tile"><div class="label">${escapeHtml(DIVISION_LABELS[d.division] || ('Division ' + d.division))}</div><div class="amount">${Math.round(d.balance).toLocaleString()} ISK</div></div>`));
+      .concat((w.wallets || []).map((d) => `<div class="wallet-tile"><div class="label">${escapeHtml(divisionLabel(d.division))}</div><div class="amount">${Math.round(d.balance).toLocaleString()} ISK</div></div>`));
     walletHtml = `<div class="wallet-summary">${tiles.join('')}</div>`;
   }
 

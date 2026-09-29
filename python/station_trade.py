@@ -23,10 +23,23 @@ import time
 
 import esi
 
-# Player structures use ids above ~1e12 and need an authorized character with
-# docking access; NPC stations are the small ids. Station trading is an NPC-hub
-# activity, so anything above the line is simply not ours to read.
-NPC_STATION_MAX = 1_000_000_000_000
+# Player structures use ids above ~1e12; NPC stations are the small ids. Both
+# trade, and a public citadel's orders are already in the region feed — one in
+# The Forge carried 1306 of them — so both are kept. The difference is naming:
+# /universe/names/ rejects structure ids outright (400), so a structure's name
+# has to come from /universe/structures/{id}, which needs an authed character
+# with docking access. Without one the structure is still perfectly tradeable,
+# it just shows as its id and system.
+STRUCTURE_ID_FLOOR = 1_000_000_000_000
+
+# Injected by server.py, which owns the tokens: fn(structure_id) -> {'name',
+# 'solar_system_id'} or None. Kept as a hook so this module stays pure.
+_structure_resolver = None
+
+
+def set_structure_resolver(fn):
+    global _structure_resolver
+    _structure_resolver = fn
 
 # The NPC hubs worth pairing. Only the ids are hardcoded — names, systems and
 # regions are resolved from ESI and the bundled map at runtime, so a station
@@ -54,7 +67,7 @@ _meta_lock = threading.Lock()
 
 
 # ---- station metadata -------------------------------------------------------
-def station_info(station_id, user_agent, systems=None):
+def station_info(station_id, user_agent, systems=None, region_hint=None):
     """{station_id, name, system_id, system, region, region_id, sec} — cached.
 
     Region comes from the bundled map rather than a second ESI call; the map
@@ -63,15 +76,48 @@ def station_info(station_id, user_agent, systems=None):
     sid = int(station_id)
     with _meta_lock:
         hit = _station_meta.get(sid)
-    if hit:
+    if hit and (hit.get('named') or not _structure_resolver):
         return hit
+    if sid >= STRUCTURE_ID_FLOOR:
+        return _structure_info(sid, systems, region_hint=region_hint, prior=hit)
     info = esi.fetch_station_info(sid, user_agent)
     sys_id = info.get('system_id')
     rec = (systems or _systems()).get(str(sys_id)) or {}
     out = {'station_id': sid, 'name': info.get('name') or f'station {sid}',
            'system_id': sys_id, 'system': rec.get('name'),
            'region': rec.get('region'), 'region_id': _region_id_for(rec.get('region')),
-           'sec': rec.get('sec')}
+           'sec': rec.get('sec'), 'structure': False, 'named': True}
+    with _meta_lock:
+        _station_meta[sid] = out
+    return out
+
+
+def _structure_info(sid, systems=None, region_hint=None, prior=None):
+    """A player structure's record.
+
+    Unnamed is a normal outcome, not a failure — it means nobody authenticated
+    can dock there. Such a structure is still tradeable, because its orders are
+    in the region feed regardless, so it comes back selectable and labelled by
+    id. What it lacks is a *system*, and therefore a route: /universe/structures
+    is the only thing that knows where a citadel is. The region is stamped from
+    wherever it was discovered so the order book can still be read.
+    """
+    got = None
+    if _structure_resolver:
+        try:
+            got = _structure_resolver(sid)
+        except Exception:  # noqa: BLE001 — no docking access is the common case
+            got = None
+    sys_id = (got or {}).get('solar_system_id')
+    rec = ((systems or _systems()).get(str(sys_id)) or {}) if sys_id else {}
+    region_id = _region_id_for(rec.get('region')) or region_hint or (prior or {}).get('region_id')
+    out = {'station_id': sid, 'name': (got or {}).get('name') or f'Structure {sid}',
+           'system_id': sys_id, 'system': rec.get('name'),
+           'region': rec.get('region') or (prior or {}).get('region'),
+           'region_id': region_id,
+           'sec': rec.get('sec'), 'structure': True, 'named': bool((got or {}).get('name'))}
+    # Cached either way so the region survives, but an unnamed one is retried
+    # (see station_info) once a character who can dock there authenticates.
     with _meta_lock:
         _station_meta[sid] = out
     return out
@@ -119,7 +165,7 @@ def _fold(book, order):
     price resets the counter, an equal one adds to it.
     """
     loc = int(order.get('location_id') or 0)
-    if not loc or loc >= NPC_STATION_MAX:
+    if not loc:
         return
     tid = int(order.get('type_id') or 0)
     if not tid:
@@ -351,3 +397,41 @@ def enrich_rows(rows, sell_region_id, user_agent, limit=40, history_days=7):
     # order book, which flatters anything with a wide spread and no volume.
     head.sort(key=lambda r: r['daily_profit'], reverse=True)
     return head
+
+
+# ---- station discovery ------------------------------------------------------
+def stations_in_region(region_id, user_agent, limit=60, force=False, progress=None):
+    """Every station and public structure in a region that currently has orders.
+
+    There is no ESI endpoint that lists stations, so the market itself is the
+    index: a location with orders on it is, by definition, one worth trading at.
+    Ranked by order count, which puts the hub first and the one abandoned office
+    with a single order last.
+
+    Naming costs a lookup each, so only the head of the list is resolved — the
+    tail is almost always noise you would never pick.
+    """
+    entry = region_book(region_id, user_agent, force=force, progress=progress)
+    counts = []
+    for loc, book in entry['books'].items():
+        orders = sum((e.get('ask_orders') or 0) + (e.get('bid_orders') or 0) for e in book.values())
+        counts.append((orders, len(book), loc))
+    counts.sort(reverse=True)
+    systems = _systems()
+    out = []
+    for orders, types, loc in counts[:limit]:
+        try:
+            info = station_info(loc, user_agent, systems, region_hint=int(region_id))
+        except Exception:  # noqa: BLE001 — an unresolvable location is still tradeable
+            info = {'station_id': loc, 'name': f'Location {loc}', 'system': None,
+                    'region': None, 'region_id': int(region_id), 'sec': None,
+                    'structure': loc >= STRUCTURE_ID_FLOOR, 'named': False}
+        out.append({**info, 'orders': orders, 'types': types})
+    return {'stations': out, 'total_locations': len(counts), 'region_id': int(region_id)}
+
+
+def regions(user_agent=None):
+    """Every k-space region, for the station picker's region dropdown."""
+    import eve_map
+    return sorted(({'id': r['id'], 'name': r['name']} for r in eve_map.load_map()['regions']),
+                  key=lambda r: r['name'])

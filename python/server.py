@@ -191,6 +191,9 @@ def get_config():
 
 class ConfigUpdate(BaseModel):
     corp_id: Optional[int] = None
+    wallet_division_labels: Optional[dict] = None
+    buyback_division: Optional[int] = None
+    moon_division: Optional[int] = None
     scopes: Optional[list[str]] = None
     structures: Optional[list[dict]] = None
     janice_market: Optional[str] = None
@@ -227,10 +230,35 @@ class ConfigUpdate(BaseModel):
     pi_templates_dir: Optional[str] = None
 
 
+def _clean_division_labels(raw):
+    """Keep only divisions 1-7, as trimmed strings.
+
+    A blank label falls back to "Division N" at render time rather than being
+    stored, so clearing a box gives you the neutral name instead of an empty
+    tile with money in it.
+    """
+    out = {}
+    for n in range(1, 8):
+        key = str(n)
+        val = (raw or {}).get(key, (raw or {}).get(n))
+        val = str(val).strip()[:32] if val is not None else ''
+        if val:
+            out[key] = val
+    return out
+
+
 @app.post('/api/config')
 def update_config(update: ConfigUpdate):
     cfg = load_config()
     data = update.model_dump(exclude_unset=True)
+    if 'wallet_division_labels' in data:
+        data['wallet_division_labels'] = _clean_division_labels(data['wallet_division_labels'])
+    for key in ('buyback_division', 'moon_division'):
+        if key in data:
+            try:
+                data[key] = max(1, min(int(data[key]), 7))
+            except (TypeError, ValueError):
+                data.pop(key)
     cfg.update(data)
     save_config(cfg)
     return cfg
@@ -1511,6 +1539,35 @@ def _trade_ua():
     return get_user_agent()
 
 
+_structure_resolver_bound = False
+
+
+def _bind_structure_resolver():
+    """Teach station_trade how to name player structures.
+
+    It lives here because naming one needs an access token, and station_trade is
+    a pure module. Tokens are fetched per call rather than cached: which
+    characters are authenticated changes while the app runs, and a structure
+    unnameable now may be nameable after someone logs in an alt who can dock
+    there.
+    """
+    global _structure_resolver_bound
+    if _structure_resolver_bound:
+        return
+
+    def resolve(structure_id):
+        ua = get_user_agent()
+        for tok in _structure_capable_tokens(ua):
+            try:
+                return fetch_structure_info(structure_id, tok, ua)
+            except Exception:  # noqa: BLE001 — this character can't dock there; try the next
+                continue
+        return None
+
+    station_trade.set_structure_resolver(resolve)
+    _structure_resolver_bound = True
+
+
 @app.get('/api/trade/stations')
 def trade_stations():
     """NPC hubs worth pairing, plus the hauler presets the calculator offers."""
@@ -1522,16 +1579,78 @@ def trade_stations():
 
 @app.get('/api/trade/route')
 def trade_route(from_station: int = Query(..., alias='from'), to_station: int = Query(..., alias='to')):
-    """Gate jumps between two stations' systems — what a hauler actually flies."""
+    """Gate jumps between two stations' systems, both ways of flying it.
+
+    Trips and ISK/jump are quoted on the **safe** route, because that is the one
+    a loaded hauler actually flies — costing a run at the shortest hop count
+    flatters it by however much low-sec you would have had to cross. The
+    shortest count comes back too, so the size of the detour is visible rather
+    than hidden.
+    """
+    _bind_structure_resolver()
     ua = _trade_ua()
     a = station_trade.station_info(from_station, ua)
     b = station_trade.station_info(to_station, ua)
     if not a.get('system_id') or not b.get('system_id'):
-        return {'error': 'Could not resolve both stations'}
-    r = eve_map.route(a['system_id'], b['system_id'], 'shortest')
-    jumps = (r or {}).get('jumps')
-    return {'from': a, 'to': b, 'jumps': jumps,
-            'same_region': a.get('region_id') == b.get('region_id')}
+        # A structure nobody can dock at has no known system, so there is no
+        # route to compute. Prices still work — say which end is the problem
+        # rather than failing the whole thing.
+        blind = [x['name'] for x in (a, b) if not x.get('system_id')]
+        return {'from': a, 'to': b, 'jumps': None, 'shortest': None, 'safest': None,
+                'same_region': a.get('region_id') == b.get('region_id'),
+                'error': f'No route: {" and ".join(blind)} has no known location. '
+                         f'A player structure only reveals its system to a character who can dock there, '
+                         f'so jumps and trips are unavailable — prices are unaffected.'}
+    out = {'from': a, 'to': b, 'same_region': a.get('region_id') == b.get('region_id')}
+    for key, prefer in (('shortest', 'shortest'), ('safest', 'safe')):
+        r = eve_map.route(a['system_id'], b['system_id'], prefer) or {}
+        out[key] = r.get('jumps')
+        if key == 'safest':
+            # A safe route can simply not exist (a null-sec pocket), in which
+            # case the honest answer is the shortest one, said plainly.
+            out['safest_available'] = r.get('jumps') is not None
+    if out.get('safest') is None:
+        out['safest'] = out.get('shortest')
+    # What the calculator should use.
+    out['jumps'] = out.get('safest')
+    out['detour'] = (out['safest'] - out['shortest']) if (out.get('safest') is not None and out.get('shortest') is not None) else None
+    return out
+
+
+@app.get('/api/trade/regions')
+def trade_regions():
+    """Regions for the station picker."""
+    return {'regions': station_trade.regions()}
+
+
+@app.get('/api/trade/stations/in-region')
+def trade_stations_in_region(region_id: int = Query(...), limit: int = 60, force: bool = False):
+    """Stations and public structures in a region that currently have orders.
+
+    ESI lists no stations anywhere, so the market is the index — a location with
+    orders on it is one worth trading at. This is what lets a pair be built from
+    any station rather than only the five built-in hubs, and it costs nothing
+    extra when the region's book is already cached.
+    """
+    _bind_structure_resolver()
+    try:
+        return station_trade.stations_in_region(region_id, get_user_agent(), limit=limit, force=force)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f'Could not read that region: {redact_secrets(e)}')
+
+
+@app.get('/api/trade/station')
+def trade_station(station_id: int = Query(...)):
+    """One station or structure by id, for pasting an id straight in."""
+    _bind_structure_resolver()
+    try:
+        info = station_trade.station_info(station_id, get_user_agent())
+    except Exception as e:  # noqa: BLE001
+        return {'error': f'Could not resolve {station_id}: {redact_secrets(e)}'}
+    if not info.get('region_id'):
+        return {'error': f'{info.get("name") or station_id} has no resolvable region — '
+                         f'if it is a player structure, no authenticated character can dock there.'}
+    return info
 
 
 @app.get('/api/trade/pairs')

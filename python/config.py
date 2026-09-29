@@ -113,8 +113,27 @@ DEFAULT_MAIL_PRESETS = [
     {'label': '', 'subject': '', 'body': ''},
 ]
 
+# Corp wallet divisions are numbered 1-7 by EVE but *named* per corp, so the
+# labels can't be a constant — a division that holds SRP in one corp holds
+# something else in the next, and a mislabelled tile misreports money. Defaults
+# match the arrangement these started as; edit them in the Config tab.
+WALLET_DIVISION_LABELS = {
+    '1': 'Master',
+    '2': 'Contracts',
+    '3': 'Buyback',
+    '4': 'SRP',
+    '5': 'Manufacturing',
+    '6': 'Moon mining',
+    '7': 'Command',
+}
+
 DEFAULTS = {
     'corp_id': 0,
+    'wallet_division_labels': WALLET_DIVISION_LABELS,
+    # Which division the Buyback and Moon pages treat as *the* wallet — the tile
+    # they highlight. Corp-specific for the same reason the labels are.
+    'buyback_division': 3,
+    'moon_division': 6,
     'scopes': [
         'publicData',
         'esi-markets.structure_markets.v1',
@@ -287,6 +306,10 @@ def _fresh_default():
         **DEFAULTS,
         'structures': [dict(s) for s in DEFAULT_STRUCTURES],
         'mail_presets': [dict(p) for p in DEFAULT_MAIL_PRESETS],
+        # Copied for the same reason as the two above: a shallow ** would hand
+        # out the module-level dict, and one caller mutating it would rewrite
+        # the defaults for the rest of the process.
+        'wallet_division_labels': dict(WALLET_DIVISION_LABELS),
     }
 
 
