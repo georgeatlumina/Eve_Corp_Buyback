@@ -153,3 +153,102 @@ def classify(meta, name=''):
     if cid == _CATEGORY_PLANETARY or gid == _GROUP_PLANETARY_RAW:
         return 'pi'
     return 'other'
+
+
+# ---- quotas -----------------------------------------------------------------
+# How much of each material the alliance wants on hand. Separate from the stock
+# doc itself: stock is state that changes every scan, a quota is intent that
+# changes rarely, and storing them together would mean a routine stock push
+# could clobber somebody's targets.
+
+def normalize_quotas(raw):
+    """Coerce saved quotas into ``[{name, type_id, target}]``.
+
+    A target of 0 is dropped rather than stored — "I want none of this" is the
+    same as having no quota, and keeping it would clutter the status list.
+    """
+    out, seen = [], set()
+    for q in (raw or []):
+        if not isinstance(q, dict):
+            continue
+        name = str(q.get('name') or '').strip()
+        if not name:
+            continue
+        try:
+            target = int(float(q.get('target') or 0))
+        except (TypeError, ValueError):
+            continue
+        if target <= 0:
+            continue
+        try:
+            tid = int(q.get('type_id') or 0)
+        except (TypeError, ValueError):
+            tid = 0
+        key = tid or name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({'name': name, 'type_id': tid, 'target': target})
+    out.sort(key=lambda q: q['name'].lower())
+    return out
+
+
+def quota_status(items, quotas):
+    """Join stock against targets, one row per quota.
+
+    Matching prefers ``type_id`` and falls back to a case-insensitive name,
+    because a pasted stock list carries no type ids while an ESI hangar scan
+    does — the same material has to reconcile either way.
+
+    Every quota produces a row *including ones with no stock at all*: an item
+    you hold none of is the single most important thing this list can tell you,
+    and joining the other way round would silently omit it.
+    """
+    by_id, by_name = {}, {}
+    for it in (items or []):
+        if it.get('type_id'):
+            by_id[int(it['type_id'])] = it
+        by_name[str(it.get('name') or '').strip().lower()] = it
+
+    rows = []
+    for q in normalize_quotas(quotas):
+        hit = by_id.get(q['type_id']) if q['type_id'] else None
+        if hit is None:
+            hit = by_name.get(q['name'].lower())
+        have = int((hit or {}).get('qty') or 0)
+        target = q['target']
+        pct = (have / target) if target else 0.0
+        rows.append({
+            'name': (hit or {}).get('name') or q['name'],
+            'type_id': q['type_id'] or int((hit or {}).get('type_id') or 0),
+            'category': (hit or {}).get('category') or 'other',
+            'have': have,
+            'target': target,
+            'pct': round(pct, 4),
+            'shortfall': max(0, target - have),
+            'surplus': max(0, have - target),
+            'state': _quota_state(pct),
+        })
+    # Worst first: the list exists to be acted on, and what you're short of
+    # matters more than what you have plenty of.
+    rows.sort(key=lambda r: (r['pct'], -r['shortfall']))
+    return rows
+
+
+def _quota_state(pct):
+    if pct >= 1:
+        return 'met'
+    if pct >= 0.75:
+        return 'near'
+    if pct >= 0.25:
+        return 'low'
+    return 'critical'
+
+
+def quota_totals(rows):
+    return {
+        'tracked': len(rows),
+        'met': sum(1 for r in rows if r['state'] == 'met'),
+        'critical': sum(1 for r in rows if r['state'] == 'critical'),
+        'short': sum(1 for r in rows if r['shortfall'] > 0),
+    }

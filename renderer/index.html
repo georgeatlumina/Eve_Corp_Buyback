@@ -245,6 +245,25 @@
             <span id="stockpile-unlock-status" class="muted"></span>
           </div>
           <label class="inline-check"><input name="stockpile_allow_push" type="checkbox" /> Allow stock edits (show the admin paste/save panel)</label>
+
+          <div class="sq-config">
+            <h4 class="sq-config-head">Which hangar the stockpile reads</h4>
+            <p class="muted">The corp hangar the Stockpile scan pulls from. Leave the structure blank to use the corp-hangar / home structure set above. Tick the divisions that hold stockpile material &mdash; these become the default selection every scan, so nobody has to remember which boxes to tick. Leave them all unticked to keep using the shared picker the Acquisitions tab uses.</p>
+            <label>Structure ID <input name="stockpile_hangar_structure_id" type="number" placeholder="blank = home structure" /></label>
+            <div id="sh-flags" class="sh-flags"></div>
+          </div>
+
+          <div class="sq-config">
+            <h4 class="sq-config-head">Material targets</h4>
+            <p class="muted">How much of each material the alliance wants on hand. The Stockpile tab shows every target against current stock, worst first &mdash; including materials you hold <em>none</em> of, which the stock list alone can't show you. Targets are matched by item name (or type ID, when a hangar scan supplies one), so they work with both pasted and scanned stock.</p>
+            <table class="sq-table">
+              <thead><tr><th>Material</th><th class="num">Target units</th><th></th></tr></thead>
+              <tbody id="sq-tbody"></tbody>
+            </table>
+            <datalist id="sq-names"></datalist>
+            <button type="button" id="sq-add" class="secondary">+ Add material</button>
+            <span id="sq-status" class="muted small"></span>
+          </div>
           <label class="inline-check"><input name="hangar_selection_allow_push" type="checkbox" /> Allow hangar-division selection sync (push the shared corp-hangar scan picks to the alliance repo)</label>
         </fieldset>
 
@@ -1499,6 +1518,13 @@
         <span id="stockpile-status" class="muted"></span>
       </div>
 
+      <div id="stockpile-quotas" class="sq-panel" hidden>
+        <div class="sq-panel-head">
+          <strong>Target status</strong>
+          <span id="sq-panel-totals" class="muted small"></span>
+        </div>
+        <div id="sq-panel-list" class="sq-list"></div>
+      </div>
       <div id="stockpile-tiles" class="market-tiles"></div>
 
       <div class="stockpile-filters market-filters">

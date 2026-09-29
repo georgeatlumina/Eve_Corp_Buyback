@@ -155,6 +155,19 @@ class TestHubs:
         assert by_id[60008494]['region'] == 'Domain'
 
 
+@pytest.fixture(autouse=True)
+def _clean_station_cache():
+    """station_trade caches resolved stations in a module-level dict, so a test
+    that stubs a lookup would otherwise leave a fake record behind for whatever
+    runs next — which is exactly how the hub test started failing only in a full
+    run."""
+    import copy
+    before = copy.deepcopy(stq._station_meta)
+    yield
+    stq._station_meta.clear()
+    stq._station_meta.update(before)
+
+
 class TestStructureNaming:
     def test_an_unresolvable_structure_is_still_usable(self, monkeypatch):
         """No docking access means no name and no *system* — but its orders are

@@ -192,6 +192,9 @@ def get_config():
 class ConfigUpdate(BaseModel):
     corp_id: Optional[int] = None
     wallet_division_labels: Optional[dict] = None
+    stockpile_quotas: Optional[list[dict]] = None
+    stockpile_hangar_structure_id: Optional[int] = None
+    stockpile_hangar_flags: Optional[list[str]] = None
     buyback_division: Optional[int] = None
     moon_division: Optional[int] = None
     scopes: Optional[list[str]] = None
@@ -228,6 +231,11 @@ class ConfigUpdate(BaseModel):
     hangar_selection_allow_push: Optional[bool] = None
     pi_poco_tax_rate: Optional[float] = None
     pi_templates_dir: Optional[str] = None
+    # These two are on the Config form and in DEFAULTS but were never declared
+    # here, so every save silently dropped them and the Acquisitions shopping
+    # list has always run on the built-in numbers.
+    acq_shopping_min_coverage: Optional[float] = None
+    acq_shopping_max_isk_gap: Optional[float] = None
 
 
 def _clean_division_labels(raw):
@@ -253,6 +261,17 @@ def update_config(update: ConfigUpdate):
     data = update.model_dump(exclude_unset=True)
     if 'wallet_division_labels' in data:
         data['wallet_division_labels'] = _clean_division_labels(data['wallet_division_labels'])
+    if 'stockpile_quotas' in data:
+        data['stockpile_quotas'] = stockpile.normalize_quotas(data['stockpile_quotas'])[:200]
+    if 'stockpile_hangar_flags' in data:
+        # HangarAll and CorpSAG1 both mean division 1, so they collapse; the
+        # result is ordered by division rather than by how it was typed.
+        seen = set()
+        for f in (data['stockpile_hangar_flags'] or []):
+            c = hangar_selection._canonical(str(f))
+            if c in hangar_selection.VALID_FLAGS:
+                seen.add(c)
+        data['stockpile_hangar_flags'] = [f for f in hangar_selection.VALID_FLAGS if f in seen]
     for key in ('buyback_division', 'moon_division'):
         if key in data:
             try:
@@ -5682,6 +5701,92 @@ def save_hangar_selection(req: HangarSelectionSave):
     return {**selection, 'storage': 'github' if pushed else 'local'}
 
 
+_STOCKPILE_QUOTAS_PATH = 'inventory/stockpile-quotas.json'
+
+
+def _stockpile_quotas_remote_cfg(cfg):
+    """GitHub location for the shared material targets, in the same alliance
+    repo as the stockpile itself.
+
+    A file of its own rather than a block inside the stock doc: stock is state
+    rewritten by every scan, a target is intent changed once a month. Sharing
+    one file means a routine stock push would race somebody's target edit, and
+    whichever landed second would win.
+    """
+    rc = _share_remote_cfg(cfg)
+    return {**rc, 'path': _STOCKPILE_QUOTAS_PATH} if rc else None
+
+
+def _stockpile_quotas_read():
+    """Return (quotas, rc). Prefers GitHub, falls back to the local config copy
+    on any remote failure — same convention as _stockpile_read_store."""
+    cfg = load_config()
+    rc = _stockpile_quotas_remote_cfg(cfg)
+    local = stockpile.normalize_quotas(cfg.get('stockpile_quotas'))
+    if not rc:
+        return local, None
+    try:
+        text, _sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                          rc['path'], rc['read_pat'], get_user_agent())
+        quotas = stockpile.normalize_quotas((json.loads(text) or {}).get('quotas'))
+        # Mirror into config so the targets survive going offline, and so a
+        # config export carries them.
+        if quotas != local:
+            cfg['stockpile_quotas'] = quotas
+            save_config(cfg)
+        return quotas, rc
+    except FileNotFoundError:
+        return local, rc            # first write creates the file
+    except Exception:
+        return local, rc
+
+
+@app.get('/api/stockpile/quotas')
+def get_stockpile_quotas():
+    """The shared material targets, with the local copy as fallback."""
+    quotas, rc = _stockpile_quotas_read()
+    return {'quotas': quotas, 'storage': 'github' if rc else 'local'}
+
+
+class StockpileQuotasSave(BaseModel):
+    quotas: list[dict] = []
+
+
+@app.post('/api/stockpile/quotas')
+def save_stockpile_quotas(req: StockpileQuotasSave):
+    """Save the material targets locally and, where allowed, to the alliance
+    repo so everyone sees the same numbers.
+
+    Gated on the same admin toggle as stock edits: setting what the alliance
+    should hold is the same class of decision as saying what it holds.
+    """
+    cfg = load_config()
+    if not cfg.get('stockpile_allow_push'):
+        raise HTTPException(403, 'Stock editing is disabled (enable "Allow stock edits" in Config).')
+    quotas = stockpile.normalize_quotas(req.quotas)[:200]
+    cfg['stockpile_quotas'] = quotas
+    save_config(cfg)
+
+    doc = {'updated_at': datetime.now(timezone.utc).isoformat(), 'quotas': quotas}
+    rc = _stockpile_quotas_remote_cfg(cfg)
+    pushed = False
+    if rc and rc.get('write_pat'):
+        ua = get_user_agent()
+        try:
+            try:
+                _text, sha = _github_contents_get(rc['owner'], rc['repo'], rc['branch'],
+                                                  rc['path'], rc['read_pat'], ua)
+            except FileNotFoundError:
+                sha = None          # first write creates the file
+            _github_contents_put(rc['owner'], rc['repo'], rc['branch'], rc['path'],
+                                 json.dumps(doc, indent=2), sha, rc['write_pat'],
+                                 ua, 'stockpile: update material targets')
+            pushed = True
+        except Exception:
+            pass                    # non-fatal — the local save above succeeded
+    return {'quotas': quotas, 'storage': 'github' if pushed else 'local'}
+
+
 def _stockpile_totals(store):
     """Per-category `{lines, qty}` tallies for the dashboard header tiles."""
     totals = {c: {'lines': 0, 'qty': 0} for c in stockpile.CATEGORIES}
@@ -5714,8 +5819,18 @@ def _stockpile_read_store():
 
 @app.get('/api/stockpile')
 def get_stockpile():
+    """The stock doc, plus how it stands against the configured targets.
+
+    The quota join happens here rather than in the renderer so that matching —
+    by type id where a hangar scan provides one, by name where a paste doesn't —
+    has one implementation instead of two that can disagree.
+    """
     store, _sha, rc = _stockpile_read_store()
-    return {**store, 'storage': 'github' if rc else 'local', 'totals': _stockpile_totals(store)}
+    quotas, qrc = _stockpile_quotas_read()
+    rows = stockpile.quota_status(store.get('items') or [], quotas)
+    return {**store, 'storage': 'github' if rc else 'local', 'totals': _stockpile_totals(store),
+            'quotas': quotas, 'quota_status': rows, 'quota_totals': stockpile.quota_totals(rows),
+            'quota_storage': 'github' if qrc else 'local'}
 
 
 class StockpileSave(BaseModel):
@@ -7301,8 +7416,8 @@ _CORP_HANGAR_FLAGS = {
 
 
 @app.get('/api/corp/assets')
-def get_corp_assets():
-    """Return corp hangar contents at the configured home structure.
+def get_corp_assets(structure_id: Optional[int] = None):
+    """Return corp hangar contents at a structure.
 
     Requires `esi-assets.read_corporation_assets.v1` on a Director-role slot.
     Groups items by hangar division, resolves type names from local type_meta
@@ -7314,7 +7429,9 @@ def get_corp_assets():
     """
     SCOPE = 'esi-assets.read_corporation_assets.v1'
     cfg = load_config()
-    structure_id = int(cfg.get('corp_hangar_structure_id') or cfg.get('home_structure_id') or 0)
+    # An explicit structure wins, so the Stockpile can read a different hangar
+    # from the one Acquisitions uses instead of the two sharing one setting.
+    structure_id = int(structure_id or cfg.get('corp_hangar_structure_id') or cfg.get('home_structure_id') or 0)
     if not structure_id:
         return {'ok': False, 'reason': 'no_home_structure'}
 

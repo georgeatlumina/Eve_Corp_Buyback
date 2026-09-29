@@ -659,6 +659,8 @@ async function loadConfig() {
     $('[name=market_history_pat_write]').value = cfg.market_history_pat_write || '';
   }
   applyDivisionConfig(cfg);
+  renderStockpileQuotas(cfg);
+  renderStockpileHangar(cfg);
   if ($('[name=stockpile_group_name]')) {
     $('[name=stockpile_group_name]').value = cfg.stockpile_group_name || '';
   }
@@ -760,6 +762,72 @@ $('#btn-add-structure').addEventListener('click', () => {
   $('#structures-list').appendChild(structureRow({ name: '', id: 0, accepts: [] }));
 });
 
+// ---- stockpile material targets (Config tab) ----
+// How much of each material the alliance wants on hand. Distinct from the
+// doctrine quotas above, which count hulls on contract; these count units of a
+// material, and drive the Stockpile tab's status view.
+function sqRow(q = { name: '', target: '' }) {
+  const tr = document.createElement('tr');
+  tr.className = 'sq-row';
+  tr.innerHTML = `<td><input class="sq-name" type="text" list="sq-names" placeholder="Tritanium" autocomplete="off" /></td>
+    <td class="num"><input class="sq-target" type="number" min="0" step="1000" placeholder="0" /></td>
+    <td><button type="button" class="sq-del linklike" title="Remove">✕</button></td>`;
+  tr.querySelector('.sq-name').value = q.name || '';
+  tr.querySelector('.sq-target').value = q.target || '';
+  tr.dataset.typeId = q.type_id || 0;
+  return tr;
+}
+
+// Which corp hangar divisions the Stockpile scan defaults to. ESI calls
+// division 1 either HangarAll or CorpSAG1 depending on the structure; the
+// sidecar collapses them, so the UI only ever deals in CorpSAG1-7.
+const HANGAR_FLAGS = ['CorpSAG1', 'CorpSAG2', 'CorpSAG3', 'CorpSAG4', 'CorpSAG5', 'CorpSAG6', 'CorpSAG7'];
+
+function renderStockpileHangar(cfg) {
+  const box = $('#sh-flags');
+  if (box) {
+    const on = new Set(cfg.stockpile_hangar_flags || []);
+    box.innerHTML = HANGAR_FLAGS.map((f, i) => `<label class="inline-check">
+      <input type="checkbox" class="sh-flag" value="${f}"${on.has(f) ? ' checked' : ''} /> Division ${i + 1}</label>`).join('');
+  }
+  const sid = $('[name=stockpile_hangar_structure_id]');
+  if (sid) sid.value = cfg.stockpile_hangar_structure_id || '';
+}
+
+const collectHangarFlags = () =>
+  [...document.querySelectorAll('.sh-flag')].filter((c) => c.checked).map((c) => c.value);
+
+function renderStockpileQuotas(cfg) {
+  const tbody = $('#sq-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const list = cfg.stockpile_quotas || [];
+  if (!list.length) tbody.appendChild(sqRow());
+  else list.forEach((q) => tbody.appendChild(sqRow(q)));
+}
+
+function collectStockpileQuotas() {
+  const tbody = $('#sq-tbody');
+  if (!tbody) return [];
+  return [...tbody.querySelectorAll('.sq-row')].map((r) => ({
+    name: (r.querySelector('.sq-name').value || '').trim(),
+    target: parseInt(r.querySelector('.sq-target').value, 10) || 0,
+    // Carried through so a scanned item keeps matching by id even if someone
+    // edits the display name.
+    type_id: parseInt(r.dataset.typeId, 10) || 0,
+  })).filter((q) => q.name && q.target > 0);
+}
+
+$('#sq-add')?.addEventListener('click', () => $('#sq-tbody')?.appendChild(sqRow()));
+$('#sq-tbody')?.addEventListener('click', (e) => {
+  const del = e.target.closest('.sq-del');
+  if (!del) return;
+  const rows = $('#sq-tbody').querySelectorAll('.sq-row');
+  del.closest('.sq-row').remove();
+  // Never leave the table empty — an admin would have nothing to click.
+  if (rows.length <= 1) $('#sq-tbody').appendChild(sqRow());
+});
+
 // Read the live Config form into the payload shape /api/config expects.
 // Used by both the Save handler and the whole-config export so an unsaved
 // edit (e.g. a freshly-pasted alliance quota URL) still flows into the
@@ -796,6 +864,9 @@ function collectConfigForm() {
     market_history_pat_write: (fd.get('market_history_pat_write') || '').toString().trim(),
     stockpile_group_name: (fd.get('stockpile_group_name') || '').toString().trim(),
     stockpile_allow_push: $('[name=stockpile_allow_push]')?.checked || false,
+    stockpile_quotas: collectStockpileQuotas(),
+    stockpile_hangar_structure_id: parseInt(fd.get('stockpile_hangar_structure_id'), 10) || 0,
+    stockpile_hangar_flags: collectHangarFlags(),
     hangar_selection_allow_push: $('[name=hangar_selection_allow_push]')?.checked || false,
     acq_shopping_min_coverage: parseFloat(fd.get('acq_shopping_min_coverage')) || 0.5,
     acq_shopping_max_isk_gap: parseFloat(fd.get('acq_shopping_max_isk_gap')) || 500_000_000,
@@ -808,8 +879,28 @@ async function saveConfig({ statusText = 'Saved.' } = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(collectConfigForm()),
   });
-  $('#config-status').textContent = res.ok ? statusText : 'Error saving.';
-  setTimeout(() => ($('#config-status').textContent = ''), 2500);
+  let msg = res.ok ? statusText : 'Error saving.';
+  // Material targets are alliance-wide, so a save also pushes them to the
+  // shared repo. The config write above already persisted them locally, so a
+  // failed push costs nothing but the sharing — hence a note, not an error.
+  if (res.ok && $('#sq-tbody')) {
+    try {
+      const q = await fetch(`${API}/api/stockpile/quotas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quotas: collectStockpileQuotas() }),
+      });
+      if (q.ok) {
+        const d = await q.json();
+        if (d.storage === 'github') msg = `${statusText} Targets shared with the alliance.`;
+      } else if (q.status !== 403) {
+        // 403 just means this machine isn't an editor — not worth reporting.
+        msg = `${statusText} (targets saved locally only)`;
+      }
+    } catch (_) { msg = `${statusText} (targets saved locally only)`; }
+  }
+  $('#config-status').textContent = msg;
+  setTimeout(() => ($('#config-status').textContent = ''), 4000);
   if (res.ok) { refreshStockpileAccess(); refreshIndyAccess(); }  // re-evaluate the group gates
   return res.ok;
 }

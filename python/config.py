@@ -198,6 +198,18 @@ DEFAULTS = {
     'quotas': [],
     # Institute (NLDF) doctrine quotas — same shape as quotas above.
     'quotas_institute': [],
+    # Material stockpile targets: [{name, type_id, target}]. Distinct from the
+    # doctrine quotas above, which count hulls on contract — these count units
+    # of a material the alliance wants on hand, and drive the Stockpile tab's
+    # status view.
+    'stockpile_quotas': [],
+    # Which corp hangar the Stockpile scan reads. Separate from the shared
+    # hangar picker the Acquisitions tab uses: the stockpile is a standing
+    # figure read the same way every time, so it shouldn't depend on whatever
+    # divisions somebody last ticked for a different job.
+    # 0 / empty = fall back to the home structure and the shared selection.
+    'stockpile_hangar_structure_id': 0,
+    'stockpile_hangar_flags': [],
     # EVE alliance IDs used to route contract scans per alliance.
     # Set these in Config so the alliance selector knows which slots belong to which alliance.
     'alliance_id_main': 0,

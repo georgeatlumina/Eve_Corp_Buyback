@@ -56,6 +56,15 @@
     render();
   }
 
+  // Feed the Config tab's material picker from real stock, so an admin setting
+  // targets doesn't have to remember exact EVE spellings.
+  function syncQuotaNames() {
+    const dl = document.getElementById('sq-names');
+    if (!dl || !sp.data) return;
+    const names = [...new Set((sp.data.items || []).map((i) => i.name).filter(Boolean))].sort();
+    dl.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
+  }
+
   function renderTiles() {
     const root = $('#stockpile-tiles');
     if (!root || !sp.data) return;
@@ -124,8 +133,45 @@
     root.innerHTML = blocks.join('');
   }
 
+  // Target status. Shown above the raw stock tables because it's the
+  // actionable view — and because it's the only one that can show a material
+  // you hold none of, which the stock list by definition cannot.
+  function renderQuotas() {
+    const panel = $('#stockpile-quotas');
+    if (!panel) return;
+    const rows = (sp.data && sp.data.quota_status) || [];
+    panel.hidden = !rows.length;
+    if (!rows.length) return;
+    const t = (sp.data && sp.data.quota_totals) || {};
+    const totals = $('#sq-panel-totals');
+    if (totals) {
+      totals.textContent = `${nfmt(t.met || 0)} of ${nfmt(t.tracked || 0)} met`
+        + (t.critical ? ` · ${nfmt(t.critical)} critical` : '')
+        + (t.short ? ` · ${nfmt(t.short)} short` : '');
+    }
+    $('#sq-panel-list').innerHTML = rows.map((r) => {
+      // The bar is capped at 100% so an item at 400% doesn't dwarf the rest;
+      // the percentage beside it still tells the whole story.
+      const w = Math.max(0, Math.min(1, r.pct)) * 100;
+      const pctTxt = r.pct >= 10 ? `${Math.round(r.pct * 100)}%` : `${(r.pct * 100).toFixed(r.pct < 0.1 ? 1 : 0)}%`;
+      return `<div class="sq-item sq-${r.state}">
+        <div class="sq-item-head">
+          <span class="sq-item-name">${escapeHtml(r.name)}</span>
+          <span class="sq-item-pct">${pctTxt}</span>
+        </div>
+        <div class="sq-bar"><div class="sq-bar-fill" style="width:${w.toFixed(1)}%"></div></div>
+        <div class="sq-item-meta muted">
+          ${nfmt(r.have)} / ${nfmt(r.target)}
+          ${r.shortfall ? `<span class="sq-short">short ${nfmt(r.shortfall)}</span>` : '<span class="sq-ok">met</span>'}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   function render() {
+    syncQuotaNames();
     renderTiles();
+    renderQuotas();
     renderSections();
   }
 
@@ -212,12 +258,20 @@
 
     let data, selection;
     try {
+      // The stockpile's own hangar settings win when set: it's a standing
+      // figure read the same way every time, and shouldn't depend on whichever
+      // divisions somebody last ticked for the Acquisitions scan.
+      const cfg = await fetch(`${API}/api/config`).then((r) => r.json()).catch(() => ({}));
+      const sid = Number(cfg.stockpile_hangar_structure_id) || 0;
+      const configured = cfg.stockpile_hangar_flags || [];
       const [assetsRes, selectionRes] = await Promise.all([
-        fetch(`${API}/api/corp/assets`),
-        fetch(`${API}/api/hangar-selection`),
+        fetch(`${API}/api/corp/assets${sid ? `?structure_id=${sid}` : ''}`),
+        configured.length ? Promise.resolve(null) : fetch(`${API}/api/hangar-selection`),
       ]);
       data = await assetsRes.json();
-      selection = await selectionRes.json().catch(() => ({ selected_flags: [] }));
+      selection = configured.length
+        ? { selected_flags: configured }
+        : await selectionRes.json().catch(() => ({ selected_flags: [] }));
     } catch (e) {
       statusEl.textContent = 'Failed to reach sidecar.';
       btn.disabled = false;
