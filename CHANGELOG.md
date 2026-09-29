@@ -4,6 +4,26 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.12 — Corp inventory that sees fitted ships, and clearer Acquisitions numbers
+
+**Fix — corp inventory counts modules fitted to hangared ships.** Acquisitions' "Corp inventory" and the
+Stockpile's "Scan corp hangars" matched hangar contents by a flat location check, which dropped anything
+nested inside another item. A fitted ship counted as a bare hull, its modules (and any stowed ammo or drones)
+never reached the item pool, and **Analyse Hulls undercounted complete ships.** Nested items are now resolved
+to the hangar division their ship sits in.
+
+**Fix — hangars behind a corp Office.** In a player structure ESI files hangar contents inside the corp's
+rented Office rather than the structure itself, so the nested-item walk has to step past the Office to find
+the real structure. It does; without this a corp inventory scan in a Fortizar would have returned nothing.
+NPC stations are unaffected.
+
+**Acquisitions — quota context.** *Completable from inventory* and *Completable with UEXO market* show
+"(x of y needed)" against the quota. Contracts-tab quota rows gain a **Full fits in Acquisitions** line under
+*Bare hulls in Acquisitions*, populated from the last Analyse Hulls run.
+
+**Fix — stale market snapshot.** Analyse Hulls could reuse an in-memory market snapshot past the server's
+5-minute cache TTL and report an item as buyable on an order that had already expired. It now re-fetches.
+
 ## v3.12.11 — Stockpile targets, and a config fix worth knowing about
 
 **New — material targets on the Stockpile.** Set how much of each material the alliance wants on hand
