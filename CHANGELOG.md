@@ -4,6 +4,31 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.11 — Stockpile targets, and a config fix worth knowing about
+
+**New — material targets on the Stockpile.** Set how much of each material the alliance wants on hand
+(Config → Stockpile → Material targets) and the Stockpile tab opens with a Target status panel showing
+where you stand, worst first. A material you hold **none** of still gets a row — the most useful thing
+this view can report, and precisely what a plain stock list can never show. Targets match on item name or
+type ID, so they work whether stock came from a paste or an ESI hangar scan. The name box suggests
+materials already in stock.
+
+**Targets are shared with the alliance.** Saving publishes them to the same repo the stockpile uses and
+every client picks them up, so the alliance works to one set of numbers. They're stored in their own file
+rather than inside the stock doc, so a routine stock update can never overwrite somebody's targets. Gated
+by the same **Allow stock edits** toggle as stock changes.
+
+**Choose which hangar the stockpile reads.** Config now holds the structure and hangar divisions the
+Stockpile scan uses, so nobody has to re-tick them each time and the Stockpile can read a different hangar
+from the Acquisitions tab rather than the two sharing one setting. Unset falls back to the shared picker,
+so nothing changes for existing setups.
+
+**Fix — two settings that never saved.** The Acquisitions shopping list's *minimum coverage* and *maximum
+ISK gap* were on the Config page and appeared to save, but the API dropped them every time, so the list
+always ran on the built-in 50% / 500M. Both persist now; set them again after updating if you'd tried
+before. Config exports also carry everything recently added to the Config page — wallet division names,
+stockpile targets and hangar settings included.
+
 ## v3.12.10 — Trade anywhere, route safely, name your own wallets
 
 **Station Trading — any station, not just the five hubs.** Each side of a pair opens a picker: the built-in

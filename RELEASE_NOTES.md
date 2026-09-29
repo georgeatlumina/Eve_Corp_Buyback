@@ -1,50 +1,56 @@
-# v3.12.10 — Trade anywhere, route safely, name your own wallets
+# v3.12.11 — Stockpile targets, and a config fix worth knowing about
 
-## Station Trading — any station, not just the five hubs
+## New — material targets on the Stockpile
 
-Each side of a pair now opens a picker with three ways in:
+Set how much of each material the alliance wants on hand, and the Stockpile tab opens with a
+**Target status** panel showing where you stand — worst first, because the list is there to be acted on.
 
-- **Trade hubs** — Jita, Amarr, Dodixie, Rens, Hek, as before
-- **Browse a region** — pick any of the 70 regions and see every station and public citadel that
-  *currently has orders*, busiest first. Metropolis has **437** such locations; Hek leads with 38,000
-  orders on the book.
-- **Paste a station ID** — for anything else
+```
+1 of 5 met · 2 critical · 4 short
 
-There's a filter box over whatever's listed, and saved pairs work with all of it.
+Isogen     0.0%   0 / 2,000,000            short 2,000,000
+Nocxium    0.0%   0 / 500,000              short 500,000
+Pyerite     40%   4,000,000 / 10,000,000   short 6,000,000
+Morphite    90%   90,000 / 100,000         short 10,000
+Tritanium  120%   60,000,000 / 50,000,000  met
+```
 
-## Player citadels are now tradeable
+**A material you hold none of still gets a row.** That's the most useful thing this view can tell you, and
+it's precisely what a plain stock list can never show — Isogen and Nocxium above are exactly that case.
 
-Public structures were always in EVE's market data — one citadel in The Forge carries over 1,300 orders —
-they were just being skipped. They're in now, named where the app can see them.
+Targets work whether stock came from a paste or an ESI hangar scan; they match on item name or type ID,
+whichever is available.
 
-**One honest limitation.** A citadel only reveals its name *and its location* to a character who can dock
-there. One nobody can dock at shows as `Structure 1044960858258 · location unknown` and still trades
-perfectly well — prices, spreads and volumes are all correct. What you don't get is jumps and trips,
-because nothing can say where it is. Log in a character with access and it resolves itself.
+**Set them in Config → Stockpile → Material targets.** The name box suggests materials already in stock,
+so you don't have to remember exact EVE spellings.
 
-## Routing now uses the safe route
+## Targets are shared with the alliance
 
-Trips, jumps and ISK/jump are quoted on the **high-sec-preferring** route, because that's the one a loaded
-hauler actually flies. This matters more than it sounds:
+Saving targets publishes them to the same repo the stockpile itself uses, and every client picks them up —
+so the alliance works to one set of numbers rather than each admin keeping their own. They're stored
+separately from the stock figures, so a routine stock update can never overwrite somebody's targets.
 
-> **Jita → Amarr is 11 jumps the short way, and 34 the safe way.**
+Gated by the same **Allow stock edits** toggle as stock changes. Worth having one person set the initial
+targets; everyone else sees them from then on.
 
-Costing that run at 11 jumps overstated it threefold. The shortest count is shown alongside — `34 jumps
-safest (11 shortest)` — so you can see exactly what the detour costs and decide for yourself. If no safe
-route exists at all, it falls back and says so.
+## Choose which hangar the stockpile reads
 
-## Name your own corp wallet divisions
+**Config → Stockpile → Which hangar the stockpile reads**: pick the structure and tick the divisions that
+hold stockpile material. Those become the default for every scan, so nobody has to remember which boxes to
+tick — and the Stockpile can read a different hangar from the Acquisitions tab instead of the two sharing
+one setting. Leave it unset and nothing changes.
 
-EVE numbers corp wallets 1–7, but every corp names them itself. The labels on the Buyback and Moon wallet
-tiles were fixed in the app, so a corp that arranges its divisions differently saw money under the wrong
-name — in the one place people go to read balances.
+## Fix — two settings that never saved
 
-**Config → Corp wallet divisions** now holds all seven labels, plus two dropdowns choosing which division
-each page treats as *the* buyback and moon wallet. Defaults are exactly what they were, so nothing changes
-until you edit it. Leave a label blank and the tile reads "Division 4".
+**Acquisitions shopping-list settings were silently discarded.** *Minimum coverage* and *maximum ISK gap*
+were on the Config page and looked like they saved, but the app dropped them every time — the shopping
+list has always run on the built-in 50% / 500M whatever you set. Both work now.
 
-Useful if you're moving buyback to a different corp — set the corp ID, re-authorise a character in the new
-corp with the right roles, and relabel the wallets here.
+If you'd set these before and wondered why the shopping list ignored you: it did. Set them again after
+updating.
+
+Exports also now carry everything added to the Config page recently — wallet division names, stockpile
+targets and hangar settings included.
 
 ---
 
