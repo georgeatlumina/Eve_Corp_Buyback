@@ -1,54 +1,50 @@
-# v3.12.9 — Station Trading, and a shared acquisitions inventory
+# v3.12.10 — Trade anywhere, route safely, name your own wallets
 
-## New — Station Trading
+## Station Trading — any station, not just the five hubs
 
-A new tab under **General**. Pick two NPC hubs, hit Analyse, and see what's worth buying at one and
-selling at the other. Jita, Amarr, Dodixie, Rens and Hek are built in.
+Each side of a pair now opens a picker with three ways in:
 
-**Every row shows both ways of playing it**, because the gap between them is the decision:
+- **Trade hubs** — Jita, Amarr, Dodixie, Rens, Hek, as before
+- **Browse a region** — pick any of the 70 regions and see every station and public citadel that
+  *currently has orders*, busiest first. Metropolis has **437** such locations; Hek leads with 38,000
+  orders on the book.
+- **Paste a station ID** — for anything else
 
-| | What it means |
-|---|---|
-| **Instant** | Buy the sell order here, hit the buy order there. No waiting, nobody can undercut you. |
-| **Patient** | Buy here, then list your own sell order there. More margin — if your order fills and nobody undercuts you first. |
+There's a filter box over whatever's listed, and saved pairs work with all of it.
 
-**Ranked by what you'd actually make in a day, not by the biggest spread.** A 34% margin on something
-that trades twice a day is not a trade; a 10% margin on something that moves 100,000 units is. The list
-sorts on per-unit profit times the units that genuinely change hands.
+## Player citadels are now tradeable
 
-**Two volume columns, on purpose.** *On book* is what's sitting at the best price right now at that
-station. *Vol/day* is what the destination region actually traded, per day, over the last week. Thousands
-resting on the book that move three a day is a trap, and only the second column tells you.
+Public structures were always in EVE's market data — one citadel in The Forge carries over 1,300 orders —
+they were just being skipped. They're in now, named where the app can see them.
 
-**Profit calculator.** Pick an item, enter how many units, choose a hauler — Blockade Runner through
-Freighter, with editable capacity — and get cost, revenue after your fees, profit, total m³, how many
-**trips** it takes, the **jumps** each way, and profit per trip. It warns you when you're buying more than
-the book holds, since past that point the real margin is thinner than the headline.
+**One honest limitation.** A citadel only reveals its name *and its location* to a character who can dock
+there. One nobody can dock at shows as `Structure 1044960858258 · location unknown` and still trades
+perfectly well — prices, spreads and volumes are all correct. What you don't get is jumps and trips,
+because nothing can say where it is. Log in a character with access and it resolves itself.
 
-**Saved pairs** for the routes you run, and an **item search** that predicts as you type.
+## Routing now uses the safe route
 
-**A ticker**, currency-pair style, for the pairs you're watching — live spread, day-on-day change, and it
-pauses when you hover so you can actually read it. Click any item for its **chart over time**.
+Trips, jumps and ISK/jump are quoted on the **high-sec-preferring** route, because that's the one a loaded
+hauler actually flies. This matters more than it sounds:
 
-### About the chart, honestly
+> **Jita → Amarr is 11 jumps the short way, and 34 the safe way.**
 
-EVE publishes price history **per region**, never per station. So the chart shows each station's region as
-an explicitly-labelled *proxy* — fine for Jita↔Amarr, where each hub dominates its region — and starts
-recording the **real spread between your two stations** from the day you add the pair to the ticker. That
-line fills in over the following days. Where both stations share a region, the app says so, because the
-proxy can't tell them apart.
+Costing that run at 11 jumps overstated it threefold. The shortest count is shown alongside — `34 jumps
+safest (11 shortest)` — so you can see exactly what the detour costs and decide for yourself. If no safe
+route exists at all, it falls back and says so.
 
-### Fees are yours to set
+## Name your own corp wallet divisions
 
-Sales tax and broker fee default to a well-trained trader, and you can change both. Recorded history is
-kept *before* fees, so it stays true when your skills change.
+EVE numbers corp wallets 1–7, but every corp names them itself. The labels on the Buyback and Moon wallet
+tiles were fixed in the app, so a corp that arranges its divisions differently saw money under the wrong
+name — in the one place people go to read balances.
 
-## New — shared acquisitions inventory
+**Config → Corp wallet divisions** now holds all seven labels, plus two dropdowns choosing which division
+each page treats as *the* buyback and moon wallet. Defaults are exactly what they were, so nothing changes
+until you edit it. Leave a label blank and the tile reads "Division 4".
 
-Contributed by **Thanatos**. Directors can now publish the acquisitions hangar inventory to the alliance
-quota repo, and every client pulls it on startup — so the whole alliance sees the same stock without
-anyone pasting exports around. Gated by the same admin checkbox as quota push, and falls back silently to
-the local file when the repo isn't configured.
+Useful if you're moving buyback to a different corp — set the corp ID, re-authorise a character in the new
+corp with the right roles, and relabel the wallets here.
 
 ---
 

@@ -4,6 +4,32 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.10 — Trade anywhere, route safely, name your own wallets
+
+**Station Trading — any station, not just the five hubs.** Each side of a pair opens a picker: the built-in
+hubs, or browse any of the 70 regions, or paste a station id. A region's list is built from its live order
+book — every station and public citadel that currently has orders, busiest first (Metropolis has 437 such
+locations). There's a filter over whatever's listed, and saved pairs work with all of it.
+
+**Player citadels are tradeable.** Public structures were always in EVE's market data — one in The Forge
+carries over 1,300 orders — and were simply being skipped. They're in now, named where the app can see
+them. One honest limit: a citadel reveals its name *and its location* only to a character who can dock
+there, so one nobody can dock at shows as `Structure <id> · location unknown`. It still trades perfectly —
+prices, spreads and volumes are all correct — but jumps and trips are unavailable, because nothing can say
+where it is. Logging in a character with access resolves it.
+
+**Routing now uses the safe route.** Trips, jumps and ISK/jump are quoted on the high-sec-preferring route,
+because that's the one a loaded hauler flies. Jita→Amarr is 11 jumps short and 34 safe, so the old figure
+overstated such a run threefold. The shortest count shows alongside — `34 jumps safest (11 shortest)` — so
+the detour is visible rather than hidden. Where no safe route exists it falls back and says so.
+
+**Corp wallet divisions are configurable.** EVE numbers wallets 1–7 but every corp names them itself, so
+fixed labels put money under the wrong name in the one place people read balances. Config → Corp wallet
+divisions holds all seven labels plus two dropdowns choosing which division the Buyback and Moon pages
+treat as *the* wallet. Defaults are unchanged; a blank label reads "Division N". Useful when moving buyback
+to a different corp — set the corp id, re-authorise a character in it with the right roles, and relabel
+here.
+
 ## v3.12.9 — Station Trading, and a shared acquisitions inventory
 
 **New — Station Trading.** A tab under General: pick two NPC hubs (Jita, Amarr, Dodixie, Rens, Hek built
