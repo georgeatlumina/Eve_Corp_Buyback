@@ -3344,20 +3344,31 @@ def _root_location(asset, by_item):
     return cur.get('location_id'), cur.get('location_type')
 
 
-def _root_container(asset, by_item):
-    """Walk an asset up its container/ship chain to whatever it ultimately
-    sits directly in. Unlike _root_location, returns the container asset
-    itself — callers need its location_flag (the hangar division), not just
-    its location_id. A module fitted to a ship reports location_id as the
-    ship's own item_id, not the structure's; this resolves it to the ship,
-    which does sit directly in the structure."""
+def _hangar_flag(asset, by_item, hangar_flags):
+    """Walk an asset up its container/ship chain and return the
+    location_flag of the first ancestor (or the asset itself) that sits
+    directly in a corp hangar division, or None if the chain never reaches
+    one. A module fitted to a ship reports location_flag as its own slot
+    ('LoSlot0') and location_id as the ship's item_id — this resolves it to
+    the ship's flag instead.
+
+    Deliberately stops as soon as a hangar flag is found rather than
+    walking all the way to the structure: in a player structure, the
+    hangar-division item itself sits inside the corp's Office (location_flag
+    'OfficeFolder'), so walking further would overshoot past the division
+    flag onto the Office's non-hangar flag. Use _root_location separately to
+    confirm which structure that Office (and thus the division) is in."""
     cur = asset
     seen = set()
-    while (cur.get('location_type') == 'item' and cur.get('location_id') in by_item
-           and cur.get('item_id') not in seen and len(seen) < 32):
+    while True:
+        flag = cur.get('location_flag')
+        if flag in hangar_flags:
+            return flag
+        if not (cur.get('location_type') == 'item' and cur.get('location_id') in by_item
+                and cur.get('item_id') not in seen and len(seen) < 32):
+            return None
         seen.add(cur['item_id'])
         cur = by_item[cur['location_id']]
-    return cur
 
 
 def _resolve_asset_locations(pairs, ua):
@@ -7506,16 +7517,23 @@ def get_corp_assets(structure_id: Optional[int] = None):
     # nested inside something that is (e.g. modules fitted to a ship, or
     # ammo/drones stowed in one) — those report location_id as the ship's own
     # item_id, not the structure's, so a flat location_id match would drop
-    # them even though they're really sitting in that hangar.
+    # them even though they're really sitting in that hangar. In a player
+    # structure the hangar division itself sits inside the corp's rented
+    # Office, so the division's own location_id is the Office's item_id, not
+    # the structure's — _root_location walks past the Office to the true
+    # structure/station id for the comparison below.
     by_item = {a['item_id']: a for a in all_assets if 'item_id' in a}
-    hangar_items = []      # (asset, hangar_flag) — hangar_flag is the ROOT
-                            # container's flag, e.g. a fitted module's own
-                            # flag is a slot ('LoSlot0'), not a hangar division
+    hangar_items = []      # (asset, hangar_flag) — hangar_flag is the flag
+                            # of the item's hangar-division ancestor, e.g. a
+                            # fitted module's own flag is a slot ('LoSlot0'),
+                            # not a hangar division
     for a in all_assets:
-        root = _root_container(a, by_item)
-        root_flag = root.get('location_flag')
-        if int(root.get('location_id') or 0) == structure_id and root_flag in _CORP_HANGAR_FLAGS:
-            hangar_items.append((a, root_flag))
+        flag = _hangar_flag(a, by_item, _CORP_HANGAR_FLAGS)
+        if not flag:
+            continue
+        root_loc_id, _root_loc_type = _root_location(a, by_item)
+        if int(root_loc_id or 0) == structure_id:
+            hangar_items.append((a, flag))
     _log.warning('[corp/assets] hangar_items after filter: %d', len(hangar_items))
 
     # Resolve type names + category_id from local type_meta first.

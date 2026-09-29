@@ -90,3 +90,43 @@ class TestCorpAssets:
         sag3 = next(h for h in data['hangars'] if h['flag'] == 'CorpSAG3')
         type_ids = {i['type_id'] for i in sag3['items']}
         assert type_ids == {587, 448}
+
+    def test_hangar_behind_a_rented_office_in_a_player_structure(self, client, tmp_path):
+        # In a player structure the corp's hangar divisions sit inside its
+        # rented Office, not directly in the structure: the hangar item's
+        # own location_id is the Office's item_id, and only the Office's
+        # location_id is the actual structure. A flag-or-structure check
+        # that walks past the division onto the Office (flag 'OfficeFolder')
+        # must not drop these — and a fitted module one level deeper must
+        # still resolve to the same division.
+        office_id = 1055258944813
+        structure_id = 1052738603765
+        assets = [
+            {'item_id': 2001, 'type_id': 34, 'quantity': 500,
+             'location_id': office_id, 'location_type': 'item', 'location_flag': 'CorpSAG2'},
+            {'item_id': 2002, 'type_id': 587, 'quantity': 1,
+             'location_id': office_id, 'location_type': 'item', 'location_flag': 'CorpSAG3'},
+            {'item_id': 2003, 'type_id': 448, 'quantity': 1,
+             'location_id': 2002, 'location_type': 'item', 'location_flag': 'LoSlot0'},
+            {'item_id': office_id, 'type_id': 27, 'quantity': 1,
+             'location_id': structure_id, 'location_type': 'item', 'location_flag': 'OfficeFolder'},
+        ]
+        with patch('server.load_config', return_value={'home_structure_id': structure_id}), \
+             patch('server.list_authenticated_slots', return_value=['slot1']), \
+             patch('server.get_valid_access_token', return_value='tok'), \
+             patch('server.decode_jwt_payload',
+                   return_value=_jwt_payload(['esi-assets.read_corporation_assets.v1'])), \
+             patch('server.fetch_character_info', return_value={'corporation_id': 98000001}), \
+             patch('server.fetch_corp_assets', return_value=assets), \
+             patch('server.enrich_types', return_value={
+                 34: {'name': 'Tritanium', 'category_id': 4, 'group_id': 18},
+                 587: {'name': 'Griffin', 'category_id': 6, 'group_id': 831},
+                 448: {'name': 'Damage Control II', 'category_id': 7, 'group_id': 60},
+             }), \
+             patch('config.AUTH_DIR', str(tmp_path)):
+            resp = client.get('/api/corp/assets')
+        data = resp.json()
+        by_flag = {h['flag']: h for h in data['hangars']}
+        assert by_flag['CorpSAG2']['item_count'] == 500
+        sag3_type_ids = {i['type_id'] for i in by_flag['CorpSAG3']['items']}
+        assert sag3_type_ids == {587, 448}
