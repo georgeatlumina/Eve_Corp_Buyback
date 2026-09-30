@@ -4,6 +4,14 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.12 — Fixes the wallet division dropdowns
+
+**Fix — renaming a corp wallet division didn't update the two dropdowns beneath it.** The *Buyback wallet*
+and *Moon wallet* pickers kept offering the old names until a save and reload, so right after renaming the
+very lists you'd use to pick them were stale. They now follow what you type, keeping the current
+selections. Same fix covers the quieter half: clearing a name shows "Division 4" straight away rather than
+the name that used to be saved.
+
 ## v3.12.11 — Stockpile targets, and a config fix worth knowing about
 
 **New — material targets on the Stockpile.** Set how much of each material the alliance wants on hand
