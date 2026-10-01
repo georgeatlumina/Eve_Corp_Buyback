@@ -267,6 +267,7 @@ function buildTargets(quotas, fitsById) {
       shipName: fit?.hullName || q.name || String(q.ship_type_id),
       fitName: fit?.name || null,
       needed: Number(q.missing) || 0,
+      quota: Number(q.required) || 0,
       units,
       unevaluatable,
     };

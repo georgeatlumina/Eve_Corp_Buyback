@@ -228,6 +228,10 @@ function collectDivisionLabels() {
   return out;
 }
 const JITA_CONTRACT_MULTIPLIER = 1.2;
+// Mirrors _MARKET_TTL_SECONDS in server.py — past this age the server's own
+// cache has expired too, so treating aaState.market as still current would
+// report market availability that may no longer be true (see acqRunHullAnalysis).
+const ACQ_MARKET_MAX_AGE_SECONDS = 300;
 
 const lastResults = { buyback: [], moon: [] };
 const filterState = { buyback: 'all', moon: 'all' };
@@ -4297,7 +4301,9 @@ function renderContractsDashboard(payload) {
   } else {
     // Snapshot, not live: computed once per dashboard render (Scan, or
     // alliance-toggle switch), matching every other number on the bar.
-    quotas.forEach((q, i) => root.appendChild(renderQuotaBar(q, i, acqHullCountFor(q.ship_type_id))));
+    quotas.forEach((q, i) => root.appendChild(
+      renderQuotaBar(q, i, acqHullCountFor(q.ship_type_id), acqFullFitCountFor(q.ship_type_id))
+    ));
     sortQuotaDashboard();
   }
 
@@ -4474,7 +4480,7 @@ function shipTechTier(shipName) {
   return null;
 }
 
-function renderQuotaBar(q, priority = 0, hullCount = 0) {
+function renderQuotaBar(q, priority = 0, hullCount = 0, fullFitCount = 0) {
   const required = Number(q.required) || 0;
   const available = Number(q.available) || 0;
   const missing = Number(q.missing) || 0;
@@ -4516,6 +4522,10 @@ function renderQuotaBar(q, priority = 0, hullCount = 0) {
       <div class="quota-expand-row">
         <span class="quota-expand-label">Bare hulls in Acquisitions</span>
         <span class="quota-hull-count muted">${hullCount}</span>
+      </div>
+      <div class="quota-expand-row">
+        <span class="quota-expand-label">Full fits in Acquisitions</span>
+        <span class="quota-fullfit-count muted">${fullFitCount}</span>
       </div>
     </div>
   `;
@@ -4955,6 +4965,12 @@ let acqAllowPush = false;  // true when alliance_quota_allow_push is set in conf
 // Persists the last Analyse Hulls result across tab navigation.
 let acqHullAnalysisResult = null; // { s1, s2, s3, s4, statusText } — innerHTML snapshots
 
+// How many complete fits of a given hull type the last Analyse Hulls run
+// found buildable purely from current Acquisitions inventory (ship_type_id ->
+// count). Read by the Contracts dashboard's expand panel; empty until Analyse
+// Hulls has been run at least once this session.
+let acqFullFitCounts = new Map();
+
 // Bumped on every acqRunHullAnalysis call. renderAcquisitionsTab() rebuilds
 // #acquisitions-root's innerHTML on every tab switch, so a run that started
 // before a switch-away-and-back (or a second click) holds DOM refs to nodes
@@ -4972,6 +4988,12 @@ function acqHullCountFor(typeId) {
   const key = String(typeId);
   const row = acquisitionsHulls.find((h) => String(h.type_id) === key);
   return row ? Number(row.quantity) || 0 : 0;
+}
+
+// How many complete fits of a given hull type Analyse Hulls found buildable
+// from current Acquisitions inventory. 0 if Analyse Hulls hasn't run yet.
+function acqFullFitCountFor(typeId) {
+  return acqFullFitCounts.get(String(typeId)) || 0;
 }
 
 async function acquisitionsLoad() {
@@ -5233,7 +5255,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   // Build a map of quota-needed counts for display, then uncap targets so the
   // analysis shows how many can actually be built, not just the gap.
   const neededMap = new Map(
-    inputs.targets.map((t) => [`${t.shipTypeId}||${t.fitName || ''}`, t.needed])
+    inputs.targets.map((t) => [`${t.shipTypeId}||${t.fitName || ''}`, { needed: t.needed, quota: t.quota }])
   );
   const uncappedTargets = inputs.targets.map((t) => ({ ...t, needed: 999 }));
   inputs.targets = uncappedTargets;
@@ -5255,6 +5277,12 @@ async function acqRunHullAnalysis(root, statusEl) {
   renderAcqSection1(s1, fullResult, new Map(), neededMap);
   s1.hidden = false;
   appLog(`analyse-hulls: section 1 done, ${fullResult.builds.length} build(s) from inventory`);
+
+  acqFullFitCounts = new Map();
+  for (const b of fullResult.builds) {
+    const key = String(b.shipTypeId);
+    acqFullFitCounts.set(key, (acqFullFitCounts.get(key) || 0) + 1);
+  }
 
   const satisfiedByInventory = new Set(
     fullResult.builds.map((b) => `${b.shipTypeId}||${b.fitName || ''}`)
@@ -5279,6 +5307,13 @@ async function acqRunHullAnalysis(root, statusEl) {
   statusEl.textContent = `${fullResult.builds.length} build(s) from inventory. ⏳ Loading UEXO market…`;
 
   let market = aaState.market || null;
+  if (market) {
+    const ageSec = Date.now() / 1000 - (market.fetched_at || 0);
+    if (ageSec >= ACQ_MARKET_MAX_AGE_SECONDS) {
+      appLog(`analyse-hulls: cached market is ${Math.round(ageSec)}s old, re-fetching…`);
+      market = null;
+    }
+  }
   if (!market) {
     appLog('analyse-hulls: market not cached, loading UEXO…');
     const marketStart = performance.now();
@@ -5337,7 +5372,7 @@ async function acqRunHullAnalysis(root, statusEl) {
   ({ progressBar, s1, s2, s3, s4, statusEl } = acqReacquireLiveNodes(root, fullResult, neededMap));
 
   renderAcqSection1(s1, fullResult, janiceFitPrices, neededMap);
-  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices, janiceFitPrices);
+  renderAcqSection2(s2, marketBuilds, ageMin, market, jitaPrices, janiceFitPrices, neededMap);
   s2.hidden = false;
   appLog(`analyse-hulls: section 2 done, ${marketBuilds.length} additional build(s) from market`);
 
@@ -5449,7 +5484,7 @@ function renderAcqSection1(el, result, janiceFitPrices = new Map(), neededMap = 
       : `<span style="color:#4b5563">—</span>`;
     const needed = neededMap.get(`${e.shipTypeId}||${e.fitName}`);
     const neededNote = needed != null
-      ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed} needed)</span>`
+      ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed.needed} of ${needed.quota} needed)</span>`
       : '';
     return `<tr style="border-bottom:1px solid #1e2533">
         <td style="padding:0.3rem 0.5rem">${escapeHtml(e.shipName)}</td>
@@ -5482,7 +5517,7 @@ function renderAcqSection1(el, result, janiceFitPrices = new Map(), neededMap = 
     </div>`;
 }
 
-function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPrices = new Map()) {
+function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPrices = new Map(), neededMap = new Map()) {
   const byType = market?.by_type || {};
   const groups = new Map();
   for (const b of builds) {
@@ -5517,10 +5552,14 @@ function renderAcqSection2(el, builds, ageMin, market, jitaPrices, janiceFitPric
     const contractPrice = fitPrice != null
       ? `<span style="color:#fbbf24">${fmtIskShort(fitPrice * JITA_CONTRACT_MULTIPLIER)}</span>`
       : `<span style="color:#4b5563">—</span>`;
+    const needed = neededMap.get(fitPriceKey);
+    const neededNote = needed != null
+      ? ` <span style="color:#6b7280;font-size:0.78rem">(${needed.needed} of ${needed.quota} needed)</span>`
+      : '';
     return `<tr style="border-bottom:1px solid #1e2533">
         <td style="padding:0.3rem 0.5rem">${escapeHtml(ship)}</td>
         <td style="padding:0.3rem 0.5rem;color:#8899aa">${escapeHtml(fit)}</td>
-        <td style="padding:0.3rem 0.75rem;text-align:right">${g.n}</td>
+        <td style="padding:0.3rem 0.75rem;text-align:right">${g.n}${neededNote}</td>
         <td style="padding:0.3rem 0.5rem;text-align:right">${uexoStr} vs ${jitaStr}${deltaHtml}</td>
         <td style="padding:0.3rem 0.5rem;text-align:right;font-size:0.82rem" title="Janice Jita sell × ${pct}%">${contractPrice}</td>
       </tr>`;
