@@ -184,19 +184,37 @@ function applyDivisionConfig(cfg) {
       box.appendChild(label);
     }
   }
-  for (const [id, val] of [['#buyback-division', DIVISIONS.buyback], ['#moon-division', DIVISIONS.moon]]) {
+  refreshDivisionOptions({ buyback: DIVISIONS.buyback, moon: DIVISIONS.moon });
+}
+
+// The two dropdowns label each division by name, so they have to follow the
+// text boxes as they're typed rather than only the last saved config —
+// otherwise you rename a division and the picker still offers the old name.
+// Selections survive the rebuild.
+function refreshDivisionOptions(select) {
+  for (const [id, key] of [['#buyback-division', 'buyback'], ['#moon-division', 'moon']]) {
     const sel = $(id);
     if (!sel) continue;
+    const keep = (select && select[key]) || sel.value || DIVISIONS[key];
     sel.innerHTML = '';
     for (let n = 1; n <= 7; n++) {
+      const input = $(`[name=wallet_division_label_${n}]`);
+      // Where the editor is on screen it is the truth, blanks included — a
+      // cleared box means "Division N", not the name that used to be saved.
+      const name = input ? ((input.value || '').trim() || `Division ${n}`) : divisionLabel(n);
       const opt = document.createElement('option');
       opt.value = String(n);
-      opt.textContent = `${n} — ${divisionLabel(n)}`;
+      opt.textContent = `${n} — ${name}`;
       sel.appendChild(opt);
     }
-    sel.value = String(val);
+    sel.value = String(keep);
   }
 }
+
+// Delegated, so it keeps working after applyDivisionConfig rebuilds the inputs.
+$('#division-labels')?.addEventListener('input', (e) => {
+  if (e.target.matches('input[name^=wallet_division_label_]')) refreshDivisionOptions();
+});
 
 // Read the seven boxes back out. A blank one is simply omitted, so it renders
 // as "Division N" rather than an empty tile with money in it.
