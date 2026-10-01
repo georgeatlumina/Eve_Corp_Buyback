@@ -4,6 +4,26 @@ Full release history. The GitHub **release page** for each version shows only
 that version's notes (built from `RELEASE_NOTES.md`, which is replaced each
 release); this file keeps the running history.
 
+## v3.12.13 — Corp inventory reads Fortizar hangars, and counts fitted ships properly
+
+Contributed by **Thanatos**.
+
+**Fix — corp inventory came back empty from player structures.** A Fortizar (or any player structure)
+keeps its corp hangar divisions inside the corp's rented **Office**, so the divisions report the Office as
+their location rather than the structure — and the scan matched on the structure directly, finding
+nothing. It now walks past the Office to the real structure. This is the one to update for if your home is
+structure-based.
+
+**Fix — complete ships were undercounted.** Modules fitted to a hangared ship, and ammo or drones in its
+cargo, report their location as *the ship* rather than the hangar, so the scan skipped them and **Analyse
+Hulls** undercounted complete ships. Nested contents now count against the hangar division their ship sits
+in.
+
+**Acquisitions — clearer numbers.** Quota rows show "(x of y needed)" so a figure carries its target;
+Contracts quota rows gain "Full fits in Acquisitions", the count of complete fits the last Analyse Hulls
+run found buildable from current inventory; and Analyse Hulls re-fetches rather than reusing a market
+snapshot past the five-minute cache, so reported availability still exists.
+
 ## v3.12.12 — Fixes the wallet division dropdowns
 
 **Fix — renaming a corp wallet division didn't update the two dropdowns beneath it.** The *Buyback wallet*
